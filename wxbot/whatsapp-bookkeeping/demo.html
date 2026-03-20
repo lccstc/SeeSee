@@ -1,0 +1,919 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WhatsApp Bookkeeping - Web 管理界面</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/remixicon@3.5.0/fonts/remixicon.css">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: '#2563EB',
+            success: '#10B981',
+            danger: '#EF4444',
+            warning: '#F59E0B',
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+    .nav-item.active { background: '#EFF6FF'; color: '#2563EB'; }
+    .card { transition: transform 0.2s, box-shadow 0.2s; }
+    .card:hover { transform: translateY(-2px); box-shadow: 0 10px 25px rgba(0,0,0,0.1); }
+    .tab-active { border-bottom: 2px solid #2563EB; color: #2563EB; }
+    .page { display: none; }
+    .page.active { display: block; }
+  </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+  <!-- 移动端底部导航 -->
+  <nav class="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 md:hidden z-50">
+    <div class="flex justify-around py-2">
+      <button onclick="switchPage('dashboard')" class="nav-item active flex flex-col items-center p-2 rounded-lg">
+        <i class="ri-dashboard-line text-xl"></i>
+        <span class="text-xs mt-1">首页</span>
+      </button>
+      <button onclick="switchPage('transactions')" class="nav-item flex flex-col items-center p-2 rounded-lg">
+        <i class="ri-exchange-line text-xl"></i>
+        <span class="text-xs mt-1">交易</span>
+      </button>
+      <button onclick="switchPage('settlement')" class="nav-item flex flex-col items-center p-2 rounded-lg">
+        <i class="ri-wallet-3-line text-xl"></i>
+        <span class="text-xs mt-1">扎帐</span>
+      </button>
+      <button onclick="switchPage('groups')" class="nav-item flex flex-col items-center p-2 rounded-lg">
+        <i class="ri-group-line text-xl"></i>
+        <span class="text-xs mt-1">群组</span>
+      </button>
+      <button onclick="switchPage('settings')" class="nav-item flex flex-col items-center p-2 rounded-lg">
+        <i class="ri-settings-4-line text-xl"></i>
+        <span class="text-xs mt-1">设置</span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- 桌面端侧边栏 -->
+  <aside class="hidden md:flex flex-col w-64 bg-white border-r border-gray-200 fixed left-0 top-0 bottom-0">
+    <div class="p-6 border-b border-gray-200">
+      <h1 class="text-xl font-bold text-gray-900 flex items-center gap-2">
+        <i class="ri-booklet-line text-primary"></i>
+        Bookkeeping
+      </h1>
+    </div>
+    <nav class="flex-1 p-4 space-y-1">
+      <button onclick="switchPage('dashboard')" class="nav-item active w-full flex items-center gap-3 px-4 py-3 rounded-lg text-gray-600 hover:bg-gray-100">
+        <i class="ri-dashboard-line text-xl"></i>
+        <span>数据看板</span>
+      </button>
+      <button onclick="switchPage('transactions')" class="nav-item w-full flex items-center gap-3 px-4 py-3 rounded-lg text-gray-600 hover:bg-gray-100">
+        <i class="ri-exchange-line text-xl"></i>
+        <span>交易管理</span>
+      </button>
+      <button onclick="switchPage('settlement')" class="nav-item w-full flex items-center gap-3 px-4 py-3 rounded-lg text-gray-600 hover:bg-gray-100">
+        <i class="ri-wallet-3-line text-xl"></i>
+        <span>扎帐管理</span>
+      </button>
+      <button onclick="switchPage('groups')" class="nav-item w-full flex items-center gap-3 px-4 py-3 rounded-lg text-gray-600 hover:bg-gray-100">
+        <i class="ri-group-line text-xl"></i>
+        <span>群组管理</span>
+      </button>
+      <button onclick="switchPage('users')" class="nav-item w-full flex items-center gap-3 px-4 py-3 rounded-lg text-gray-600 hover:bg-gray-100">
+        <i class="ri-user-settings-line text-xl"></i>
+        <span>用户管理</span>
+      </button>
+      <button onclick="switchPage('analytics')" class="nav-item w-full flex items-center gap-3 px-4 py-3 rounded-lg text-gray-600 hover:bg-gray-100">
+        <i class="ri-bar-chart-line text-xl"></i>
+        <span>类目分析</span>
+      </button>
+      <button onclick="switchPage('settings')" class="nav-item w-full flex items-center gap-3 px-4 py-3 rounded-lg text-gray-600 hover:bg-gray-100">
+        <i class="ri-settings-4-line text-xl"></i>
+        <span>系统设置</span>
+      </button>
+    </nav>
+  </aside>
+
+  <!-- 主内容区 -->
+  <main class="md:ml-64 pb-20 md:pb-8">
+    <!-- 顶部栏 -->
+    <header class="bg-white border-b border-gray-200 sticky top-0 z-40">
+      <div class="flex items-center justify-between px-4 py-3 md:px-6">
+        <h2 class="text-lg font-semibold text-gray-900 md:hidden">Bookkeeping</h2>
+        <div class="flex items-center gap-4 ml-auto">
+          <span class="text-sm text-gray-500">分组 2 ⭐双币种</span>
+          <div class="w-8 h-8 bg-primary rounded-full flex items-center justify-center text-white font-medium">A</div>
+        </div>
+      </div>
+    </header>
+
+    <div class="p-4 md:p-6 space-y-6">
+
+      <!-- Dashboard 页面 -->
+      <div id="dashboard" class="page active">
+        <!-- 余额卡片 -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div class="card bg-gradient-to-br from-primary to-blue-600 rounded-xl p-5 text-white">
+            <div class="flex items-center justify-between mb-3">
+              <span class="text-blue-100 text-sm">💰 当前余额</span>
+              <i class="ri-wallet-3-line text-2xl text-blue-200"></i>
+            </div>
+            <div class="text-2xl font-bold">¥ -2,860.00</div>
+            <div class="text-blue-100 text-sm mt-1">₦ -557,620</div>
+          </div>
+
+          <div class="card bg-white rounded-xl p-5 shadow-sm border border-gray-100">
+            <div class="flex items-center justify-between mb-3">
+              <span class="text-gray-500 text-sm">📝 未扎帐</span>
+              <i class="ri-file-list-3-line text-2xl text-warning"></i>
+            </div>
+            <div class="text-2xl font-bold text-gray-900">5 笔</div>
+            <div class="text-gray-400 text-sm mt-1">待结算</div>
+          </div>
+
+          <div class="card bg-white rounded-xl p-5 shadow-sm border border-gray-100">
+            <div class="flex items-center justify-between mb-3">
+              <span class="text-gray-500 text-sm">💱 NGN 汇率</span>
+              <i class="ri-exchange-dollar-line text-2xl text-success"></i>
+            </div>
+            <div class="text-2xl font-bold text-gray-900">194.2</div>
+            <div class="text-gray-400 text-sm mt-1">₦1 = ¥0.0051</div>
+          </div>
+
+          <div class="card bg-white rounded-xl p-5 shadow-sm border border-gray-100">
+            <div class="flex items-center justify-between mb-3">
+              <span class="text-gray-500 text-sm">📋 当前群组</span>
+              <i class="ri-group-line text-2xl text-primary"></i>
+            </div>
+            <div class="text-lg font-bold text-gray-900">Nigeria Trading</div>
+            <div class="text-gray-400 text-sm mt-1">分组 2</div>
+          </div>
+        </div>
+
+        <!-- 快捷操作 -->
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+          <h3 class="text-lg font-semibold text-gray-900 mb-4">快捷操作</h3>
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <button onclick="switchPage('transactions')" class="flex flex-col items-center gap-2 p-4 rounded-lg border border-gray-200 hover:border-primary hover:bg-blue-50 transition">
+              <div class="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
+                <i class="ri-add-line text-2xl text-primary"></i>
+              </div>
+              <span class="text-sm font-medium">记一笔</span>
+            </button>
+            <button onclick="switchPage('settlement')" class="flex flex-col items-center gap-2 p-4 rounded-lg border border-gray-200 hover:border-primary hover:bg-blue-50 transition">
+              <div class="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
+                <i class="ri-check-line text-2xl text-success"></i>
+              </div>
+              <span class="text-sm font-medium">扎帐</span>
+            </button>
+            <button onclick="switchPage('transactions')" class="flex flex-col items-center gap-2 p-4 rounded-lg border border-gray-200 hover:border-primary hover:bg-blue-50 transition">
+              <div class="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center">
+                <i class="ri-file-list-line text-2xl text-purple-600"></i>
+              </div>
+              <span class="text-sm font-medium">交易历史</span>
+            </button>
+            <button onclick="switchPage('groups')" class="flex flex-col items-center gap-2 p-4 rounded-lg border border-gray-200 hover:border-primary hover:bg-blue-50 transition">
+              <div class="w-12 h-12 bg-orange-100 rounded-full flex items-center justify-center">
+                <i class="ri-broadcast-line text-2xl text-orange-500"></i>
+              </div>
+              <span class="text-sm font-medium">群发消息</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 最近交易 -->
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="text-lg font-semibold text-gray-900">最近交易</h3>
+            <button onclick="switchPage('transactions')" class="text-primary text-sm font-medium hover:underline">查看全部 →</button>
+          </div>
+          <div class="space-y-3">
+            <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+              <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
+                  <i class="ri-arrow-down-line text-red-500"></i>
+                </div>
+                <div>
+                  <div class="font-medium text-gray-900">+25 RG ×5.0</div>
+                  <div class="text-sm text-gray-500">2026-02-21 14:30</div>
+                </div>
+              </div>
+              <div class="text-right">
+                <div class="font-semibold text-danger">-¥125.00</div>
+                <div class="text-sm text-gray-400">-₦24,275</div>
+              </div>
+            </div>
+
+            <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+              <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
+                  <i class="ri-arrow-up-line text-green-500"></i>
+                </div>
+                <div>
+                  <div class="font-medium text-gray-900">+100 RMB</div>
+                  <div class="text-sm text-gray-500">2026-02-21 13:15</div>
+                </div>
+              </div>
+              <div class="text-right">
+                <div class="font-semibold text-success">+¥100.00</div>
+              </div>
+            </div>
+
+            <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+              <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
+                  <i class="ri-arrow-down-line text-red-500"></i>
+                </div>
+                <div>
+                  <div class="font-medium text-gray-900">-400 IT ×4.9</div>
+                  <div class="text-sm text-gray-500">2026-02-21 11:20</div>
+                </div>
+              </div>
+              <div class="text-right">
+                <div class="font-semibold text-danger">-¥1,960.00</div>
+                <div class="text-sm text-gray-400">-₦77,560</div>
+              </div>
+            </div>
+
+            <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+              <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
+                  <i class="ri-arrow-down-line text-red-500"></i>
+                </div>
+                <div>
+                  <div class="font-medium text-gray-900">-100 IT ×5.0</div>
+                  <div class="text-sm text-gray-500">2026-02-21 10:05</div>
+                </div>
+              </div>
+              <div class="text-right">
+                <div class="font-semibold text-danger">-¥500.00</div>
+                <div class="text-sm text-gray-400">-₦19,500</div>
+              </div>
+            </div>
+
+            <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+              <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
+                  <i class="ri-arrow-down-line text-red-500"></i>
+                </div>
+                <div>
+                  <div class="font-medium text-gray-900">-25 RG ×5.0</div>
+                  <div class="text-sm text-gray-500">2026-02-20 16:40</div>
+                </div>
+              </div>
+              <div class="text-right">
+                <div class="font-semibold text-danger">-¥125.00</div>
+                <div class="text-sm text-gray-400">-₦4,855</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 未扎帐明细 -->
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="text-lg font-semibold text-gray-900">📋 未扎帐明细</h3>
+            <button onclick="switchPage('settlement')" class="bg-primary text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-600">一键扎帐</button>
+          </div>
+          <div class="space-y-2">
+            <div class="flex justify-between items-center p-2">
+              <span class="text-gray-600">IT ×4.9</span>
+              <span class="font-medium">400 刀</span>
+            </div>
+            <div class="flex justify-between items-center p-2">
+              <span class="text-gray-600">IT ×5.0</span>
+              <span class="font-medium">100 刀</span>
+            </div>
+            <div class="flex justify-between items-center p-2">
+              <span class="text-gray-600">RG ×5.0</span>
+              <span class="font-medium">25 刀</span>
+            </div>
+            <div class="border-t border-gray-200 pt-2 mt-2">
+              <div class="flex justify-between items-center font-semibold">
+                <span class="text-gray-900">合计</span>
+                <span class="text-danger">-¥2,585.00 / -₦502,080</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Transactions 页面 -->
+      <div id="transactions" class="page">
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="text-lg font-semibold text-gray-900">交易管理</h3>
+            <button class="bg-primary text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-600 flex items-center gap-2">
+              <i class="ri-add-line"></i> 记一笔
+            </button>
+          </div>
+
+          <!-- 筛选器 -->
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+            <div>
+              <label class="block text-sm text-gray-600 mb-1">开始日期</label>
+              <input type="date" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+            </div>
+            <div>
+              <label class="block text-sm text-gray-600 mb-1">结束日期</label>
+              <input type="date" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+            </div>
+            <div>
+              <label class="block text-sm text-gray-600 mb-1">类目</label>
+              <select class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                <option value="">全部</option>
+                <option value="rmb">RMB</option>
+                <option value="rg">RG</option>
+                <option value="it">IT</option>
+                <option value="sp">SP</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-sm text-gray-600 mb-1">状态</label>
+              <select class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                <option value="">全部</option>
+                <option value="unsettled">未扎帐</option>
+                <option value="settled">已扎帐</option>
+              </select>
+            </div>
+          </div>
+          <div class="flex gap-2 mb-4">
+            <input type="text" placeholder="搜索备注..." class="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm">
+            <button class="bg-gray-100 text-gray-600 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-200">筛选</button>
+          </div>
+
+          <!-- 交易列表 -->
+          <div class="space-y-3">
+            <div class="border border-gray-200 rounded-lg p-4">
+              <div class="flex items-start justify-between">
+                <div class="flex items-center gap-3">
+                  <div class="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0">
+                    <i class="ri-arrow-down-line text-red-500"></i>
+                  </div>
+                  <div>
+                    <div class="font-medium text-gray-900">+25 RG ×5.0</div>
+                    <div class="text-sm text-gray-500">2026-02-21 14:30 · 越南时间</div>
+                    <div class="text-xs text-gray-400 mt-1">👤 84389225210 · 🏷️ 未扎帐</div>
+                  </div>
+                </div>
+                <div class="text-right">
+                  <div class="font-semibold text-danger">-¥125.00</div>
+                  <div class="text-sm text-gray-400">-₦24,275</div>
+                </div>
+              </div>
+              <div class="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between">
+                <div class="text-sm text-gray-600">📝 备注：采购 RG 礼品卡</div>
+                <div class="flex gap-2">
+                  <button class="text-gray-400 hover:text-primary text-sm">编辑</button>
+                  <button class="text-gray-400 hover:text-danger text-sm">撤销</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="border border-gray-200 rounded-lg p-4">
+              <div class="flex items-start justify-between">
+                <div class="flex items-center gap-3">
+                  <div class="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
+                    <i class="ri-arrow-up-line text-green-500"></i>
+                  </div>
+                  <div>
+                    <div class="font-medium text-gray-900">+100 RMB</div>
+                    <div class="text-sm text-gray-500">2026-02-21 13:15 · 越南时间</div>
+                    <div class="text-xs text-gray-400 mt-1">👤 84389225210 · 🏷️ 未扎帐</div>
+                  </div>
+                </div>
+                <div class="text-right">
+                  <div class="font-semibold text-success">+¥100.00</div>
+                </div>
+              </div>
+              <div class="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between">
+                <div class="text-sm text-gray-600">📝 备注：收到转账</div>
+                <div class="flex gap-2">
+                  <button class="text-gray-400 hover:text-primary text-sm">编辑</button>
+                  <button class="text-gray-400 hover:text-danger text-sm">撤销</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="border border-gray-200 rounded-lg p-4">
+              <div class="flex items-start justify-between">
+                <div class="flex items-center gap-3">
+                  <div class="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0">
+                    <i class="ri-arrow-down-line text-red-500"></i>
+                  </div>
+                  <div>
+                    <div class="font-medium text-gray-900">-400 IT ×4.9</div>
+                    <div class="text-sm text-gray-500">2026-02-21 11:20 · 越南时间</div>
+                    <div class="text-xs text-gray-400 mt-1">👤 84389225210 · 🏷️ 未扎帐</div>
+                  </div>
+                </div>
+                <div class="text-right">
+                  <div class="font-semibold text-danger">-¥1,960.00</div>
+                  <div class="text-sm text-gray-400">-₦77,560</div>
+                </div>
+              </div>
+              <div class="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between">
+                <div class="text-sm text-gray-600">📝 备注：采购 IT 设备</div>
+                <div class="flex gap-2">
+                  <button class="text-gray-400 hover:text-primary text-sm">编辑</button>
+                  <button class="text-gray-400 hover:text-danger text-sm">撤销</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="border border-gray-200 rounded-lg p-4 opacity-60">
+              <div class="flex items-start justify-between">
+                <div class="flex items-center gap-3">
+                  <div class="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center flex-shrink-0">
+                    <i class="ri-check-line text-gray-500"></i>
+                  </div>
+                  <div>
+                    <div class="font-medium text-gray-900">-25 RG ×5.0</div>
+                    <div class="text-sm text-gray-500">2026-02-20 16:40 · 越南时间</div>
+                    <div class="text-xs text-gray-400 mt-1">👤 84389225210 · 🏷️ <span class="text-success">已扎帐</span></div>
+                  </div>
+                </div>
+                <div class="text-right">
+                  <div class="font-semibold text-danger">-¥125.00</div>
+                  <div class="text-sm text-gray-400">-₦4,855</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 分页 -->
+          <div class="flex items-center justify-between mt-6 pt-4 border-t border-gray-200">
+            <span class="text-sm text-gray-500">显示 1-10 共 52 条</span>
+            <div class="flex gap-2">
+              <button class="px-3 py-1 border border-gray-300 rounded-lg text-sm text-gray-600 hover:bg-gray-50">上一页</button>
+              <button class="px-3 py-1 bg-primary text-white rounded-lg text-sm">1</button>
+              <button class="px-3 py-1 border border-gray-300 rounded-lg text-sm text-gray-600 hover:bg-gray-50">2</button>
+              <button class="px-3 py-1 border border-gray-300 rounded-lg text-sm text-gray-600 hover:bg-gray-50">3</button>
+              <button class="px-3 py-1 border border-gray-300 rounded-lg text-sm text-gray-600 hover:bg-gray-50">下一页</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Settlement 页面 -->
+      <div id="settlement" class="page">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <!-- 扎帐操作 -->
+          <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+            <h3 class="text-lg font-semibold text-gray-900 mb-4">💰 扎帐操作</h3>
+
+            <div class="bg-warning/10 border border-warning/30 rounded-lg p-4 mb-4">
+              <div class="flex items-center gap-2 text-warning mb-2">
+                <i class="ri-alert-line"></i>
+                <span class="font-medium">待扎帐交易</span>
+              </div>
+              <div class="text-2xl font-bold text-gray-900">5 笔交易待结算</div>
+            </div>
+
+            <div class="space-y-2 mb-4">
+              <div class="flex justify-between items-center p-2 bg-gray-50 rounded">
+                <span class="text-gray-600">IT ×4.9</span>
+                <span class="font-medium">400 刀 = -¥1,960.00</span>
+              </div>
+              <div class="flex justify-between items-center p-2 bg-gray-50 rounded">
+                <span class="text-gray-600">IT ×5.0</span>
+                <span class="font-medium">100 刀 = -¥500.00</span>
+              </div>
+              <div class="flex justify-between items-center p-2 bg-gray-50 rounded">
+                <span class="text-gray-600">RG ×5.0</span>
+                <span class="font-medium">25 刀 = -¥125.00</span>
+              </div>
+              <div class="flex justify-between items-center p-2 bg-green-50 rounded">
+                <span class="text-gray-600">RMB</span>
+                <span class="font-medium text-success">+¥100.00</span>
+              </div>
+            </div>
+
+            <div class="border-t border-gray-200 pt-3 mb-4">
+              <div class="flex justify-between items-center">
+                <span class="font-semibold text-gray-900">扎帐合计</span>
+                <div class="text-right">
+                  <div class="text-xl font-bold text-danger">-¥2,485.00</div>
+                  <div class="text-sm text-gray-400">-₦482,587 (分组 2)</div>
+                </div>
+              </div>
+            </div>
+
+            <button class="w-full bg-success text-white py-3 rounded-lg font-medium hover:bg-green-600 flex items-center justify-center gap-2">
+              <i class="ri-check-line text-xl"></i>
+              确认扎帐
+            </button>
+          </div>
+
+          <!-- 扎帐历史 -->
+          <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+            <h3 class="text-lg font-semibold text-gray-900 mb-4">📜 扎帐历史</h3>
+
+            <div class="space-y-3">
+              <div class="border border-gray-200 rounded-lg p-4 hover:shadow-md transition">
+                <div class="flex items-center justify-between mb-2">
+                  <div class="flex items-center gap-2">
+                    <div class="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
+                      <i class="ri-check-line text-success"></i>
+                    </div>
+                    <div>
+                      <div class="font-medium text-gray-900">扎帐 #001</div>
+                      <div class="text-xs text-gray-500">2026-02-20 18:00</div>
+                    </div>
+                  </div>
+                  <div class="text-right">
+                    <div class="font-semibold text-danger">-¥3,250.00</div>
+                    <div class="text-xs text-gray-400">-₦631,150</div>
+                  </div>
+                </div>
+                <div class="text-sm text-gray-500 bg-gray-50 rounded p-2">
+                  IT: 500 刀 · RG: 100 刀 · RMB: +500
+                </div>
+                <button class="mt-2 text-primary text-sm hover:underline">查看详情</button>
+              </div>
+
+              <div class="border border-gray-200 rounded-lg p-4 hover:shadow-md transition">
+                <div class="flex items-center justify-between mb-2">
+                  <div class="flex items-center gap-2">
+                    <div class="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
+                      <i class="ri-check-line text-success"></i>
+                    </div>
+                    <div>
+                      <div class="font-medium text-gray-900">扎帐 #002</div>
+                      <div class="text-xs text-gray-500">2026-02-19 20:30</div>
+                    </div>
+                  </div>
+                  <div class="text-right">
+                    <div class="font-semibold text-success">+¥1,500.00</div>
+                  </div>
+                </div>
+                <div class="text-sm text-gray-500 bg-gray-50 rounded p-2">
+                  RMB: +1500
+                </div>
+                <button class="mt-2 text-primary text-sm hover:underline">查看详情</button>
+              </div>
+
+              <div class="border border-gray-200 rounded-lg p-4 hover:shadow-md transition">
+                <div class="flex items-center justify-between mb-2">
+                  <div class="flex items-center gap-2">
+                    <div class="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
+                      <i class="ri-check-line text-success"></i>
+                    </div>
+                    <div>
+                      <div class="font-medium text-gray-900">扎帐 #003</div>
+                      <div class="text-xs text-gray-500">2026-02-18 15:00</div>
+                    </div>
+                  </div>
+                  <div class="text-right">
+                    <div class="font-semibold text-danger">-¥8,920.00</div>
+                    <div class="text-xs text-gray-400">-₦1,732,264</div>
+                  </div>
+                </div>
+                <div class="text-sm text-gray-500 bg-gray-50 rounded p-2">
+                  IT: 800 刀 · RG: 200 刀 · SP: 150 刀
+                </div>
+                <button class="mt-2 text-primary text-sm hover:underline">查看详情</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Groups 页面 -->
+      <div id="groups" class="page">
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5 mb-6">
+          <h3 class="text-lg font-semibold text-gray-900 mb-4">📢 群发消息</h3>
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label class="block text-sm text-gray-600 mb-1">选择分组</label>
+              <select class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                <option value="0">分组 0 (2 个群组)</option>
+                <option value="1">分组 1 (1 个群组)</option>
+                <option value="2" selected>分组 2 (1 个群组) ⭐</option>
+                <option value="3">分组 3 (0 个群组)</option>
+              </select>
+            </div>
+            <div class="md:col-span-2">
+              <label class="block text-sm text-gray-600 mb-1">消息内容</label>
+              <input type="text" placeholder="输入要群发的消息..." class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+            </div>
+          </div>
+          <div class="mt-3 flex items-center justify-between">
+            <span class="text-sm text-gray-500">预览：将发送到 <strong>1 个群组</strong></span>
+            <button class="bg-primary text-white px-6 py-2 rounded-lg text-sm font-medium hover:bg-blue-600">
+              <i class="ri-send-plane-line"></i> 发送
+            </button>
+          </div>
+        </div>
+
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+          <h3 class="text-lg font-semibold text-gray-900 mb-4">📋 群组分组</h3>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+            <div class="border border-gray-200 rounded-lg p-4">
+              <div class="flex items-center justify-between mb-2">
+                <span class="font-semibold text-gray-900">分组 0</span>
+                <span class="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">2 群</span>
+              </div>
+              <div class="space-y-1 text-sm text-gray-600">
+                <div class="flex items-center gap-2">
+                  <i class="ri-group-line"></i>
+                  <span>Group A</span>
+                </div>
+                <div class="flex items-center gap-2">
+                  <i class="ri-group-line"></i>
+                  <span>Group B</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="border border-gray-200 rounded-lg p-4">
+              <div class="flex items-center justify-between mb-2">
+                <span class="font-semibold text-gray-900">分组 1</span>
+                <span class="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">1 群</span>
+              </div>
+              <div class="space-y-1 text-sm text-gray-600">
+                <div class="flex items-center gap-2">
+                  <i class="ri-group-line"></i>
+                  <span>Group C</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="border border-primary/30 bg-blue-50 rounded-lg p-4">
+              <div class="flex items-center justify-between mb-2">
+                <span class="font-semibold text-gray-900">分组 2</span>
+                <span class="text-xs text-primary bg-blue-100 px-2 py-1 rounded flex items-center gap-1">
+                  <i class="ri-star-fill"></i> 1 群
+                </span>
+              </div>
+              <div class="space-y-1 text-sm text-gray-600">
+                <div class="flex items-center gap-2">
+                  <i class="ri-group-line"></i>
+                  <span>Nigeria Trading</span>
+                </div>
+              </div>
+              <div class="mt-2 text-xs text-primary">⭐ 双币种显示</div>
+            </div>
+
+            <div class="border border-gray-200 rounded-lg p-4 opacity-60">
+              <div class="flex items-center justify-between mb-2">
+                <span class="font-semibold text-gray-900">分组 3</span>
+                <span class="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">0 群</span>
+              </div>
+              <div class="text-sm text-gray-400 italic">暂无群组</div>
+            </div>
+
+            <div class="border border-gray-200 rounded-lg p-4 opacity-60">
+              <div class="flex items-center justify-between mb-2">
+                <span class="font-semibold text-gray-900">分组 4</span>
+                <span class="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">0 群</span>
+              </div>
+              <div class="text-sm text-gray-400 italic">暂无群组</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Users 页面 -->
+      <div id="users" class="page">
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5 mb-6">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="text-lg font-semibold text-gray-900">👥 白名单管理</h3>
+            <button class="bg-primary text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-600">
+              <i class="ri-add-line"></i> 添加用户
+            </button>
+          </div>
+
+          <div class="space-y-2">
+            <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+              <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center text-primary font-medium">8</div>
+                <div>
+                  <div class="font-medium text-gray-900">+84389225210</div>
+                  <div class="text-xs text-gray-500">管理员 · 已绑定</div>
+                </div>
+              </div>
+              <button class="text-gray-400 hover:text-danger text-sm">移除</button>
+            </div>
+
+            <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+              <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center text-success font-medium">U</div>
+                <div>
+                  <div class="font-medium text-gray-900">+8613800138000</div>
+                  <div class="text-xs text-gray-500">白名单用户</div>
+                </div>
+              </div>
+              <button class="text-gray-400 hover:text-danger text-sm">移除</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+          <h3 class="text-lg font-semibold text-gray-900 mb-4">🔗 绑定关系</h3>
+          <div class="space-y-2">
+            <div class="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
+              <div>
+                <div class="font-medium text-gray-900">84389225210</div>
+                <div class="text-xs text-gray-500">WhatsApp ID: 85257001980</div>
+              </div>
+              <span class="text-xs text-success bg-green-100 px-2 py-1 rounded">已绑定</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Analytics 页面 -->
+      <div id="analytics" class="page">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+            <h3 class="text-lg font-semibold text-gray-900 mb-4">📈 收支趋势</h3>
+            <div class="h-48 bg-gray-50 rounded-lg flex items-center justify-center text-gray-400">
+              <div class="text-center">
+                <i class="ri-bar-chart-box-line text-4xl mb-2"></i>
+                <div class="text-sm">图表区域</div>
+                <div class="text-xs">(使用 Recharts 实现)</div>
+              </div>
+            </div>
+            <div class="flex justify-center gap-4 mt-4">
+              <button class="px-3 py-1 text-sm rounded-lg bg-primary text-white">7 天</button>
+              <button class="px-3 py-1 text-sm rounded-lg border border-gray-300">30 天</button>
+              <button class="px-3 py-1 text-sm rounded-lg border border-gray-300">90 天</button>
+            </div>
+          </div>
+
+          <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+            <h3 class="text-lg font-semibold text-gray-900 mb-4">🥧 类目占比</h3>
+            <div class="h-48 bg-gray-50 rounded-lg flex items-center justify-center text-gray-400">
+              <div class="text-center">
+                <i class="ri-pie-chart-line text-4xl mb-2"></i>
+                <div class="text-sm">饼图区域</div>
+                <div class="text-xs">IT: 45% · RG: 30% · 其他：25%</div>
+              </div>
+            </div>
+            <div class="grid grid-cols-3 gap-2 mt-4">
+              <div class="text-center p-2 bg-red-50 rounded-lg">
+                <div class="text-xs text-gray-500">IT</div>
+                <div class="font-semibold text-danger">45%</div>
+              </div>
+              <div class="text-center p-2 bg-orange-50 rounded-lg">
+                <div class="text-xs text-gray-500">RG</div>
+                <div class="font-semibold text-orange-500">30%</div>
+              </div>
+              <div class="text-center p-2 bg-blue-50 rounded-lg">
+                <div class="text-xs text-gray-500">其他</div>
+                <div class="font-semibold text-primary">25%</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5 mt-6">
+          <h3 class="text-lg font-semibold text-gray-900 mb-4">📊 类目明细</h3>
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead class="bg-gray-50">
+                <tr>
+                  <th class="text-left px-4 py-3 font-medium text-gray-600">类目</th>
+                  <th class="text-right px-4 py-3 font-medium text-gray-600">刀数</th>
+                  <th class="text-right px-4 py-3 font-medium text-gray-600">人民币</th>
+                  <th class="text-right px-4 py-3 font-medium text-gray-600">奈拉 (分组 2)</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-gray-100">
+                <tr>
+                  <td class="px-4 py-3 font-medium">IT</td>
+                  <td class="text-right px-4 py-3">500 刀</td>
+                  <td class="text-right px-4 py-3 text-danger">-¥2,460.00</td>
+                  <td class="text-right px-4 py-3 text-gray-400">-₦477,732</td>
+                </tr>
+                <tr>
+                  <td class="px-4 py-3 font-medium">RG</td>
+                  <td class="text-right px-4 py-3">50 刀</td>
+                  <td class="text-right px-4 py-3 text-danger">-¥250.00</td>
+                  <td class="text-right px-4 py-3 text-gray-400">-₦48,550</td>
+                </tr>
+                <tr>
+                  <td class="px-4 py-3 font-medium">RMB</td>
+                  <td class="text-right px-4 py-3">-</td>
+                  <td class="text-right px-4 py-3 text-success">+¥100.00</td>
+                  <td class="text-right px-4 py-3 text-gray-400">-</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Settings 页面 -->
+      <div id="settings" class="page">
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5 mb-6">
+          <h3 class="text-lg font-semibold text-gray-900 mb-4">💱 NGN 汇率设置</h3>
+          <div class="flex items-center gap-4">
+            <div class="flex-1">
+              <label class="block text-sm text-gray-600 mb-1">当前汇率</label>
+              <div class="text-2xl font-bold text-gray-900">194.2</div>
+            </div>
+            <div class="flex-1">
+              <label class="block text-sm text-gray-600 mb-1">新汇率</label>
+              <input type="number" step="0.1" placeholder="输入新汇率" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-lg">
+            </div>
+            <div class="flex items-end">
+              <button class="bg-primary text-white px-6 py-2 rounded-lg font-medium hover:bg-blue-600">
+                确认修改
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5 mb-6">
+          <h3 class="text-lg font-semibold text-gray-900 mb-4">📁 数据管理</h3>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="border border-gray-200 rounded-lg p-4">
+              <div class="flex items-center gap-3 mb-2">
+                <div class="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+                  <i class="ri-download-line text-primary"></i>
+                </div>
+                <div>
+                  <div class="font-medium text-gray-900">导出交易记录</div>
+                  <div class="text-xs text-gray-500">CSV 格式，可用于 Excel 分析</div>
+                </div>
+              </div>
+              <button class="w-full border border-primary text-primary py-2 rounded-lg font-medium hover:bg-blue-50">
+                导出数据
+              </button>
+            </div>
+
+            <div class="border border-gray-200 rounded-lg p-4">
+              <div class="flex items-center gap-3 mb-2">
+                <div class="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
+                  <i class="ri-database-2-line text-success"></i>
+                </div>
+                <div>
+                  <div class="font-medium text-gray-900">备份数据库</div>
+                  <div class="text-xs text-gray-500">手动创建完整备份</div>
+                </div>
+              </div>
+              <button class="w-full border border-success text-success py-2 rounded-lg font-medium hover:bg-green-50">
+                立即备份
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+          <h3 class="text-lg font-semibold text-gray-900 mb-4">⚙️ 系统信息</h3>
+          <div class="space-y-3 text-sm">
+            <div class="flex justify-between items-center py-2 border-b border-gray-100">
+              <span class="text-gray-600">WhatsApp 账号</span>
+              <span class="font-medium">85257001980</span>
+            </div>
+            <div class="flex justify-between items-center py-2 border-b border-gray-100">
+              <span class="text-gray-600">数据库</span>
+              <span class="font-medium">bookkeeping.db</span>
+            </div>
+            <div class="flex justify-between items-center py-2 border-b border-gray-100">
+              <span class="text-gray-600">连接状态</span>
+              <span class="text-success flex items-center gap-1">
+                <i class="ri-wifi-line"></i> 已连接
+              </span>
+            </div>
+            <div class="flex justify-between items-center py-2">
+              <span class="text-gray-600">系统版本</span>
+              <span class="font-medium">v1.0.0</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <script>
+    function switchPage(pageId) {
+      // 隐藏所有页面
+      document.querySelectorAll('.page').forEach(page => {
+        page.classList.remove('active');
+      });
+
+      // 显示目标页面
+      document.getElementById(pageId).classList.add('active');
+
+      // 更新导航状态
+      document.querySelectorAll('.nav-item').forEach(item => {
+        item.classList.remove('active');
+      });
+
+      // 找到对应的导航项并激活
+      event.currentTarget.classList.add('active');
+
+      // 滚动到顶部
+      window.scrollTo(0, 0);
+    }
+  </script>
+</body>
+</html>

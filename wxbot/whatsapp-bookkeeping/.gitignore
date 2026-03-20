@@ -1,0 +1,20 @@
+    1 node_modules/
+    2 dist/
+    3 *.db-shm
+    4 *.db-wal
+    5 .DS_Store
+    6 .env
+    7 .env.local
+    8 logs/
+    9 *.log
+   10
+   11 # ======== 核心保护数据 ========
+   12 # 忽略 WhatsApp 登录态数据
+   13 auth/
+   14 # 忽略所有 sqlite 数据库文件
+   15 data/*.db
+   16 # 忽略配置文件（包含管理员手机号等敏感信息）
+   17 config.json
+   18
+   19 # 忽略打包生成的迁移文件
+   20 whatsapp-migration-*.tar.gz
