@@ -3,7 +3,9 @@
 import os
 from pathlib import Path
 
-from bookkeeping_core.models import IncomingMessage
+from bookkeeping_core.contracts import NormalizedMessageEnvelope
+
+from .config import save_config
 
 
 def prepare_runtime(runtime_dir: str | Path) -> None:
@@ -17,7 +19,7 @@ def prepare_runtime(runtime_dir: str | Path) -> None:
 
 
 class WeChatPlatformAPI:
-    def __init__(self, listen_chats: list[str], language: str, runtime_dir: str) -> None:
+    def __init__(self, listen_chats: list[str], language: str, runtime_dir: str, config=None, db=None, logger=None) -> None:
         prepare_runtime(runtime_dir)
         from wxautox import WeChat
 
@@ -25,6 +27,9 @@ class WeChatPlatformAPI:
         self.wx = WeChat(language=language, myinfo=True)
         self.self_name = getattr(self.wx, "nickname", "") or ""
         self.self_wxid = ((getattr(self.wx, "myinfo", None) or {}).get("id") or "")
+        self.config = config
+        self.db = db
+        self.logger = logger
         self._listeners_ready = False
         self._sender_cache: dict[tuple[str, str, str], dict[str, str]] = {}
 
@@ -62,21 +67,31 @@ class WeChatPlatformAPI:
         self.listen_chats = [name for name in self.listen_chats if name != chat_name]
         return True
 
-    def poll_messages(self) -> list[IncomingMessage]:
+    def poll_messages(self) -> list[NormalizedMessageEnvelope]:
         self.ensure_listeners()
         payload = self.wx.GetListenMessage()
-        messages: list[IncomingMessage] = []
+        messages: list[NormalizedMessageEnvelope] = []
         if isinstance(payload, dict):
             for items in payload.values():
                 if isinstance(items, list):
                     for item in items:
-                        normalized = self._normalize_message(item)
-                        if normalized is not None and normalized.chat_name in self.listen_chats:
+                        try:
+                            normalized = self._normalize_message(item)
+                        except Exception:
+                            if self.logger is not None:
+                                self.logger.warning("Dropped invalid WeChat payload item", exc_info=True)
+                            continue
+                        if normalized is not None and normalized.chat_name in self.listen_chats and not self._handle_control_envelope(normalized):
                             messages.append(normalized)
         elif isinstance(payload, list):
             for item in payload:
-                normalized = self._normalize_message(item)
-                if normalized is not None and normalized.chat_name in self.listen_chats:
+                try:
+                    normalized = self._normalize_message(item)
+                except Exception:
+                    if self.logger is not None:
+                        self.logger.warning("Dropped invalid WeChat payload item", exc_info=True)
+                    continue
+                if normalized is not None and normalized.chat_name in self.listen_chats and not self._handle_control_envelope(normalized):
                     messages.append(normalized)
         return messages
 
@@ -98,7 +113,87 @@ class WeChatPlatformAPI:
         except Exception:
             return False
 
-    def _normalize_message(self, item) -> IncomingMessage | None:
+    def _handle_control_envelope(self, message: NormalizedMessageEnvelope) -> bool:
+        text = (message.content or "").strip()
+        if not text.startswith("/"):
+            return False
+        if text != "/groups" and not text.startswith("/qxqz") and not text.startswith("/jhqz"):
+            return False
+
+        observed_id = message.sender_id or ""
+        sender_name = message.sender_name or ""
+        sender_id = observed_id
+        if self.db is not None:
+            sender_id = self.db.resolve_identity(
+                platform=message.platform,
+                chat_id=message.chat_id,
+                observed_id=observed_id,
+                observed_name=sender_name,
+            )
+
+        master_users = set(getattr(self.config, "master_users", [])) if self.config is not None else set()
+        is_master = bool(self.db and (sender_id in master_users or self.db.is_admin(sender_id)))
+
+        if self.logger is not None:
+            self.logger.info(
+                "[control:%s] %s (%s -> %s): %s | is_master=%s",
+                message.chat_id,
+                sender_name,
+                observed_id,
+                sender_id,
+                text,
+                is_master,
+            )
+
+        if not is_master:
+            return False
+
+        if text == "/groups":
+            lines = ["当前监听名单:"]
+            lines.extend(f"- {name}" for name in self.listen_chats)
+            self.send_text(message.chat_id, "\n".join(lines))
+            return True
+
+        if text.startswith("/qxqz"):
+            parts = text.split(" ", 1)
+            if len(parts) != 2 or not parts[1].strip():
+                self.send_text(message.chat_id, "格式: /qxqz 群名\n例: /qxqz 皇家议事厅【1111】")
+                return True
+            target_chat = parts[1].strip()
+            if not self.remove_listener(target_chat):
+                self.send_text(message.chat_id, f"监听不存在: {target_chat}")
+                return True
+            if self.config is not None:
+                self.config.listen_chats = list(self.listen_chats)
+                save_config(self.config)
+            if self.logger is not None:
+                self.logger.info("Listen chat removed: %s", target_chat)
+            self.send_text(message.chat_id, f"已取消激活: {target_chat}")
+            return True
+
+        if not text.startswith("/jhqz"):
+            return False
+
+        parts = text.split(" ", 1)
+        if len(parts) != 2 or not parts[1].strip():
+            self.send_text(message.chat_id, "格式: /jhqz 群名\n例: /jhqz 皇家议事厅【1111】")
+            return True
+        target_chat = parts[1].strip()
+        if target_chat in self.listen_chats:
+            self.send_text(message.chat_id, f"已激活: {target_chat}")
+            return True
+        if not self.add_listener(target_chat):
+            self.send_text(message.chat_id, f"激活失败")
+            return True
+        if self.config is not None:
+            self.config.listen_chats = list(self.listen_chats)
+            save_config(self.config)
+        if self.logger is not None:
+            self.logger.info("New listen chat added: %s", target_chat)
+        self.send_text(message.chat_id, f"已激活: {target_chat}\n下一步请到该群里发送 /set 1-9 进行分组")
+        return True
+
+    def _normalize_message(self, item) -> NormalizedMessageEnvelope | None:
         if item is None or not hasattr(item, "details"):
             return None
         details = dict(item.details)
@@ -111,17 +206,21 @@ class WeChatPlatformAPI:
             sender_id = self.self_wxid or sender_name or str(details.get("sender") or "")
         else:
             sender_id, sender_name = self._resolve_sender_identity(details)
-        return IncomingMessage(
-            platform="wechat",
-            message_id=str(details.get("id") or ""),
-            chat_id=chat_name,
-            chat_name=chat_name,
-            sender_id=sender_id,
-            sender_name=sender_name,
-            content=str(details.get("content") or "").strip(),
-            is_group=str(details.get("chat_type") or "") == "group",
-            from_self=from_self,
-            raw=details,
+        return NormalizedMessageEnvelope.from_dict(
+            {
+                "platform": "wechat",
+                "message_id": str(details.get("id") or ""),
+                "chat_id": chat_name,
+                "chat_name": chat_name,
+                "is_group": str(details.get("chat_type") or "") == "group",
+                "sender_id": sender_id,
+                "sender_name": sender_name,
+                "sender_kind": "self" if from_self else "user",
+                "content_type": str(details.get("content_type") or details.get("msg_type") or "text"),
+                "text": str(details.get("content") or details.get("text") or "").strip(),
+                "from_self": from_self,
+                "received_at": details.get("received_at"),
+            }
         )
 
     def _resolve_sender_identity(self, details: dict) -> tuple[str, str]:

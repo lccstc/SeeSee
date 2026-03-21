@@ -1,6 +1,34 @@
+"""Historical compatibility importer for `/api/sync/events`.
+
+This module keeps the legacy sync ingestion path alive for backfill and
+compatibility imports. It is not the live runtime entrypoint; live message
+processing happens through `/api/core/messages`.
+"""
+
+
 from __future__ import annotations
 
 from typing import Any
+
+
+class _CommitSuppressedConnection:
+    def __init__(self, inner_conn) -> None:
+        self._inner_conn = inner_conn
+
+    def execute(self, sql: str, params=()):
+        return self._inner_conn.execute(sql, params)
+
+    def commit(self) -> None:
+        return None
+
+    def rollback(self) -> None:
+        self._inner_conn.rollback()
+
+    def close(self) -> None:
+        self._inner_conn.close()
+
+    def __getattr__(self, name: str):
+        return getattr(self._inner_conn, name)
 
 
 def ingest_sync_events(db, events: list[dict[str, Any]]) -> dict[str, int]:
@@ -17,9 +45,11 @@ def ingest_sync_events(db, events: list[dict[str, Any]]) -> dict[str, int]:
             duplicates += 1
             continue
 
+        original_conn = db.conn
+        db.conn = _CommitSuppressedConnection(original_conn)
         try:
             _apply_event(db, event)
-            db.conn.execute(
+            original_conn.execute(
                 """
                 INSERT INTO ingested_events (
                   event_id, event_type, platform, source_machine, schema_version, occurred_at
@@ -34,11 +64,13 @@ def ingest_sync_events(db, events: list[dict[str, Any]]) -> dict[str, int]:
                     str(event["occurred_at"]),
                 ),
             )
-            db.conn.commit()
+            original_conn.commit()
             accepted += 1
         except Exception:
-            db.conn.rollback()
+            original_conn.rollback()
             raise
+        finally:
+            db.conn = original_conn
 
     return {"accepted": accepted, "duplicates": duplicates}
 

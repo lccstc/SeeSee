@@ -28,6 +28,14 @@ export interface BalanceSummary {
   byCategory: Record<string, { count: number; totalRmb: number }>;
 }
 
+export interface SyncStatusSummary {
+  pendingCount: number;
+  retryingCount: number;
+  lastError: string | null;
+  lastFailedAt: string | null;
+  lastSentAt: string | null;
+}
+
 export class BookkeepingDB {
   private db: InstanceType<typeof Database>;
 
@@ -864,6 +872,38 @@ export class BookkeepingDB {
           available_at = datetime('now', '+5 seconds')
       WHERE id IN (${placeholders})
     `).run(error, ...ids);
+  }
+
+  getSyncStatusSummary(): SyncStatusSummary {
+    const counts = this.db.prepare(`
+      SELECT
+        COUNT(*) FILTER (WHERE status = 'pending') as pendingCount,
+        COUNT(*) FILTER (WHERE status = 'pending' AND attempt_count > 0) as retryingCount,
+        MAX(sent_at) as lastSentAt
+      FROM sync_outbox
+    `).get() as {
+      pendingCount: number;
+      retryingCount: number;
+      lastSentAt: string | null;
+    };
+
+    const lastFailure = this.db.prepare(`
+      SELECT
+        last_error as lastError,
+        available_at as lastFailedAt
+      FROM sync_outbox
+      WHERE attempt_count > 0 AND last_error IS NOT NULL
+      ORDER BY available_at DESC, id DESC
+      LIMIT 1
+    `).get() as { lastError: string; lastFailedAt: string } | undefined;
+
+    return {
+      pendingCount: counts.pendingCount,
+      retryingCount: counts.retryingCount,
+      lastError: lastFailure?.lastError ?? null,
+      lastFailedAt: lastFailure?.lastFailedAt ?? null,
+      lastSentAt: counts.lastSentAt,
+    };
   }
 
   close() {

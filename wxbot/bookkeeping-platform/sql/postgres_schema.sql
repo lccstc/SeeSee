@@ -15,11 +15,57 @@ CREATE TABLE IF NOT EXISTS transactions (
   rmb_value NUMERIC(18, 4) NOT NULL,
   raw TEXT NOT NULL,
   ngn_rate NUMERIC(18, 6),
+  usd_amount NUMERIC(18, 4),
+  unit_face_value NUMERIC(18, 6),
+  unit_count NUMERIC(18, 6),
+  parse_version TEXT NOT NULL DEFAULT '1',
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   deleted INTEGER NOT NULL DEFAULT 0,
   settled INTEGER NOT NULL DEFAULT 0,
   settlement_id BIGINT,
   settled_at TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS accounting_periods (
+  id BIGSERIAL PRIMARY KEY,
+  start_at TIMESTAMP NOT NULL,
+  end_at TIMESTAMP NOT NULL,
+  closed_at TIMESTAMP NOT NULL,
+  closed_by TEXT NOT NULL,
+  note TEXT,
+  has_adjustment INTEGER NOT NULL DEFAULT 0,
+  snapshot_version INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS period_group_snapshots (
+  id BIGSERIAL PRIMARY KEY,
+  period_id BIGINT NOT NULL,
+  group_key TEXT NOT NULL,
+  platform TEXT NOT NULL,
+  chat_name TEXT NOT NULL,
+  group_num INTEGER,
+  business_role TEXT,
+  opening_balance NUMERIC(18, 4) NOT NULL DEFAULT 0,
+  income NUMERIC(18, 4) NOT NULL DEFAULT 0,
+  expense NUMERIC(18, 4) NOT NULL DEFAULT 0,
+  closing_balance NUMERIC(18, 4) NOT NULL DEFAULT 0,
+  transaction_count INTEGER NOT NULL DEFAULT 0,
+  anomaly_flags_json TEXT NOT NULL DEFAULT '[]',
+  UNIQUE (period_id, group_key)
+);
+
+CREATE TABLE IF NOT EXISTS period_card_stats (
+  id BIGSERIAL PRIMARY KEY,
+  period_id BIGINT NOT NULL,
+  group_key TEXT NOT NULL,
+  business_role TEXT,
+  card_type TEXT NOT NULL,
+  usd_amount NUMERIC(18, 4) NOT NULL DEFAULT 0,
+  rate NUMERIC(18, 6),
+  rmb_amount NUMERIC(18, 4) NOT NULL DEFAULT 0,
+  unit_face_value NUMERIC(18, 6),
+  unit_count NUMERIC(18, 6),
+  sample_raw TEXT
 );
 
 CREATE TABLE IF NOT EXISTS settlements (
@@ -39,6 +85,10 @@ CREATE TABLE IF NOT EXISTS groups (
   chat_id TEXT NOT NULL,
   chat_name TEXT NOT NULL,
   group_num INTEGER,
+  business_role TEXT,
+  role_source TEXT,
+  capture_enabled INTEGER NOT NULL DEFAULT 1,
+  status TEXT NOT NULL DEFAULT 'active',
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );

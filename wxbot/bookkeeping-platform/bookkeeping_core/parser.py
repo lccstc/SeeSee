@@ -55,9 +55,9 @@ def looks_like_transaction(text: str) -> bool:
 def format_confirmation(tx: ParsedTransaction) -> str:
     sign = "+" if tx.rmb_value >= 0 else "-"
     if tx.category == "rmb":
-        return f"OK {sign}{abs(tx.rmb_value):.2f}"
+        return f"✅ {sign}{abs(tx.rmb_value):.2f}"
     input_sign = "+" if tx.input_sign > 0 else "-"
-    return f"OK {input_sign}{tx.amount:g} {tx.category.upper()} x{tx.rate:g} = {sign}{abs(tx.rmb_value):.2f}"
+    return f"✅ {input_sign}{tx.amount:g} {tx.category.upper()} ×{tx.rate:g} = {sign}{abs(tx.rmb_value):.2f}"
 
 
 def _parse_match(sign_str: str, amount_str: str, cat_raw: str | None, rate_str: str | None, raw: str) -> ParsedTransaction | None:

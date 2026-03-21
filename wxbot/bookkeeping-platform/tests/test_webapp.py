@@ -2,13 +2,19 @@ from __future__ import annotations
 
 import io
 import json
+import sys
 import tempfile
+import types
 import unittest
+from datetime import datetime
 from pathlib import Path
+from urllib.parse import urlencode
 from wsgiref.util import setup_testing_defaults
 
 from bookkeeping_core.database import BookkeepingDB
+from bookkeeping_core.sync_events import ingest_sync_events
 from bookkeeping_web.app import create_app
+from tests.test_postgres_backend import _FakeCursor, _FakePsycopgConnection
 
 
 class WebAppTests(unittest.TestCase):
@@ -16,6 +22,7 @@ class WebAppTests(unittest.TestCase):
         self.tempdir = tempfile.TemporaryDirectory()
         self.db_path = Path(self.tempdir.name) / "web.db"
         self.db = BookkeepingDB(self.db_path)
+        self.db.add_admin("finance-web", "system", "bootstrap")
         self.db.set_group(
             platform="wechat",
             group_key="wechat:g-100",
@@ -54,6 +61,7 @@ class WebAppTests(unittest.TestCase):
         path: str,
         payload: dict | None = None,
         headers: dict[str, str] | None = None,
+        query_string: str | None = None,
     ) -> tuple[int, dict]:
         body = b""
         if payload is not None:
@@ -62,6 +70,7 @@ class WebAppTests(unittest.TestCase):
         setup_testing_defaults(environ)
         environ["REQUEST_METHOD"] = method
         environ["PATH_INFO"] = path
+        environ["QUERY_STRING"] = query_string or ""
         environ["CONTENT_LENGTH"] = str(len(body))
         environ["wsgi.input"] = io.BytesIO(body)
         if body:
@@ -79,12 +88,81 @@ class WebAppTests(unittest.TestCase):
         response["body"] = b"".join(chunks)
         return response["status"], json.loads(response["body"].decode("utf-8"))
 
+    def _request_text(
+        self,
+        method: str,
+        path: str,
+        *,
+        query: dict[str, str | int] | None = None,
+    ) -> tuple[int, str]:
+        environ = {}
+        setup_testing_defaults(environ)
+        environ["REQUEST_METHOD"] = method
+        environ["PATH_INFO"] = path
+        environ["QUERY_STRING"] = urlencode(query or {})
+        environ["CONTENT_LENGTH"] = "0"
+        environ["wsgi.input"] = io.BytesIO(b"")
+
+        response = {"status": 500, "body": b""}
+
+        def start_response(status: str, headers: list[tuple[str, str]]) -> None:
+            response["status"] = int(status.split(" ", 1)[0])
+
+        chunks = self.app(environ, start_response)
+        response["body"] = b"".join(chunks)
+        return response["status"], response["body"].decode("utf-8")
+
     def test_dashboard_endpoint_returns_group_and_period_data(self) -> None:
         status, payload = self._request("GET", "/api/dashboard")
         self.assertEqual(status, 200)
         self.assertEqual(len(payload["current_groups"]), 1)
         self.assertEqual(payload["current_groups"][0]["chat_name"], "客户群-Web")
         self.assertEqual(len(payload["recent_periods"]), 1)
+
+    def test_accounting_period_close_and_list_endpoints_work(self) -> None:
+        status, payload = self._request(
+            "POST",
+            "/api/accounting-periods/close",
+            {
+                "start_at": "2026-03-20 08:00:00",
+                "end_at": "2026-03-20 10:00:00",
+                "closed_by": "finance-web",
+                "note": "Web 关闭账期",
+            },
+        )
+        self.assertEqual(status, 200)
+        self.assertGreater(payload["period_id"], 0)
+
+        status, periods = self._request("GET", "/api/accounting-periods")
+        self.assertEqual(status, 200)
+        self.assertEqual(len(periods["items"]), 1)
+        self.assertEqual(int(periods["items"][0]["id"]), payload["period_id"])
+        self.assertEqual(str(periods["items"][0]["closed_by"]), "finance-web")
+
+        status, dashboard = self._request("GET", "/api/dashboard")
+        self.assertEqual(status, 200)
+        self.assertEqual(len(dashboard["recent_periods"]), 1)
+        self.assertEqual(int(dashboard["recent_periods"][0]["period_id"]), payload["period_id"])
+        self.assertEqual(round(float(dashboard["recent_periods"][0]["closing_balance"]), 2), 300.00)
+
+    def test_accounting_period_list_endpoint_returns_recent_20(self) -> None:
+        for index in range(22):
+            self.db.insert_accounting_period(
+                start_at=f"2026-03-19 {index:02d}:00:00",
+                end_at=f"2026-03-19 {index:02d}:30:00",
+                closed_at=f"2026-03-19 {index:02d}:30:00",
+                closed_by=f"finance-{index}",
+                note=f"period-{index}",
+                has_adjustment=0,
+                snapshot_version=1,
+            )
+        self.db.conn.commit()
+
+        status, payload = self._request("GET", "/api/accounting-periods")
+        self.assertEqual(status, 200)
+        self.assertEqual(len(payload["items"]), 20)
+        self.assertEqual(payload["items"][0]["note"], "period-21")
+        self.assertEqual(payload["items"][-1]["note"], "period-2")
 
     def test_adjustment_endpoint_creates_adjustment(self) -> None:
         settlement_id = self.db.get_settlements("wechat:g-100", 1)[0]["id"]
@@ -128,6 +206,229 @@ class WebAppTests(unittest.TestCase):
         self.assertEqual(len(dashboard["combinations"]), 1)
         self.assertEqual(dashboard["combinations"][0]["label"], "客户总览")
 
+    def test_runtime_endpoint_requires_bearer_token(self) -> None:
+        status, payload = self._request(
+            "POST",
+            "/api/core/messages",
+            {
+                "platform": "wechat",
+                "message_id": "msg-runtime-unauthorized",
+                "chat_id": "g-100",
+                "chat_name": "客户群-Web",
+                "is_group": True,
+                "sender_id": "finance-web",
+                "sender_name": "Finance",
+                "content_type": "text",
+                "text": "/set 2",
+            },
+        )
+        self.assertEqual(status, 401)
+        self.assertEqual(payload["error"], "Unauthorized")
+
+    def test_runtime_endpoint_processes_set_command_and_persists_group(self) -> None:
+        status, payload = self._request(
+            "POST",
+            "/api/core/messages",
+            {
+                "platform": "wechat",
+                "message_id": "msg-runtime-set-1",
+                "chat_id": "g-100",
+                "chat_name": "客户群-Web",
+                "is_group": True,
+                "sender_id": "finance-web",
+                "sender_name": "Finance",
+                "content_type": "text",
+                "text": "/set 2",
+            },
+            headers={"Authorization": "Bearer sync-secret"},
+        )
+        self.assertEqual(status, 200)
+        self.assertIn("actions", payload)
+        self.assertEqual(
+            payload["actions"],
+            [
+                {
+                    "action_type": "send_text",
+                    "chat_id": "g-100",
+                    "text": "✅ This group assigned to Group 2\nOnly groups with numbers can use bookkeeping",
+                }
+            ],
+        )
+
+        group = self.db.get_group_by_key("wechat:g-100")
+        self.assertIsNotNone(group)
+        self.assertEqual(int(group["group_num"]), 2)
+
+    def test_runtime_endpoint_accepts_bootstrap_master_users_from_app_config(self) -> None:
+        app = create_app(self.db_path, sync_token="sync-secret", runtime_master_users=["bootstrap-wa"])
+
+        body = json.dumps(
+            {
+                "platform": "whatsapp",
+                "message_id": "msg-runtime-set-bootstrap",
+                "chat_id": "12036340001@g.us",
+                "chat_name": "WhatsApp测试群",
+                "is_group": True,
+                "sender_id": "bootstrap-wa",
+                "sender_name": "Bootstrap WA",
+                "content_type": "text",
+                "text": "/set 2",
+            }
+        ).encode("utf-8")
+
+        environ = {}
+        setup_testing_defaults(environ)
+        environ["REQUEST_METHOD"] = "POST"
+        environ["PATH_INFO"] = "/api/core/messages"
+        environ["CONTENT_LENGTH"] = str(len(body))
+        environ["CONTENT_TYPE"] = "application/json"
+        environ["HTTP_AUTHORIZATION"] = "Bearer sync-secret"
+        environ["wsgi.input"] = io.BytesIO(body)
+
+        response = {"status": 500, "body": b""}
+
+        def start_response(status: str, headers: list[tuple[str, str]]) -> None:
+            response["status"] = int(status.split(" ", 1)[0])
+
+        chunks = app(environ, start_response)
+        response["body"] = b"".join(chunks)
+        payload = json.loads(response["body"].decode("utf-8"))
+
+        self.assertEqual(response["status"], 200)
+        self.assertEqual(
+            payload["actions"],
+            [
+                {
+                    "action_type": "send_text",
+                    "chat_id": "12036340001@g.us",
+                    "text": "✅ This group assigned to Group 2\nOnly groups with numbers can use bookkeeping",
+                }
+            ],
+        )
+
+        group = self.db.get_group_by_key("whatsapp:12036340001@g.us")
+        self.assertIsNotNone(group)
+        self.assertEqual(int(group["group_num"]), 2)
+
+    def test_runtime_endpoint_processes_transaction_message(self) -> None:
+        self.db.set_group(
+            platform="wechat",
+            group_key="wechat:g-200",
+            chat_id="g-200",
+            chat_name="交易群-Web",
+            group_num=3,
+        )
+        status, payload = self._request(
+            "POST",
+            "/api/core/messages",
+            {
+                "platform": "wechat",
+                "message_id": "msg-runtime-tx-1",
+                "chat_id": "g-200",
+                "chat_name": "交易群-Web",
+                "is_group": True,
+                "sender_id": "finance-web",
+                "sender_name": "Finance",
+                "content_type": "text",
+                "text": "+100rmb",
+            },
+            headers={"Authorization": "Bearer sync-secret"},
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(len(payload["actions"]), 1)
+        self.assertEqual(payload["actions"][0]["action_type"], "send_text")
+        self.assertEqual(payload["actions"][0]["chat_id"], "g-200")
+        self.assertEqual(payload["actions"][0]["text"], "✅ +100.00\n📊 Balance: +100.00")
+
+    def test_runtime_endpoint_deduplicates_replayed_message_id(self) -> None:
+        payload = {
+            "platform": "wechat",
+            "message_id": "msg-runtime-tx-dup",
+            "chat_id": "g-200",
+            "chat_name": "交易群-Web",
+            "is_group": True,
+            "sender_id": "finance-web",
+            "sender_name": "Finance",
+            "content_type": "text",
+            "text": "+100rmb",
+        }
+        self.db.set_group(
+            platform="wechat",
+            group_key="wechat:g-200",
+            chat_id="g-200",
+            chat_name="交易群-Web",
+            group_num=3,
+        )
+
+        status, first = self._request(
+            "POST",
+            "/api/core/messages",
+            payload,
+            headers={"Authorization": "Bearer sync-secret"},
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(len(first["actions"]), 1)
+
+        status, second = self._request(
+            "POST",
+            "/api/core/messages",
+            payload,
+            headers={"Authorization": "Bearer sync-secret"},
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(second["actions"], [])
+
+        history = self.db.get_history("wechat:g-200", 10)
+        self.assertEqual(len(history), 1)
+
+    def test_runtime_endpoint_rejects_non_boolean_is_group(self) -> None:
+        status, payload = self._request(
+            "POST",
+            "/api/core/messages",
+            {
+                "platform": "wechat",
+                "message_id": "msg-runtime-bad-bool",
+                "chat_id": "g-200",
+                "chat_name": "交易群-Web",
+                "is_group": "false",
+                "sender_id": "finance-web",
+                "sender_name": "Finance",
+                "content_type": "text",
+                "text": "+100rmb",
+            },
+            headers={"Authorization": "Bearer sync-secret"},
+        )
+        self.assertEqual(status, 400)
+        self.assertIn("Bad payload", payload["error"])
+
+    def test_dashboard_workbench_and_history_pages_render_and_fetch_json(self) -> None:
+        period_id = self._request(
+            "POST",
+            "/api/accounting-periods/close",
+            {
+                "start_at": "2026-03-20 08:00:00",
+                "end_at": "2026-03-20 10:00:00",
+                "closed_by": "finance-web",
+            },
+        )[1]["period_id"]
+
+        for path in ("/", "/workbench", "/history"):
+            status, html = self._request_text("GET", path)
+            self.assertEqual(status, 200)
+            self.assertIn("<main", html)
+
+        status, workbench = self._request("GET", "/api/workbench", query_string=f"period_id={period_id}")
+        self.assertEqual(status, 200)
+        self.assertIn("summary", workbench)
+
+        status, history = self._request(
+            "GET",
+            "/api/history",
+            query_string="start_date=2026-03-01&end_date=2026-03-31",
+        )
+        self.assertEqual(status, 200)
+        self.assertIn("card_rankings", history)
+
     def test_sync_endpoint_requires_bearer_token(self) -> None:
         status, payload = self._request(
             "POST",
@@ -152,6 +453,63 @@ class WebAppTests(unittest.TestCase):
         )
         self.assertEqual(status, 401)
         self.assertEqual(payload["error"], "Unauthorized")
+
+    def test_readme_separates_runtime_and_compatibility_sync_paths(self) -> None:
+        readme = Path(__file__).resolve().parents[1] / "README.md"
+        readme_text = readme.read_text(encoding="utf-8")
+
+        self.assertIn("POST /api/core/messages", readme_text)
+        self.assertIn("/api/sync/events", readme_text)
+        self.assertIn("历史兼容", readme_text)
+        self.assertIn("不承诺 live reply", readme_text)
+        self.assertIn("WhatsApp 本地记账 bot 已降级为薄适配层", readme_text)
+        self.assertIn("当前接收端按单个事件做原子提交", readme_text)
+        self.assertIn("同一事件重复推送不会重复记账", readme_text)
+
+    def test_sync_events_rolls_back_business_side_effects_when_ingested_events_insert_fails(self) -> None:
+        class _FailingIngestEventsConnProxy:
+            def __init__(self, inner_conn) -> None:
+                self._inner_conn = inner_conn
+
+            def execute(self, sql: str, params=()):
+                if "INSERT INTO ingested_events" in sql:
+                    raise RuntimeError("ingested_events insert failed")
+                return self._inner_conn.execute(sql, params)
+
+            def __getattr__(self, name: str):
+                return getattr(self._inner_conn, name)
+
+        self.db.conn = _FailingIngestEventsConnProxy(self.db.conn)
+
+        event = {
+            "event_id": "evt-atomic-rollback-1",
+            "event_type": "transaction.created",
+            "schema_version": 1,
+            "platform": "whatsapp",
+            "source_machine": "wa-node-01",
+            "occurred_at": "2026-03-20T10:15:30Z",
+            "payload": {
+                "group_id": "12036348888@g.us",
+                "group_num": 8,
+                "chat_name": "供应商群-C",
+                "sender_id": "+85299999999",
+                "sender_name": "+85299999999",
+                "source_transaction_id": 502,
+                "input_sign": 1,
+                "amount": 120,
+                "category": "rmb",
+                "rate": None,
+                "rmb_value": 120,
+                "raw": "rmb+120",
+                "created_at": "2026-03-20 10:15:30",
+            },
+        }
+
+        with self.assertRaisesRegex(RuntimeError, "ingested_events insert failed"):
+            ingest_sync_events(self.db, [event])
+
+        self.assertIsNone(self.db.get_group_by_key("whatsapp:12036348888@g.us"))
+        self.assertEqual(self.db.get_history("whatsapp:12036348888@g.us", 10), [])
 
     def test_sync_endpoint_ingests_events_and_keeps_idempotency(self) -> None:
         event = {
@@ -209,6 +567,77 @@ class WebAppTests(unittest.TestCase):
 
         history = self.db.get_history("whatsapp:12036349999@g.us", 10)
         self.assertEqual(len(history), 1)
+
+
+class _WebFakePsycopgConnection(_FakePsycopgConnection):
+    def execute(self, sql: str, params=()):
+        translated = sql.replace("%s", "?")
+        if translated.strip() == "SELECT * FROM accounting_periods ORDER BY id ASC":
+            rows = self._conn.execute(translated, params).fetchall()
+            return _FakeCursor(
+                rows=[
+                    {
+                        "id": int(row["id"]),
+                        "start_at": datetime.fromisoformat(str(row["start_at"])),
+                        "end_at": datetime.fromisoformat(str(row["end_at"])),
+                        "closed_at": datetime.fromisoformat(str(row["closed_at"])),
+                        "closed_by": row["closed_by"],
+                        "note": row["note"],
+                        "has_adjustment": int(row["has_adjustment"] or 0),
+                        "snapshot_version": int(row["snapshot_version"] or 1),
+                    }
+                    for row in rows
+                ]
+            )
+        return super().execute(sql, params)
+
+
+class PostgresWebAppTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._original_psycopg = sys.modules.get("psycopg")
+        fake_module = types.ModuleType("psycopg")
+
+        def _connect(dsn: str):
+            return _WebFakePsycopgConnection(dsn)
+
+        fake_module.connect = _connect
+        sys.modules["psycopg"] = fake_module
+        self.app = create_app("postgresql://bookkeeping:test@localhost:5432/bookkeeping", sync_token="sync-secret")
+
+    def tearDown(self) -> None:
+        if self._original_psycopg is None:
+            sys.modules.pop("psycopg", None)
+        else:
+            sys.modules["psycopg"] = self._original_psycopg
+
+    def _request(self, method: str, path: str, payload: dict | None = None) -> tuple[int, dict]:
+        body = b""
+        if payload is not None:
+            body = json.dumps(payload).encode("utf-8")
+        environ = {}
+        setup_testing_defaults(environ)
+        environ["REQUEST_METHOD"] = method
+        environ["PATH_INFO"] = path
+        environ["CONTENT_LENGTH"] = str(len(body))
+        environ["wsgi.input"] = io.BytesIO(body)
+        if body:
+            environ["CONTENT_TYPE"] = "application/json"
+
+        response = {"status": 500, "body": b""}
+
+        def start_response(status: str, headers: list[tuple[str, str]]) -> None:
+            response["status"] = int(status.split(" ", 1)[0])
+
+        chunks = self.app(environ, start_response)
+        response["body"] = b"".join(chunks)
+        return response["status"], json.loads(response["body"].decode("utf-8"))
+
+    def test_accounting_period_list_endpoint_serializes_postgres_values(self) -> None:
+        status, payload = self._request("GET", "/api/accounting-periods")
+        self.assertEqual(status, 200)
+        self.assertEqual(len(payload["items"]), 2)
+        self.assertIsInstance(payload["items"][0]["closed_at"], str)
+        self.assertEqual(payload["items"][0]["closed_at"], "2026-03-19 08:00:00")
 
 
 if __name__ == "__main__":

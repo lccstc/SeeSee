@@ -48,9 +48,55 @@ class BookkeepingDB:
               rmb_value REAL NOT NULL,
               raw TEXT NOT NULL,
               ngn_rate REAL,
+              usd_amount REAL,
+              unit_face_value REAL,
+              unit_count REAL,
+              parse_version TEXT NOT NULL DEFAULT '1',
               created_at TEXT NOT NULL DEFAULT (datetime('now')),
               deleted INTEGER NOT NULL DEFAULT 0,
               settled INTEGER NOT NULL DEFAULT 0
+            );
+
+            CREATE TABLE IF NOT EXISTS accounting_periods (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              start_at TEXT NOT NULL,
+              end_at TEXT NOT NULL,
+              closed_at TEXT NOT NULL,
+              closed_by TEXT NOT NULL,
+              note TEXT,
+              has_adjustment INTEGER NOT NULL DEFAULT 0,
+              snapshot_version INTEGER NOT NULL DEFAULT 1
+            );
+
+            CREATE TABLE IF NOT EXISTS period_group_snapshots (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              period_id INTEGER NOT NULL,
+              group_key TEXT NOT NULL,
+              platform TEXT NOT NULL,
+              chat_name TEXT NOT NULL,
+              group_num INTEGER,
+              business_role TEXT,
+              opening_balance REAL NOT NULL DEFAULT 0,
+              income REAL NOT NULL DEFAULT 0,
+              expense REAL NOT NULL DEFAULT 0,
+              closing_balance REAL NOT NULL DEFAULT 0,
+              transaction_count INTEGER NOT NULL DEFAULT 0,
+              anomaly_flags_json TEXT NOT NULL DEFAULT '[]',
+              UNIQUE(period_id, group_key)
+            );
+
+            CREATE TABLE IF NOT EXISTS period_card_stats (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              period_id INTEGER NOT NULL,
+              group_key TEXT NOT NULL,
+              business_role TEXT,
+              card_type TEXT NOT NULL,
+              usd_amount REAL NOT NULL DEFAULT 0,
+              rate REAL,
+              rmb_amount REAL NOT NULL DEFAULT 0,
+              unit_face_value REAL,
+              unit_count REAL,
+              sample_raw TEXT
             );
 
             CREATE TABLE IF NOT EXISTS settlements (
@@ -70,6 +116,10 @@ class BookkeepingDB:
               chat_id TEXT NOT NULL,
               chat_name TEXT NOT NULL,
               group_num INTEGER,
+              business_role TEXT,
+              role_source TEXT,
+              capture_enabled INTEGER NOT NULL DEFAULT 1,
+              status TEXT NOT NULL DEFAULT 'active',
               created_at TEXT NOT NULL DEFAULT (datetime('now')),
               updated_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
@@ -166,6 +216,21 @@ class BookkeepingDB:
             CREATE INDEX IF NOT EXISTS idx_manual_adjustments_settlement ON manual_adjustments(settlement_id, group_key);
             """
         )
+        self._ensure_column("groups", "business_role", "business_role TEXT")
+        self._ensure_column("groups", "role_source", "role_source TEXT")
+        self._ensure_column("groups", "capture_enabled", "capture_enabled INTEGER NOT NULL DEFAULT 1")
+        self._ensure_column("groups", "status", "status TEXT NOT NULL DEFAULT 'active'")
+        self._ensure_column("transactions", "usd_amount", "usd_amount REAL")
+        self._ensure_column("transactions", "unit_face_value", "unit_face_value REAL")
+        self._ensure_column("transactions", "unit_count", "unit_count REAL")
+        self._ensure_column("transactions", "parse_version", "parse_version TEXT NOT NULL DEFAULT '1'")
+        self._ensure_column("accounting_periods", "end_at", "end_at TEXT NOT NULL DEFAULT ''")
+        self._ensure_column("accounting_periods", "closed_at", "closed_at TEXT NOT NULL DEFAULT ''")
+        self._ensure_column("accounting_periods", "closed_by", "closed_by TEXT NOT NULL DEFAULT 'legacy-migration'")
+        self._ensure_column("accounting_periods", "note", "note TEXT")
+        self._ensure_column("accounting_periods", "has_adjustment", "has_adjustment INTEGER NOT NULL DEFAULT 0")
+        self._ensure_column("accounting_periods", "snapshot_version", "snapshot_version INTEGER NOT NULL DEFAULT 1")
+        self._backfill_accounting_periods()
         self._ensure_column("transactions", "settlement_id", "settlement_id INTEGER")
         self._ensure_column("transactions", "settled_at", "settled_at TEXT")
         self.conn.execute("CREATE INDEX IF NOT EXISTS idx_tx_settlement_id ON transactions(settlement_id)")
@@ -178,6 +243,47 @@ class BookkeepingDB:
         columns = {str(row["name"]) for row in rows}
         if column_name not in columns:
             self.conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {definition}")
+
+    def _backfill_accounting_periods(self) -> None:
+        rows = self.conn.execute("PRAGMA table_info(accounting_periods)").fetchall()
+        columns = {str(row["name"]) for row in rows}
+        if "start_at" not in columns:
+            return
+        self.conn.execute(
+            """
+            UPDATE accounting_periods
+            SET end_at = start_at
+            WHERE end_at IS NULL OR end_at = ''
+            """
+        )
+        self.conn.execute(
+            """
+            UPDATE accounting_periods
+            SET closed_at = COALESCE(NULLIF(end_at, ''), start_at)
+            WHERE closed_at IS NULL OR closed_at = ''
+            """
+        )
+        self.conn.execute(
+            """
+            UPDATE accounting_periods
+            SET closed_by = 'legacy-migration'
+            WHERE closed_by IS NULL OR closed_by = ''
+            """
+        )
+        self.conn.execute(
+            """
+            UPDATE accounting_periods
+            SET has_adjustment = 0
+            WHERE has_adjustment IS NULL
+            """
+        )
+        self.conn.execute(
+            """
+            UPDATE accounting_periods
+            SET snapshot_version = 1
+            WHERE snapshot_version IS NULL
+            """
+        )
 
     @staticmethod
     def _utcnow_text() -> str:
@@ -431,13 +537,20 @@ class BookkeepingDB:
             """
             SELECT
               g.*,
-              COALESCE(SUM(t.rmb_value), 0) AS tx_balance
+              COALESCE(tx.tx_balance, 0) AS tx_balance
             FROM groups g
-            LEFT JOIN transactions t ON t.group_key = g.group_key AND t.deleted = 0
-            GROUP BY g.group_key, g.platform, g.chat_id, g.chat_name, g.group_num, g.created_at, g.updated_at
+            LEFT JOIN (
+              SELECT group_key, SUM(rmb_value) AS tx_balance
+              FROM transactions
+              WHERE deleted = 0
+              GROUP BY group_key
+            ) tx ON tx.group_key = g.group_key
             ORDER BY g.chat_name
             """
         ).fetchall()
+
+    def list_groups(self) -> list[sqlite3.Row]:
+        return self.get_all_groups()
 
     def get_group_count(self) -> int:
         row = self.conn.execute("SELECT COUNT(DISTINCT group_key) AS cnt FROM transactions WHERE deleted = 0").fetchone()
@@ -604,6 +717,205 @@ class BookkeepingDB:
                 (group_key, up_to_settlement_id),
             ).fetchone()
         return float(row["total"] or 0)
+
+    def list_settlements(self, group_key: str | None = None) -> list[sqlite3.Row]:
+        if group_key is None:
+            return self.conn.execute(
+                "SELECT * FROM settlements ORDER BY settled_at ASC, id ASC"
+            ).fetchall()
+        return self.conn.execute(
+            "SELECT * FROM settlements WHERE group_key = ? ORDER BY settled_at ASC, id ASC",
+            (group_key,),
+        ).fetchall()
+
+    def list_settlement_transactions(self, settlement_id: int) -> list[sqlite3.Row]:
+        return self.conn.execute(
+            """
+            SELECT *
+            FROM transactions
+            WHERE settlement_id = ?
+            ORDER BY created_at ASC, id ASC
+            """,
+            (settlement_id,),
+        ).fetchall()
+
+    def get_group_by_key(self, group_key: str) -> sqlite3.Row | None:
+        return self.conn.execute(
+            "SELECT * FROM groups WHERE group_key = ?",
+            (group_key,),
+        ).fetchone()
+
+    def list_accounting_periods(self) -> list[sqlite3.Row]:
+        return self.conn.execute(
+            "SELECT * FROM accounting_periods ORDER BY id ASC"
+        ).fetchall()
+
+    def insert_accounting_period(
+        self,
+        *,
+        start_at: str,
+        end_at: str,
+        closed_at: str,
+        closed_by: str,
+        note: str | None = None,
+        has_adjustment: int = 0,
+        snapshot_version: int = 1,
+    ) -> int:
+        cur = self.conn.execute(
+            """
+            INSERT INTO accounting_periods (
+              start_at, end_at, closed_at, closed_by, note, has_adjustment, snapshot_version
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            RETURNING id
+            """,
+            (start_at, end_at, closed_at, closed_by, note, has_adjustment, snapshot_version),
+        )
+        row = cur.fetchone()
+        if row is not None:
+            if hasattr(row, "keys") and "id" in row.keys():
+                return int(row["id"])
+            if isinstance(row, dict) and row.get("id") is not None:
+                return int(row["id"])
+        if cur.lastrowid is not None:
+            return int(cur.lastrowid)
+        raise RuntimeError("failed to insert accounting_periods row")
+
+    def insert_period_group_snapshot(
+        self,
+        *,
+        period_id: int,
+        group_key: str,
+        platform: str,
+        chat_name: str,
+        group_num: int | None,
+        business_role: str | None,
+        opening_balance: float,
+        income: float,
+        expense: float,
+        closing_balance: float,
+        transaction_count: int,
+        anomaly_flags_json: str = "[]",
+    ) -> int:
+        cur = self.conn.execute(
+            """
+            INSERT INTO period_group_snapshots (
+              period_id, group_key, platform, chat_name, group_num, business_role,
+              opening_balance, income, expense, closing_balance, transaction_count,
+              anomaly_flags_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            RETURNING id
+            """,
+            (
+                period_id,
+                group_key,
+                platform,
+                chat_name,
+                group_num,
+                business_role,
+                opening_balance,
+                income,
+                expense,
+                closing_balance,
+                transaction_count,
+                anomaly_flags_json,
+            ),
+        )
+        row = cur.fetchone()
+        if row is not None:
+            if hasattr(row, "keys") and "id" in row.keys():
+                return int(row["id"])
+            if isinstance(row, dict) and row.get("id") is not None:
+                return int(row["id"])
+        if cur.lastrowid is not None:
+            return int(cur.lastrowid)
+        raise RuntimeError("failed to insert period_group_snapshots row")
+
+    def list_period_group_snapshots(self, period_id: int) -> list[sqlite3.Row]:
+        return self.conn.execute(
+            """
+            SELECT *
+            FROM period_group_snapshots
+            WHERE period_id = ?
+            ORDER BY id ASC
+            """,
+            (period_id,),
+        ).fetchall()
+
+    def get_group_balance_before(self, group_key: str, before_at: str) -> float:
+        row = self.conn.execute(
+            """
+            SELECT COALESCE(SUM(rmb_value), 0) AS total
+            FROM transactions
+            WHERE group_key = ?
+              AND created_at < ?
+              AND (deleted = 0 OR settled = 1)
+            """,
+            (group_key, before_at),
+        ).fetchone()
+        return float(row["total"] or 0)
+
+    def list_group_transactions_between(self, group_key: str, start_at: str, end_at: str) -> list[sqlite3.Row]:
+        return self.conn.execute(
+            """
+            SELECT *
+            FROM transactions
+            WHERE group_key = ?
+              AND created_at > ?
+              AND created_at <= ?
+              AND (deleted = 0 OR settled = 1)
+            ORDER BY created_at ASC, id ASC
+            """,
+            (group_key, start_at, end_at),
+        ).fetchall()
+
+    def list_accounting_period_snapshots(self) -> list[sqlite3.Row]:
+        return self.conn.execute(
+            """
+            SELECT
+              p.id AS period_id,
+              p.closed_at AS closed_at,
+              s.group_key AS group_key,
+              s.closing_balance AS closing_balance
+            FROM accounting_periods p
+            INNER JOIN period_group_snapshots s ON s.period_id = p.id
+            ORDER BY p.closed_at ASC, p.id ASC, s.id ASC
+            """
+        ).fetchall()
+
+    def replace_period_card_stats(self, period_id: int, rows: list[dict]) -> None:
+        self.conn.execute("DELETE FROM period_card_stats WHERE period_id = ?", (period_id,))
+        for row in rows:
+            self.conn.execute(
+                """
+                INSERT INTO period_card_stats (
+                  period_id, group_key, business_role, card_type, usd_amount, rate,
+                  rmb_amount, unit_face_value, unit_count, sample_raw
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    period_id,
+                    row["group_key"],
+                    row["business_role"],
+                    row["card_type"],
+                    row["usd_amount"],
+                    row["rate"],
+                    row["rmb_amount"],
+                    row["unit_face_value"],
+                    row["unit_count"],
+                    row["sample_raw"],
+                ),
+            )
+
+    def list_period_card_stats(self, period_id: int) -> list[sqlite3.Row]:
+        return self.conn.execute(
+            """
+            SELECT *
+            FROM period_card_stats
+            WHERE period_id = ?
+            ORDER BY id ASC
+            """,
+            (period_id,),
+        ).fetchall()
 
     def save_group_combination(self, *, name: str, group_numbers: list[int], note: str, created_by: str) -> int:
         cur = self.conn.execute(
@@ -811,10 +1123,78 @@ class PostgresBookkeepingDB(BookkeepingDB):
             ON CONFLICT(key) DO NOTHING
             """
         )
+        self._ensure_column("groups", "business_role", "business_role TEXT")
+        self._ensure_column("groups", "role_source", "role_source TEXT")
+        self._ensure_column("groups", "capture_enabled", "capture_enabled INTEGER NOT NULL DEFAULT 1")
+        self._ensure_column("groups", "status", "status TEXT NOT NULL DEFAULT 'active'")
+        self._ensure_column("transactions", "usd_amount", "usd_amount NUMERIC(18, 4)")
+        self._ensure_column("transactions", "unit_face_value", "unit_face_value NUMERIC(18, 6)")
+        self._ensure_column("transactions", "unit_count", "unit_count NUMERIC(18, 6)")
+        self._ensure_column("transactions", "parse_version", "parse_version TEXT NOT NULL DEFAULT '1'")
+        self._ensure_column("accounting_periods", "end_at", "end_at TIMESTAMP")
+        self._ensure_column("accounting_periods", "closed_at", "closed_at TIMESTAMP")
+        self._ensure_column("accounting_periods", "closed_by", "closed_by TEXT")
+        self._ensure_column("accounting_periods", "note", "note TEXT")
+        self._ensure_column("accounting_periods", "has_adjustment", "has_adjustment INTEGER")
+        self._ensure_column("accounting_periods", "snapshot_version", "snapshot_version INTEGER")
+        self._backfill_accounting_periods()
+        self.conn.execute("ALTER TABLE accounting_periods ALTER COLUMN end_at SET NOT NULL")
+        self.conn.execute("ALTER TABLE accounting_periods ALTER COLUMN closed_at SET NOT NULL")
+        self.conn.execute("ALTER TABLE accounting_periods ALTER COLUMN closed_by SET NOT NULL")
+        self.conn.execute("ALTER TABLE accounting_periods ALTER COLUMN has_adjustment SET NOT NULL")
+        self.conn.execute("ALTER TABLE accounting_periods ALTER COLUMN snapshot_version SET NOT NULL")
         self.conn.commit()
 
     def _ensure_column(self, table_name: str, column_name: str, definition: str) -> None:
-        return None
+        row = self.conn.execute(
+            "SELECT 1 FROM information_schema.columns WHERE table_name = ? AND column_name = ? LIMIT 1",
+            (table_name, column_name),
+        ).fetchone()
+        if row is None:
+            self.conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {definition}")
+
+    def _backfill_accounting_periods(self) -> None:
+        row = self.conn.execute(
+            "SELECT 1 FROM information_schema.columns WHERE table_name = ? AND column_name = ? LIMIT 1",
+            ("accounting_periods", "start_at"),
+        ).fetchone()
+        if row is None:
+            return
+        self.conn.execute(
+            """
+            UPDATE accounting_periods
+            SET end_at = start_at
+            WHERE end_at IS NULL
+            """
+        )
+        self.conn.execute(
+            """
+            UPDATE accounting_periods
+            SET closed_at = COALESCE(end_at, start_at)
+            WHERE closed_at IS NULL
+            """
+        )
+        self.conn.execute(
+            """
+            UPDATE accounting_periods
+            SET closed_by = 'legacy-migration'
+            WHERE closed_by IS NULL OR closed_by = ''
+            """
+        )
+        self.conn.execute(
+            """
+            UPDATE accounting_periods
+            SET has_adjustment = 0
+            WHERE has_adjustment IS NULL
+            """
+        )
+        self.conn.execute(
+            """
+            UPDATE accounting_periods
+            SET snapshot_version = 1
+            WHERE snapshot_version IS NULL
+            """
+        )
 
     def add_transaction(
         self,

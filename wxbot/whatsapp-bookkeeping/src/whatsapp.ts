@@ -12,6 +12,7 @@ import makeWASocket, {
   fetchLatestBaileysVersion,
 } from "@whiskeysockets/baileys";
 import { Boom as BoomType } from "@hapi/boom";
+import { basename } from "node:path";
 import pino from "pino";
 import qrcode from "qrcode-terminal";
 
@@ -171,6 +172,29 @@ export class WhatsAppClient {
       return true;
     } catch (error) {
       this.logger.error(`Failed to send message to ${to}: ${error}`);
+      return false;
+    }
+  }
+
+  /**
+   * Send a file message
+   */
+  async sendFile(to: string, filePath: string, caption?: string): Promise<boolean> {
+    if (!this.socket) {
+      this.logger.error("Socket not initialized");
+      return false;
+    }
+
+    try {
+      await this.socket.sendMessage(to, {
+        document: { url: filePath },
+        fileName: basename(filePath),
+        caption,
+      } as any);
+      this.logger.debug(`File sent to ${to}: ${basename(filePath)}`);
+      return true;
+    } catch (error) {
+      this.logger.error(`Failed to send file to ${to}: ${error}`);
       return false;
     }
   }

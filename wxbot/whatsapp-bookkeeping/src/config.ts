@@ -18,6 +18,11 @@ export interface Config {
   masterPhone: string;  // Master account phone number (legacy, kept for backward compatibility)
   masterPhones?: string[];  // Multiple master accounts (optional)
   logLevel: "debug" | "info" | "warn" | "error";
+  coreApi: {
+    endpoint: string;
+    token: string;
+    requestTimeoutMs: number;
+  };
   sync?: {
     enabled: boolean;
     endpoint: string;
@@ -35,6 +40,11 @@ const defaultConfig: Config = {
   },
   masterPhone: "+84389225210",
   logLevel: "info",
+  coreApi: {
+    endpoint: "",
+    token: "",
+    requestTimeoutMs: 5000,
+  },
   sync: {
     enabled: false,
     endpoint: "",
@@ -59,6 +69,10 @@ export function loadConfig(configPath?: string): Config {
     _config = {
       ...defaultConfig,
       ...parsed,
+      coreApi: {
+        ...defaultConfig.coreApi,
+        ...(parsed.coreApi ?? {}),
+      },
       sync: {
         ...defaultConfig.sync,
         ...(parsed.sync ?? {}),
