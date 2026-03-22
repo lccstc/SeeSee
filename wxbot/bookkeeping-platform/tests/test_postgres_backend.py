@@ -6,6 +6,8 @@ import types
 import unittest
 import json
 
+from tests.support.bookkeeping_replay import build_runtime_card_scenario, replay_runtime_scenario
+
 
 class _FakeCursor:
     def __init__(
@@ -357,6 +359,48 @@ class PostgresBackendTests(unittest.TestCase):
             )
 
             json.dumps(dashboard)
+            json.dumps(workbench)
+            json.dumps(history)
+        finally:
+            db.close()
+
+    def test_postgres_dsn_mock_replay_can_fill_workbench_and_history(self) -> None:
+        from bookkeeping_core.analytics import AnalyticsService
+        from bookkeeping_core.database import BookkeepingDB
+
+        db = BookkeepingDB("postgresql://bookkeeping:test@localhost:5432/bookkeeping")
+        try:
+            scenario = build_runtime_card_scenario()
+            period_id = replay_runtime_scenario(db, scenario)
+
+            service = AnalyticsService(db)
+            workbench = service.build_period_workbench(period_id=period_id)
+            history = service.build_history_analysis(
+                start_date="2026-03-01",
+                end_date="2026-03-31",
+                card_keyword="steam",
+                sort_by="usd_amount",
+            )
+
+            self.assertGreater(len(workbench["card_stats"]), 0)
+            self.assertGreater(len(history["card_rankings"]), 0)
+            steam_rows = [row for row in workbench["card_stats"] if row["card_type"] == "steam"]
+            self.assertEqual(len(steam_rows), 1)
+            self.assertEqual(workbench["selected_period"]["id"], period_id)
+            self.assertEqual(workbench["selected_period"]["closed_by"], "finance-mock")
+            self.assertEqual(workbench["selected_period"]["note"], None)
+            self.assertEqual(workbench["summary"]["total_usd_amount"], 600.0)
+            self.assertEqual(workbench["summary"]["transaction_count"], 2)
+            self.assertEqual(steam_rows[0]["usd_amount"], 600.0)
+            self.assertEqual(steam_rows[0]["rmb_amount"], 50.0)
+            self.assertEqual(steam_rows[0]["unit_face_value"], 20.0)
+            self.assertEqual(steam_rows[0]["unit_count"], 30.0)
+            self.assertEqual(steam_rows[0]["business_role"], "customer")
+            self.assertEqual(history["card_rankings"][0]["card_type"], "steam")
+            self.assertEqual(history["card_rankings"][0]["usd_amount"], 600.0)
+            self.assertEqual(history["card_rankings"][0]["rmb_amount"], 50.0)
+            self.assertEqual(history["summary"]["total_usd_amount"], 600.0)
+            self.assertEqual(history["summary"]["card_type_count"], 1)
             json.dumps(workbench)
             json.dumps(history)
         finally:

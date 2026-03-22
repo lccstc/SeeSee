@@ -7,6 +7,7 @@ from pathlib import Path
 from bookkeeping_core.database import BookkeepingDB
 from bookkeeping_core.periods import AccountingPeriodService
 from bookkeeping_core.analytics import AnalyticsService
+from tests.support.bookkeeping_replay import build_runtime_card_scenario, replay_runtime_scenario
 
 
 def _set_transaction_fields(
@@ -226,69 +227,15 @@ class WorkbenchAnalyticsTests(unittest.TestCase):
         self.tempdir = tempfile.TemporaryDirectory()
         self.db_path = Path(self.tempdir.name) / "analytics-workbench.db"
         self.db = BookkeepingDB(self.db_path)
-        self.db.set_group(
-            platform="wechat",
-            group_key="wechat:g-workbench",
-            chat_id="g-workbench",
-            chat_name="工作台群",
-            group_num=6,
-        )
-        self.db.conn.execute(
-            "UPDATE groups SET business_role = ? WHERE group_key = ?",
-            ("customer", "wechat:g-workbench"),
-        )
-        self.db.conn.commit()
-
-        _make_tx(
+        self.period_id = replay_runtime_scenario(
             self.db,
-            platform="wechat",
-            group_key="wechat:g-workbench",
-            chat_id="g-workbench",
-            chat_name="工作台群",
-            sender_id="u-w",
-            sender_name="Wendy",
-            input_sign=1,
-            amount=20,
-            category="rmb",
-            rate=None,
-            rmb_value=20,
-            raw="rmb+20",
-            created_at="2026-03-20 07:30:00",
-        )
-        _make_tx(
-            self.db,
-            platform="wechat",
-            group_key="wechat:g-workbench",
-            chat_id="g-workbench",
-            chat_name="工作台群",
-            sender_id="u-w",
-            sender_name="Wendy",
-            input_sign=1,
-            amount=20,
-            category="steam",
-            rate=12,
-            rmb_value=50,
-            raw="steam 50u",
-            created_at="2026-03-20 08:20:00",
-            usd_amount=600,
-            unit_face_value=20,
-            unit_count=30,
-        )
-        _make_tx(
-            self.db,
-            platform="wechat",
-            group_key="wechat:g-workbench",
-            chat_id="g-workbench",
-            chat_name="工作台群",
-            sender_id="u-w",
-            sender_name="Wendy",
-            input_sign=-1,
-            amount=15,
-            category="rmb",
-            rate=None,
-            rmb_value=-15,
-            raw="-15rmb",
-            created_at="2026-03-20 09:20:00",
+            build_runtime_card_scenario(
+                message_prefix="analytics-workbench",
+                chat_id="g-workbench",
+                chat_name="工作台群",
+                group_num=6,
+                business_role="customer",
+            ),
         )
 
     def tearDown(self) -> None:
@@ -296,15 +243,9 @@ class WorkbenchAnalyticsTests(unittest.TestCase):
         self.tempdir.cleanup()
 
     def test_period_workbench_returns_selected_period_summary_and_card_stats(self) -> None:
-        period_id = AccountingPeriodService(self.db).close_period(
-            start_at="2026-03-20 08:00:00",
-            end_at="2026-03-20 10:00:00",
-            closed_by="finance-a",
-        )
+        payload = AnalyticsService(self.db).build_period_workbench(period_id=self.period_id)
 
-        payload = AnalyticsService(self.db).build_period_workbench(period_id=period_id)
-
-        self.assertEqual(payload["selected_period"]["id"], period_id)
+        self.assertEqual(payload["selected_period"]["id"], self.period_id)
         self.assertEqual(round(payload["summary"]["profit"], 2), 35.00)
         self.assertEqual(payload["card_stats"][0]["card_type"], "steam")
         self.assertGreaterEqual(len(payload["periods"]), 1)
@@ -315,110 +256,49 @@ class HistoryAnalyticsTests(unittest.TestCase):
         self.tempdir = tempfile.TemporaryDirectory()
         self.db_path = Path(self.tempdir.name) / "analytics-history.db"
         self.db = BookkeepingDB(self.db_path)
-
-        self.db.set_group(
-            platform="wechat",
-            group_key="wechat:g-history-a",
-            chat_id="g-history-a",
-            chat_name="历史群-A",
-            group_num=1,
-        )
-        self.db.set_group(
-            platform="wechat",
-            group_key="wechat:g-history-b",
-            chat_id="g-history-b",
-            chat_name="历史群-B",
-            group_num=2,
-        )
-        self.db.conn.execute(
-            "UPDATE groups SET business_role = ? WHERE group_key IN (?, ?)",
-            ("customer", "wechat:g-history-a", "wechat:g-history-b"),
-        )
-        self.db.conn.commit()
-
-        _make_tx(
+        replay_runtime_scenario(
             self.db,
-            platform="wechat",
-            group_key="wechat:g-history-a",
-            chat_id="g-history-a",
-            chat_name="历史群-A",
-            sender_id="u-ha",
-            sender_name="Henry",
-            input_sign=1,
-            amount=20,
-            category="steam",
-            rate=10,
-            rmb_value=30,
-            raw="steam-mar-1",
-            created_at="2026-03-05 08:30:00",
-            usd_amount=500,
-            unit_face_value=20,
-            unit_count=25,
+            build_runtime_card_scenario(
+                message_prefix="analytics-history-a",
+                chat_id="g-history-a",
+                chat_name="历史群-A",
+                group_num=1,
+                business_role="customer",
+                start_at="2026-03-05 08:00:00",
+                end_at="2026-03-05 09:00:00",
+                closed_by="finance-h1",
+                opening_created_at="2026-03-05 07:30:00",
+                card_created_at="2026-03-05 08:30:00",
+                expense_created_at="2026-03-05 08:45:00",
+                card_rate=1.5,
+                card_rmb_value=30.0,
+                card_usd_amount=500.0,
+                card_unit_count=25.0,
+                expense_amount=20.0,
+            ),
         )
-        _make_tx(
+        replay_runtime_scenario(
             self.db,
-            platform="wechat",
-            group_key="wechat:g-history-a",
-            chat_id="g-history-a",
-            chat_name="历史群-A",
-            sender_id="u-ha",
-            sender_name="Henry",
-            input_sign=-1,
-            amount=20,
-            category="rmb",
-            rate=None,
-            rmb_value=-20,
-            raw="-20rmb",
-            created_at="2026-03-05 08:45:00",
-        )
-        AccountingPeriodService(self.db).close_period(
-            start_at="2026-03-05 08:00:00",
-            end_at="2026-03-05 09:00:00",
-            closed_by="finance-h1",
-        )
-
-        _make_tx(
-            self.db,
-            platform="wechat",
-            group_key="wechat:g-history-b",
-            chat_id="g-history-b",
-            chat_name="历史群-B",
-            sender_id="u-hb",
-            sender_name="Helen",
-            input_sign=1,
-            amount=15,
-            category="steam",
-            rate=10,
-            rmb_value=25,
-            raw="steam-mar-2",
-            created_at="2026-03-20 08:30:00",
-            usd_amount=300,
-            unit_face_value=15,
-            unit_count=20,
-        )
-        _make_tx(
-            self.db,
-            platform="wechat",
-            group_key="wechat:g-history-b",
-            chat_id="g-history-b",
-            chat_name="历史群-B",
-            sender_id="u-hb",
-            sender_name="Helen",
-            input_sign=1,
-            amount=10,
-            category="psn",
-            rate=10,
-            rmb_value=15,
-            raw="psn-mar-2",
-            created_at="2026-03-20 08:40:00",
-            usd_amount=200,
-            unit_face_value=10,
-            unit_count=20,
-        )
-        AccountingPeriodService(self.db).close_period(
-            start_at="2026-03-20 08:00:00",
-            end_at="2026-03-20 09:00:00",
-            closed_by="finance-h2",
+            build_runtime_card_scenario(
+                message_prefix="analytics-history-b",
+                chat_id="g-history-b",
+                chat_name="历史群-B",
+                group_num=2,
+                business_role="customer",
+                start_at="2026-03-20 08:00:00",
+                end_at="2026-03-20 09:00:00",
+                closed_by="finance-h2",
+                opening_created_at="2026-03-20 07:30:00",
+                card_created_at="2026-03-20 08:30:00",
+                expense_created_at="2026-03-20 08:40:00",
+                card_amount=15.0,
+                card_rate=2.0,
+                card_rmb_value=25.0,
+                card_usd_amount=300.0,
+                card_unit_face_value=15.0,
+                card_unit_count=20.0,
+                expense_amount=5.0,
+            ),
         )
 
     def tearDown(self) -> None:
@@ -436,6 +316,32 @@ class HistoryAnalyticsTests(unittest.TestCase):
         self.assertEqual(len(payload["period_rows"]), 2)
         self.assertEqual(payload["card_rankings"][0]["card_type"], "steam")
         self.assertEqual(payload["range"]["start_date"], "2026-03-01")
+
+
+class MockReplayWorkbenchTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tempdir = tempfile.TemporaryDirectory()
+        self.db_path = Path(self.tempdir.name) / "analytics-runtime-replay.db"
+        self.db = BookkeepingDB(self.db_path)
+
+    def tearDown(self) -> None:
+        self.db.close()
+        self.tempdir.cleanup()
+
+    def test_runtime_replay_generates_workbench_and_history_card_sections(self) -> None:
+        scenario = build_runtime_card_scenario()
+        period_id = replay_runtime_scenario(self.db, scenario)
+
+        workbench = AnalyticsService(self.db).build_period_workbench(period_id=period_id)
+        history = AnalyticsService(self.db).build_history_analysis(
+            start_date="2026-03-01",
+            end_date="2026-03-31",
+            card_keyword="steam",
+            sort_by="usd_amount",
+        )
+
+        self.assertGreater(len(workbench["card_stats"]), 0)
+        self.assertGreater(len(history["card_rankings"]), 0)
 
 
 if __name__ == "__main__":

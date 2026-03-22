@@ -834,6 +834,37 @@ class UnifiedRuntimeTests(unittest.TestCase):
         for field in compared_fields:
             self.assertEqual(wx_row[field], wa_row[field], field)
 
+    def test_runtime_transaction_created_at_does_not_reuse_received_at(self) -> None:
+        self.db.set_group(
+            platform="wechat",
+            group_key="wechat:room-created-at",
+            chat_id="room-created-at",
+            chat_name="创建时间测试群",
+            group_num=5,
+        )
+
+        self.runtime.process_envelope(
+            NormalizedMessageEnvelope.from_dict(
+                {
+                    "platform": "wechat",
+                    "message_id": "msg-created-at-1",
+                    "chat_id": "room-created-at",
+                    "chat_name": "创建时间测试群",
+                    "is_group": True,
+                    "sender_id": "master-user",
+                    "sender_name": "Master",
+                    "sender_kind": "user",
+                    "content_type": "text",
+                    "text": "+100rmb",
+                    "received_at": "2099-01-01 00:00:00",
+                }
+            )
+        )
+
+        row = self.db.get_history("wechat:room-created-at", 1)[0]
+
+        self.assertNotEqual(row["created_at"], "2099-01-01 00:00:00")
+
     def test_whoami_command_returns_observed_and_canonical_identity_before_group_activation(self) -> None:
         self.db.bind_identity(
             platform="wechat",

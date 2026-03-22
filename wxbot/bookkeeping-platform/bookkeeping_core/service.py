@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 
 from .commands import CommandHandler
 from .contracts import CoreAction, CoreActionCollector, NormalizedMessageEnvelope
+from .ingestion import build_runtime_record, persist_transaction_record
 from .parser import format_confirmation, looks_like_transaction, parse_transaction
 
 
@@ -107,7 +108,7 @@ class BookkeepingService:
             return collector.actions
 
         group_num = self.db.get_group_num(group_key)
-        self.db.add_transaction(
+        record = build_runtime_record(
             platform=msg.platform,
             group_key=group_key,
             group_num=group_num,
@@ -116,13 +117,10 @@ class BookkeepingService:
             sender_id=sender_id,
             sender_name=sender_name,
             message_id=msg.message_id,
-            input_sign=tx.input_sign,
-            amount=tx.amount,
-            category=tx.category,
-            rate=tx.rate,
-            rmb_value=tx.rmb_value,
-            raw=tx.raw,
+            created_at=None,
+            parsed=tx,
         )
+        persist_transaction_record(self.db, record)
         self.commands.clear_undo_lock(group_key)
         balance = self.db.get_balance(group_key)
         collector.send_text(msg.chat_id, self._confirmation_text(group_key, tx, balance["total"]))

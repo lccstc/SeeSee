@@ -257,6 +257,105 @@ class AccountingPeriodBackfillTests(unittest.TestCase):
         self.assertEqual(round(float(snapshot["opening_balance"]), 2), 0.00)
         self.assertEqual(round(float(snapshot["closing_balance"]), 2), 380.00)
 
+    def test_backfill_legacy_periods_also_creates_period_card_stats(self) -> None:
+        self.db.add_transaction(
+            platform="wechat",
+            group_key="wechat:g-legacy",
+            group_num=5,
+            chat_id="g-legacy",
+            chat_name="兼容群",
+            sender_id="u-legacy",
+            sender_name="Legacy",
+            message_id="msg-legacy-1",
+            input_sign=1,
+            amount=60,
+            category="steam",
+            rate=10,
+            rmb_value=60,
+            raw="steam+60",
+            created_at="2026-03-20 09:00:00",
+            parse_version="legacy-card-v1",
+            usd_amount=600,
+            unit_face_value=20,
+            unit_count=30,
+        )
+        self.db.settle_transactions(
+            "wechat",
+            "wechat:g-legacy",
+            self.db.get_unsettled_transactions("wechat:g-legacy"),
+            "finance-legacy",
+            settled_at="2026-03-20 09:30:00",
+        )
+
+        AccountingPeriodService(self.db).backfill_legacy_periods()
+        period_id = int(self.db.list_accounting_periods()[0]["id"])
+        card_rows = self.db.list_period_card_stats(period_id)
+
+        self.assertEqual(len(card_rows), 1)
+        self.assertEqual(float(card_rows[0]["usd_amount"]), 600.0)
+
+    def test_backfill_legacy_periods_rebuilds_missing_card_stats_for_existing_snapshot(self) -> None:
+        group_key = "wechat:g-upgrade"
+        self.db.set_group(
+            platform="wechat",
+            group_key=group_key,
+            chat_id="g-upgrade",
+            chat_name="升级群",
+            group_num=5,
+        )
+        self.db.add_transaction(
+            platform="wechat",
+            group_key=group_key,
+            group_num=5,
+            chat_id="g-upgrade",
+            chat_name="升级群",
+            sender_id="u-upgrade",
+            sender_name="Upgrade",
+            message_id="msg-upgrade-1",
+            input_sign=1,
+            amount=60,
+            category="steam",
+            rate=10,
+            rmb_value=60,
+            raw="steam+60",
+            created_at="2026-03-20 09:00:00",
+            parse_version="legacy-card-v1",
+            usd_amount=600,
+            unit_face_value=20,
+            unit_count=30,
+        )
+        self.db.settle_transactions(
+            "wechat",
+            group_key,
+            self.db.get_unsettled_transactions(group_key),
+            "finance-upgrade",
+            settled_at="2026-03-20 09:30:00",
+        )
+
+        service = AccountingPeriodService(self.db)
+        service.backfill_legacy_periods()
+        period_id = int(self.db.list_accounting_periods()[0]["id"])
+        snapshot_before = self.db.list_period_group_snapshots(period_id)[0]
+
+        self.db.conn.execute("DELETE FROM period_card_stats WHERE period_id = ?", (period_id,))
+        self.db.conn.commit()
+
+        created = service.backfill_legacy_periods()
+        snapshot_after = self.db.list_period_group_snapshots(period_id)[0]
+        card_rows = self.db.list_period_card_stats(period_id)
+
+        self.assertEqual(created, 0)
+        self.assertEqual(round(float(snapshot_before["opening_balance"]), 2), 0.00)
+        self.assertEqual(round(float(snapshot_after["opening_balance"]), 2), 0.00)
+        self.assertEqual(round(float(snapshot_before["income"]), 2), 60.00)
+        self.assertEqual(round(float(snapshot_after["income"]), 2), 60.00)
+        self.assertEqual(round(float(snapshot_before["expense"]), 2), 0.00)
+        self.assertEqual(round(float(snapshot_after["expense"]), 2), 0.00)
+        self.assertEqual(round(float(snapshot_before["closing_balance"]), 2), 60.00)
+        self.assertEqual(round(float(snapshot_after["closing_balance"]), 2), 60.00)
+        self.assertEqual(len(card_rows), 1)
+        self.assertEqual(float(card_rows[0]["usd_amount"]), 600.0)
+
     def test_backfill_legacy_periods_skips_existing_periods_and_adds_missing_ones(self) -> None:
         group_key = "wechat:g-101"
         self.db.set_group(

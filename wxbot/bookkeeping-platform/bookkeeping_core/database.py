@@ -306,6 +306,10 @@ class BookkeepingDB:
         rate: float | None,
         rmb_value: float,
         raw: str,
+        parse_version: str = "1",
+        usd_amount: float | None = None,
+        unit_face_value: float | None = None,
+        unit_count: float | None = None,
         created_at: str | None = None,
         deleted: int = 0,
         settled: int = 0,
@@ -319,9 +323,10 @@ class BookkeepingDB:
             INSERT INTO transactions (
               platform, group_key, group_num, chat_id, chat_name,
               sender_id, sender_name, message_id, input_sign, amount,
-              category, rate, rmb_value, raw, ngn_rate, created_at,
+              category, rate, rmb_value, raw, parse_version, usd_amount,
+              unit_face_value, unit_count, ngn_rate, created_at,
               deleted, settled, settlement_id, settled_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')), ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')), ?, ?, ?, ?)
             """,
             (
                 platform,
@@ -338,6 +343,10 @@ class BookkeepingDB:
                 rate,
                 rmb_value,
                 raw,
+                parse_version,
+                usd_amount,
+                unit_face_value,
+                unit_count,
                 ngn_rate,
                 created_at,
                 deleted,
@@ -1213,6 +1222,10 @@ class PostgresBookkeepingDB(BookkeepingDB):
         rate: float | None,
         rmb_value: float,
         raw: str,
+        parse_version: str = "1",
+        usd_amount: float | None = None,
+        unit_face_value: float | None = None,
+        unit_count: float | None = None,
         created_at: str | None = None,
         deleted: int = 0,
         settled: int = 0,
@@ -1226,9 +1239,10 @@ class PostgresBookkeepingDB(BookkeepingDB):
             INSERT INTO transactions (
               platform, group_key, group_num, chat_id, chat_name,
               sender_id, sender_name, message_id, input_sign, amount,
-              category, rate, rmb_value, raw, ngn_rate, created_at,
+              category, rate, rmb_value, raw, parse_version, usd_amount,
+              unit_face_value, unit_count, ngn_rate, created_at,
               deleted, settled, settlement_id, settled_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP), ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP), ?, ?, ?, ?)
             RETURNING id
             """,
             (
@@ -1246,6 +1260,10 @@ class PostgresBookkeepingDB(BookkeepingDB):
                 rate,
                 rmb_value,
                 raw,
+                parse_version,
+                usd_amount,
+                unit_face_value,
+                unit_count,
                 ngn_rate,
                 created_at,
                 deleted,

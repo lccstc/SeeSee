@@ -64,6 +64,10 @@ class AccountingPeriodService:
             (str(row["group_key"]), str(row["closed_at"])): row
             for row in existing_rows
         }
+        periods_with_card_stats = {
+            int(row["period_id"])
+            for row in self.db.conn.execute("SELECT DISTINCT period_id FROM period_card_stats").fetchall()
+        }
 
         self.db.conn.execute("BEGIN")
         try:
@@ -73,6 +77,14 @@ class AccountingPeriodService:
                 settled_at = str(settlement["settled_at"])
                 existing_snapshot = existing_snapshots_by_key.get((group_key, settled_at))
                 if existing_snapshot is not None:
+                    period_id = int(existing_snapshot["period_id"])
+                    if period_id not in periods_with_card_stats:
+                        txs = self.db.list_settlement_transactions(settlement_id)
+                        if txs:
+                            group_row = self.db.get_group_by_key(group_key)
+                            card_rows = self._build_card_stats(period_id, group_key, group_row, txs)
+                            self.db.replace_period_card_stats(period_id, card_rows)
+                        periods_with_card_stats.add(period_id)
                     running_balance_by_group[group_key] = float(existing_snapshot["closing_balance"])
                     previous_closed_at_by_group[group_key] = settled_at
                     continue
@@ -126,6 +138,8 @@ class AccountingPeriodService:
                     closing_balance=closing_balance,
                     transaction_count=len(txs),
                 )
+                card_rows = self._build_card_stats(period_id, group_key, group_row, txs)
+                self.db.replace_period_card_stats(period_id, card_rows)
                 running_balance_by_group[group_key] = closing_balance
                 previous_closed_at_by_group[group_key] = settled_at
                 created += 1

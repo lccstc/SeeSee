@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from .ingestion import build_sync_created_record, persist_transaction_record
+
 
 class _CommitSuppressedConnection:
     def __init__(self, inner_conn) -> None:
@@ -124,7 +126,7 @@ def _apply_transaction_created(db, platform: str, payload: dict[str, Any]) -> No
             group_num=int(payload["group_num"]),
         )
 
-    db.add_transaction(
+    record = build_sync_created_record(
         platform=platform,
         group_key=group_key,
         group_num=int(payload["group_num"]) if payload.get("group_num") is not None else db.get_group_num(group_key),
@@ -141,6 +143,7 @@ def _apply_transaction_created(db, platform: str, payload: dict[str, Any]) -> No
         raw=str(payload["raw"]),
         created_at=str(payload["created_at"]).replace("T", " ").replace("Z", "") if payload.get("created_at") else None,
     )
+    persist_transaction_record(db, record)
 
 
 def _apply_transaction_deleted(db, platform: str, payload: dict[str, Any]) -> None:

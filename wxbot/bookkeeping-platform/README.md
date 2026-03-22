@@ -118,6 +118,22 @@ python3 -m unittest tests.test_webapp -v
 python3 -m unittest -v tests.test_periods tests.test_reporting tests.test_analytics tests.test_webapp tests.test_postgres_backend
 ```
 
+### P2.5 mock replay 验证路径
+
+P2.5 的主验收路径是统一 runtime 回放：
+
+- `POST /api/core/messages` 仍是 live runtime 边界，用于在线消息处理与动作返回
+- P2.5 的 mock replay 验证使用共享 replay helper，在 `runtime.process_envelope()` 之后集中生成分析字段与账期快照，用于 SQLite / fake PostgreSQL 下的验证
+- `/api/sync/events` 和 settlement bootstrap / 历史结算补账仍是兼容路径，不是 P2.5 的主验收路径
+- fake PostgreSQL 验证只使用现有 fake `psycopg` 夹具，不连接真实 PostgreSQL，也不做生产迁移
+
+建议按下面顺序验证：
+
+```bash
+python3 -m unittest tests.test_postgres_backend.PostgresBackendTests.test_postgres_dsn_mock_replay_can_fill_workbench_and_history -v
+python3 -m unittest tests.test_ingestion_alignment tests.test_periods tests.test_reporting tests.test_analytics tests.test_webapp tests.test_postgres_backend -v
+```
+
 ## 启动 WeChat
 
 先编辑 `C:\wxbot\bookkeeping-platform\config.wechat.json`：

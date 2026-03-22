@@ -14,6 +14,7 @@ from wsgiref.util import setup_testing_defaults
 from bookkeeping_core.database import BookkeepingDB
 from bookkeeping_core.sync_events import ingest_sync_events
 from bookkeeping_web.app import create_app
+from tests.support.bookkeeping_replay import build_runtime_card_scenario, replay_runtime_scenario
 from tests.test_postgres_backend import _FakeCursor, _FakePsycopgConnection
 
 
@@ -429,6 +430,32 @@ class WebAppTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertIn("card_rankings", history)
 
+    def test_workbench_and_history_endpoints_return_non_empty_card_sections_after_runtime_replay(self) -> None:
+        period_id = replay_runtime_scenario(
+            self.db,
+            build_runtime_card_scenario(
+                message_prefix="webapp-runtime-replay",
+                chat_id="g-web-runtime",
+                chat_name="回放卡片群-Web",
+                group_num=6,
+                business_role="customer",
+            ),
+        )
+
+        status, workbench = self._request("GET", "/api/workbench", query_string=f"period_id={period_id}")
+        self.assertEqual(status, 200)
+        self.assertGreater(len(workbench["card_stats"]), 0)
+        self.assertEqual(workbench["card_stats"][0]["card_type"], "steam")
+
+        status, history = self._request(
+            "GET",
+            "/api/history",
+            query_string="start_date=2026-03-01&end_date=2026-03-31&card_keyword=steam&sort_by=usd_amount",
+        )
+        self.assertEqual(status, 200)
+        self.assertGreater(len(history["card_rankings"]), 0)
+        self.assertEqual(history["card_rankings"][0]["card_type"], "steam")
+
     def test_sync_endpoint_requires_bearer_token(self) -> None:
         status, payload = self._request(
             "POST",
@@ -460,11 +487,15 @@ class WebAppTests(unittest.TestCase):
 
         self.assertIn("POST /api/core/messages", readme_text)
         self.assertIn("/api/sync/events", readme_text)
-        self.assertIn("历史兼容", readme_text)
-        self.assertIn("不承诺 live reply", readme_text)
-        self.assertIn("WhatsApp 本地记账 bot 已降级为薄适配层", readme_text)
-        self.assertIn("当前接收端按单个事件做原子提交", readme_text)
-        self.assertIn("同一事件重复推送不会重复记账", readme_text)
+        self.assertIn("P2.5 mock replay 验证路径", readme_text)
+        self.assertIn("live runtime", readme_text)
+        self.assertIn("动作返回", readme_text)
+        self.assertIn("共享 replay helper", readme_text)
+        self.assertIn("账期快照", readme_text)
+        self.assertIn("SQLite / fake PostgreSQL", readme_text)
+        self.assertIn("兼容路径", readme_text)
+        self.assertIn("python3 -m unittest tests.test_postgres_backend", readme_text)
+        self.assertIn("python3 -m unittest tests.test_ingestion_alignment", readme_text)
 
     def test_sync_events_rolls_back_business_side_effects_when_ingested_events_insert_fails(self) -> None:
         class _FailingIngestEventsConnProxy:
