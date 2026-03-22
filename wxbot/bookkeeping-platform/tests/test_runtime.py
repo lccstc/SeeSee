@@ -14,6 +14,11 @@ from bookkeeping_core.runtime import UnifiedBookkeepingRuntime
 from wechat_adapter.config import CoreApiConfig, WeChatConfig
 
 
+class _FakeListenedChat:
+    def __init__(self, who: str) -> None:
+        self.who = who
+
+
 class UnifiedRuntimeTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tempdir = tempfile.TemporaryDirectory()
@@ -344,6 +349,54 @@ class UnifiedRuntimeTests(unittest.TestCase):
 
         self.assertEqual(len(messages), 1)
         self.assertIsInstance(messages[0], NormalizedMessageEnvelope)
+        self.assertEqual(messages[0].text, "hello")
+        api.send_text.assert_not_called()
+
+    def test_wechat_platform_api_poll_messages_keeps_dict_payload_when_listened_alias_differs_from_details_chat_name(self) -> None:
+        from wechat_adapter.client import WeChatPlatformAPI
+
+        api = WeChatPlatformAPI.__new__(WeChatPlatformAPI)
+        api.listen_chats = ["客户群-A-备注"]
+        api._listeners_ready = True
+        api.self_name = ""
+        api.self_wxid = ""
+        api._sender_cache = {}
+        api.wx = MagicMock()
+        api.wx.GetListenMessage.return_value = {
+            _FakeListenedChat("客户群-A-备注"): [
+                SimpleNamespace(
+                    details={
+                        "id": "good-2",
+                        "chat_name": "客户群-A原名",
+                        "chat_type": "group",
+                        "sender": "User One",
+                        "content": "hello",
+                    }
+                )
+            ]
+        }
+        api.db = MagicMock()
+        api.db.resolve_identity.return_value = "canonical-user"
+        api.db.is_admin.return_value = False
+        api.db.is_whitelisted.return_value = False
+        api.config = WeChatConfig(
+            listen_chats=["客户群-A-备注"],
+            master_users=[],
+            poll_interval_seconds=1.0,
+            log_level="INFO",
+            language="cn",
+            db_path="/tmp/bookkeeping.db",
+            export_dir="/tmp/exports",
+            runtime_dir="/tmp/runtime",
+        )
+        api.logger = MagicMock()
+        api.send_text = MagicMock()
+
+        messages = api.poll_messages()
+
+        self.assertEqual(len(messages), 1)
+        self.assertIsInstance(messages[0], NormalizedMessageEnvelope)
+        self.assertEqual(messages[0].chat_name, "客户群-A原名")
         self.assertEqual(messages[0].text, "hello")
         api.send_text.assert_not_called()
 

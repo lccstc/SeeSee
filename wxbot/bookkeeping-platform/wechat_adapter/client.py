@@ -72,16 +72,17 @@ class WeChatPlatformAPI:
         payload = self.wx.GetListenMessage()
         messages: list[NormalizedMessageEnvelope] = []
         if isinstance(payload, dict):
-            for items in payload.values():
+            for chat_ref, items in payload.items():
                 if isinstance(items, list):
+                    chat_name_hint = self._resolve_listened_chat_name(chat_ref)
                     for item in items:
                         try:
-                            normalized = self._normalize_message(item)
+                            normalized = self._normalize_message(item, chat_name_hint=chat_name_hint)
                         except Exception:
                             if self.logger is not None:
                                 self.logger.warning("Dropped invalid WeChat payload item", exc_info=True)
                             continue
-                        if normalized is not None and normalized.chat_name in self.listen_chats and not self._handle_control_envelope(normalized):
+                        if normalized is not None and not self._handle_control_envelope(normalized):
                             messages.append(normalized)
         elif isinstance(payload, list):
             for item in payload:
@@ -193,11 +194,11 @@ class WeChatPlatformAPI:
         self.send_text(message.chat_id, f"已激活: {target_chat}\n下一步请到该群里发送 /set 1-9 进行分组")
         return True
 
-    def _normalize_message(self, item) -> NormalizedMessageEnvelope | None:
+    def _normalize_message(self, item, chat_name_hint: str = "") -> NormalizedMessageEnvelope | None:
         if item is None or not hasattr(item, "details"):
             return None
         details = dict(item.details)
-        chat_name = str(details.get("chat_name") or "")
+        chat_name = str(details.get("chat_name") or chat_name_hint or "")
         from_self = str(details.get("type") or "") == "self"
         sender_name = str(details.get("sender_remark") or details.get("sender") or "")
         if from_self:
@@ -222,6 +223,16 @@ class WeChatPlatformAPI:
                 "received_at": details.get("received_at"),
             }
         )
+
+    @staticmethod
+    def _resolve_listened_chat_name(chat_ref) -> str:
+        who = getattr(chat_ref, "who", "")
+        if isinstance(who, str) and who.strip():
+            return who.strip()
+        name = getattr(chat_ref, "Name", "")
+        if isinstance(name, str) and name.strip():
+            return name.strip()
+        return ""
 
     def _resolve_sender_identity(self, details: dict) -> tuple[str, str]:
         sender = str(details.get("sender") or "")
