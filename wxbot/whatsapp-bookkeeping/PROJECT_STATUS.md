@@ -114,7 +114,6 @@
   "whatsapp": {
     "authDir": "./auth"
   },
-  "masterPhone": "+84389225210",
   "logLevel": "info"
 }
 ```

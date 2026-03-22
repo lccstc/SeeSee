@@ -81,9 +81,6 @@ Please execute the following steps precisely. Do not delete the `.git` directory
 5. **Update `config.json` structure:** Refactor the global config to use namespaces to prevent platform collision.
     ```json
     {
-      "core": {
-        "masterPhones": ["..."]
-      },
       "whatsapp": {
         "authDir": "./auth"
       },

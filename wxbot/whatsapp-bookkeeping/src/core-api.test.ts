@@ -115,6 +115,8 @@ test("config.ts no longer defines the legacy sync configuration", () => {
   assert.ok(!source.includes("sync: {"));
   assert.ok(!source.includes("flushIntervalMs"));
   assert.ok(!source.includes("sourceMachine"));
+  assert.ok(!source.includes("masterPhone"));
+  assert.ok(!source.includes("masterPhones"));
 });
 
 test("package.json no longer depends on the legacy SQLite stack", () => {
@@ -129,10 +131,15 @@ test("package.json no longer depends on the legacy SQLite stack", () => {
 
 test("README only documents the V2 core API path", () => {
   const readme = readFileSync(resolve(projectRoot, "README.md"), "utf8");
+  const configJson = readFileSync(resolve(projectRoot, "config.json"), "utf8");
 
   assert.ok(!readme.includes("/api/sync/events"));
   assert.ok(!readme.includes("sync_outbox"));
   assert.ok(!readme.includes("sync.enabled"));
+  assert.ok(!readme.includes("masterPhone"));
+  assert.ok(!readme.includes("masterPhones"));
+  assert.ok(!configJson.includes("masterPhone"));
+  assert.ok(!configJson.includes("masterPhones"));
 });
 
 test("normalizeMessage maps the canonical sender and Unix seconds timestamp at runtime", async () => {

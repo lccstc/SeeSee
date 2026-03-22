@@ -27,8 +27,6 @@ npm start
   "whatsapp": {
     "authDir": "./auth"
   },
-  "masterPhone": "+84389225210",
-  "masterPhones": ["+84389225210", "+85257006866"],
   "logLevel": "info",
   "coreApi": {
     "endpoint": "https://your-domain.com",
@@ -41,12 +39,12 @@ npm start
 配置说明：
 
 - `whatsapp.authDir`：WhatsApp 多文件认证目录
-- `masterPhone`：兼容旧配置保留字段
-- `masterPhones`：多管理员列表
 - `logLevel`：日志级别
 - `coreApi.endpoint`：总账中心根地址，运行时会自动请求 `POST /api/core/messages`
 - `coreApi.token`：总账中心 Bearer Token
 - `coreApi.requestTimeoutMs`：单次请求超时时间
+
+管理员权限不在这里配置，而是由总账服务启动参数 `BOOKKEEPING_MASTER_USERS` / `--master-user` 和总账数据库里的 admin / whitelist 决定。
 
 ## V2 运行链路
 

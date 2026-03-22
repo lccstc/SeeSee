@@ -14,8 +14,6 @@ export interface Config {
   whatsapp: {
     authDir: string;  // Path to WhatsApp auth data
   };
-  masterPhone: string;  // Master account phone number (legacy, kept for backward compatibility)
-  masterPhones?: string[];  // Multiple master accounts (optional)
   logLevel: "debug" | "info" | "warn" | "error";
   coreApi: {
     endpoint: string;
@@ -28,7 +26,6 @@ const defaultConfig: Config = {
   whatsapp: {
     authDir: resolve(__dirname, "../auth"),
   },
-  masterPhone: "+84389225210",
   logLevel: "info",
   coreApi: {
     endpoint: "",
