@@ -12,7 +12,6 @@ from urllib.parse import urlencode
 from wsgiref.util import setup_testing_defaults
 
 from bookkeeping_core.database import BookkeepingDB
-from bookkeeping_core.sync_events import ingest_sync_events
 from bookkeeping_web.app import create_app
 from tests.support.bookkeeping_replay import build_runtime_card_scenario, replay_runtime_scenario
 from tests.test_postgres_backend import _FakeCursor, _FakePsycopgConnection
@@ -456,149 +455,14 @@ class WebAppTests(unittest.TestCase):
         self.assertGreater(len(history["card_rankings"]), 0)
         self.assertEqual(history["card_rankings"][0]["card_type"], "steam")
 
-    def test_sync_endpoint_requires_bearer_token(self) -> None:
-        status, payload = self._request(
-            "POST",
-            "/api/sync/events",
-            {
-                "events": [
-                    {
-                        "event_id": "evt-unauthorized",
-                        "event_type": "group.set",
-                        "schema_version": 1,
-                        "platform": "whatsapp",
-                        "source_machine": "wa-node-01",
-                        "occurred_at": "2026-03-20T10:15:30Z",
-                        "payload": {
-                            "group_id": "12036340001@g.us",
-                            "group_num": 7,
-                            "chat_name": "供应商群-A",
-                        },
-                    }
-                ]
-            },
-        )
-        self.assertEqual(status, 401)
-        self.assertEqual(payload["error"], "Unauthorized")
+    def test_sync_events_route_is_no_longer_supported(self) -> None:
+        status, payload = self._request("POST", "/api/sync/events", {"events": []})
+        self.assertEqual(status, 404)
+        self.assertEqual(payload["error"], "Unknown path: /api/sync/events")
 
-    def test_readme_separates_runtime_and_compatibility_sync_paths(self) -> None:
-        readme = Path(__file__).resolve().parents[1] / "README.md"
-        readme_text = readme.read_text(encoding="utf-8")
-
-        self.assertIn("POST /api/core/messages", readme_text)
-        self.assertIn("/api/sync/events", readme_text)
-        self.assertIn("P2.5 mock replay 验证路径", readme_text)
-        self.assertIn("live runtime", readme_text)
-        self.assertIn("动作返回", readme_text)
-        self.assertIn("共享 replay helper", readme_text)
-        self.assertIn("账期快照", readme_text)
-        self.assertIn("SQLite / fake PostgreSQL", readme_text)
-        self.assertIn("兼容路径", readme_text)
-        self.assertIn("python3 -m unittest tests.test_postgres_backend", readme_text)
-        self.assertIn("python3 -m unittest tests.test_ingestion_alignment", readme_text)
-
-    def test_sync_events_rolls_back_business_side_effects_when_ingested_events_insert_fails(self) -> None:
-        class _FailingIngestEventsConnProxy:
-            def __init__(self, inner_conn) -> None:
-                self._inner_conn = inner_conn
-
-            def execute(self, sql: str, params=()):
-                if "INSERT INTO ingested_events" in sql:
-                    raise RuntimeError("ingested_events insert failed")
-                return self._inner_conn.execute(sql, params)
-
-            def __getattr__(self, name: str):
-                return getattr(self._inner_conn, name)
-
-        self.db.conn = _FailingIngestEventsConnProxy(self.db.conn)
-
-        event = {
-            "event_id": "evt-atomic-rollback-1",
-            "event_type": "transaction.created",
-            "schema_version": 1,
-            "platform": "whatsapp",
-            "source_machine": "wa-node-01",
-            "occurred_at": "2026-03-20T10:15:30Z",
-            "payload": {
-                "group_id": "12036348888@g.us",
-                "group_num": 8,
-                "chat_name": "供应商群-C",
-                "sender_id": "+85299999999",
-                "sender_name": "+85299999999",
-                "source_transaction_id": 502,
-                "input_sign": 1,
-                "amount": 120,
-                "category": "rmb",
-                "rate": None,
-                "rmb_value": 120,
-                "raw": "rmb+120",
-                "created_at": "2026-03-20 10:15:30",
-            },
-        }
-
-        with self.assertRaisesRegex(RuntimeError, "ingested_events insert failed"):
-            ingest_sync_events(self.db, [event])
-
-        self.assertIsNone(self.db.get_group_by_key("whatsapp:12036348888@g.us"))
-        self.assertEqual(self.db.get_history("whatsapp:12036348888@g.us", 10), [])
-
-    def test_sync_endpoint_ingests_events_and_keeps_idempotency(self) -> None:
-        event = {
-            "event_id": "evt-tx-created-1",
-            "event_type": "transaction.created",
-            "schema_version": 1,
-            "platform": "whatsapp",
-            "source_machine": "wa-node-01",
-            "occurred_at": "2026-03-20T10:15:30Z",
-            "payload": {
-                "group_id": "12036349999@g.us",
-                "group_num": 2,
-                "chat_name": "供应商群-B",
-                "sender_id": "+85212345678",
-                "sender_name": "+85212345678",
-                "source_transaction_id": 501,
-                "input_sign": 1,
-                "amount": 100,
-                "category": "rmb",
-                "rate": None,
-                "rmb_value": 100,
-                "raw": "rmb+100",
-                "created_at": "2026-03-20 10:15:30",
-            },
-        }
-
-        status, payload = self._request(
-            "POST",
-            "/api/sync/events",
-            {"events": [event]},
-            headers={"Authorization": "Bearer sync-secret"},
-        )
-        self.assertEqual(status, 200)
-        self.assertEqual(payload["accepted"], 1)
-        self.assertEqual(payload["duplicates"], 0)
-
-        groups = self.db.get_all_groups()
-        synced_group = [row for row in groups if row["group_key"] == "whatsapp:12036349999@g.us"]
-        self.assertEqual(len(synced_group), 1)
-        self.assertEqual(int(synced_group[0]["group_num"]), 2)
-
-        history = self.db.get_history("whatsapp:12036349999@g.us", 10)
-        self.assertEqual(len(history), 1)
-        self.assertEqual(history[0]["message_id"], "whatsapp-local-tx-501")
-
-        status, payload = self._request(
-            "POST",
-            "/api/sync/events",
-            {"events": [event]},
-            headers={"Authorization": "Bearer sync-secret"},
-        )
-        self.assertEqual(status, 200)
-        self.assertEqual(payload["accepted"], 0)
-        self.assertEqual(payload["duplicates"], 1)
-
-        history = self.db.get_history("whatsapp:12036349999@g.us", 10)
-        self.assertEqual(len(history), 1)
-
+    def test_readme_no_longer_mentions_sync_events_interface(self) -> None:
+        readme_text = Path(__file__).resolve().parents[1].joinpath("README.md").read_text(encoding="utf-8")
+        self.assertNotIn("/api/sync/events", readme_text)
 
 class _WebFakePsycopgConnection(_FakePsycopgConnection):
     def execute(self, sql: str, params=()):

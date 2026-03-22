@@ -1,10 +1,12 @@
 # Unified Bookkeeping Core Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+>
+> **Superseded note (2026-03-22):** `/api/sync/events` 已在 P2.7 从当前支持接口面退役。本文中凡是要求继续保留或验证该在线接口的描述，均只作为历史实现背景，不再作为现行执行指令。
 
 **Goal:** 把正式运行时收敛为 `Adapter -> Python Unified Bookkeeping Core -> Unified Ledger DB`，先立统一 runtime 边界，再逐步切换 WeChat 与 WhatsApp。
 
-**Architecture:** 以 Python `bookkeeping_core` 作为唯一业务内核，新增统一入站 `NormalizedMessageEnvelope` 与统一出站 `CoreAction[]`。适配层只做平台字段归一化与动作执行，旧 `/api/sync/events` 仅保留历史兼容导入。
+**Architecture:** 以 Python `bookkeeping_core` 作为唯一业务内核，新增统一入站 `NormalizedMessageEnvelope` 与统一出站 `CoreAction[]`。适配层只做平台字段归一化与动作执行；旧 `/api/sync/events` 已在 P2.7 退役，不再作为当前在线接口。
 
 **Tech Stack:** Python 3 + sqlite/postgres compatibility + WSGI web app + TypeScript/Node + Baileys + wxautox
 
@@ -31,7 +33,7 @@
 - Modify: `wxbot/bookkeeping-platform/bookkeeping_core/commands.py`
   - 通过 action collector 产生 `send_text` / `send_file`
 - Modify: `wxbot/bookkeeping-platform/bookkeeping_web/app.py`
-  - 新增统一 runtime 调用入口，保留 `/api/sync/events` 兼容导入
+  - 新增统一 runtime 调用入口；P2.7 后不再保留 `/api/sync/events` 在线入口
 
 ### WeChat Adapter
 
@@ -56,7 +58,7 @@
 - Create: `wxbot/bookkeeping-platform/tests/test_runtime.py`
   - 统一 runtime 合同、跨平台同结果、动作返回测试
 - Modify: `wxbot/bookkeeping-platform/tests/test_webapp.py`
-  - 新增 runtime API 测试，保留 sync/events 历史兼容测试
+  - 新增 runtime API 测试；P2.7 后不再维护 sync/events 在线兼容测试
 - Create: `wxbot/whatsapp-bookkeeping/src/core-api.test.ts`
   - 验证 TS adapter 调用 runtime API 与 action 解析
 
@@ -333,7 +335,7 @@ Expected:
 - 测试通过
 - TypeScript 构建通过
 
-### Task 6: 明确 sync/events 为历史兼容入口
+### Task 6: 历史背景记录：sync/events 曾是兼容入口（现已在 P2.7 退役）
 
 **Files:**
 - Modify: `wxbot/bookkeeping-platform/README.md`
@@ -345,15 +347,14 @@ Expected:
 覆盖点：
 
 - runtime 走 `/api/core/messages`
-- 旧事件导入继续走 `/api/sync/events`
-- `/api/sync/events` 不承诺 live reply
+- 本任务中的 `/api/sync/events` 描述仅代表当时背景，不再作为现行要求
 
 - [ ] **Step 2: 更新 README 与必要注释**
 
 要求：
 
 - 明确 WhatsApp 本地内核已降级
-- 明确 `/api/sync/events` 是历史兼容，不是正式主链路
+- 结合 P2.7 说明 `/api/sync/events` 已从支持接口面退役
 
 - [ ] **Step 3: 全量 Python 回归**
 
@@ -416,7 +417,7 @@ Expected:
 
 ### Phase D: 旧 sync/events 降级
 
-- 兼容导入仍可用
+- 该接口已在 P2.7 退役
 - 正式 live path 不再依赖它
 
 ## 4. 建议执行顺序

@@ -2,14 +2,13 @@
 
 统一记账核心，多个聊天入口共用同一套业务逻辑。
 
-WhatsApp 本地记账 bot 已降级为薄适配层；正式 runtime 走 `POST /api/core/messages`，`/api/sync/events` 仅用于历史兼容导入，不承诺 live reply。
+WhatsApp 本地记账 bot 已降级为薄适配层；正式 runtime 走 `POST /api/core/messages`。
 
 当前已落地：
 
 - `bookkeeping_core`
 - `wechat_adapter`
 - `POST /api/core/messages` 正式 runtime 入口
-- `POST /api/sync/events` 历史兼容导入入口
 - `GET /api/accounting-periods` 和 `POST /api/accounting-periods/close` 账期接口
 - 首页驾驶舱、账期工作台、跑账历史页
 
@@ -48,33 +47,6 @@ python3 "/Users/lcc/SeeSee/wxbot/bookkeeping-platform/reporting_server.py" \
 
 - `--db` 传 PostgreSQL DSN 时，会自动切到 PostgreSQL 后端
 - `POST /api/core/messages` 是正式 runtime 入口，负责在线消息处理与动作返回
-- `/api/sync/events` 需要 `Authorization: Bearer <TOKEN>`，仅用于历史兼容导入，不承诺 live reply
-- 当前接收端按单个事件做原子提交；同一事件重复推送不会重复记账
-
-### 手工验证同步接口
-
-```bash
-curl -X POST "https://your-domain.com/api/sync/events" \
-  -H "Authorization: Bearer replace-with-sync-token" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "events": [
-      {
-        "event_id": "manual-check-1",
-        "event_type": "group.set",
-        "schema_version": 1,
-        "platform": "whatsapp",
-        "source_machine": "wa-node-01",
-        "occurred_at": "2026-03-20T10:15:30Z",
-        "payload": {
-          "group_id": "12036340001@g.us",
-          "group_num": 7,
-          "chat_name": "测试群"
-        }
-      }
-    ]
-  }'
-```
 
 ## 账期接口
 
@@ -124,7 +96,7 @@ P2.5 的主验收路径是统一 runtime 回放：
 
 - `POST /api/core/messages` 仍是 live runtime 边界，用于在线消息处理与动作返回
 - P2.5 的 mock replay 验证使用共享 replay helper，在 `runtime.process_envelope()` 之后集中生成分析字段与账期快照，用于 SQLite / fake PostgreSQL 下的验证
-- `/api/sync/events` 和 settlement bootstrap / 历史结算补账仍是兼容路径，不是 P2.5 的主验收路径
+- settlement bootstrap / 历史结算补账不是 P2.5 的主验收路径
 - fake PostgreSQL 验证只使用现有 fake `psycopg` 夹具，不连接真实 PostgreSQL，也不做生产迁移
 
 建议按下面顺序验证：

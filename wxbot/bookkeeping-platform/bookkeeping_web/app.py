@@ -11,7 +11,6 @@ from bookkeeping_core.database import BookkeepingDB
 from bookkeeping_core.periods import AccountingPeriodService
 from bookkeeping_core.reporting import ReportingService
 from bookkeeping_core.runtime import UnifiedBookkeepingRuntime
-from bookkeeping_core.sync_events import ingest_sync_events
 from bookkeeping_web.pages import (
     render_dashboard_page,
     render_history_page,
@@ -68,10 +67,6 @@ def create_app(
             if not _is_authorized(environ, sync_token):
                 return _respond_json(start_response, 401, {"error": "Unauthorized"})
             return _handle_core_messages(get_runtime(), start_response, environ)
-        if path == "/api/sync/events" and method == "POST":
-            if not _is_authorized(environ, sync_token):
-                return _respond_json(start_response, 401, {"error": "Unauthorized"})
-            return _with_db(db_file, start_response, _handle_sync_events, environ)
         return _respond_json(start_response, 404, {"error": f"Unknown path: {path}"})
 
     return app
@@ -192,18 +187,6 @@ def _handle_core_messages(runtime: UnifiedBookkeepingRuntime, start_response, en
     except (TypeError, ValueError, KeyError) as exc:
         return _respond_json(start_response, 400, {"error": f"Bad payload: {exc}"})
     return _respond_json(start_response, 200, {"actions": actions})
-
-
-def _handle_sync_events(db: BookkeepingDB, start_response, environ):
-    try:
-        payload = _read_json_body(environ)
-        events = payload.get("events", [])
-        if not isinstance(events, list):
-            raise ValueError("events must be a list")
-        result = ingest_sync_events(db, events)
-    except (KeyError, TypeError, ValueError) as exc:
-        return _respond_json(start_response, 400, {"error": f"Bad payload: {exc}"})
-    return _respond_json(start_response, 200, result)
 
 
 def _read_json_body(environ) -> dict:

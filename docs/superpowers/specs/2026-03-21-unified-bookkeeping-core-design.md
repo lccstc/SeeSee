@@ -22,7 +22,7 @@ WeChat Adapter    ─┘
 
 1. Python `wxbot/bookkeeping-platform/bookkeeping_core` 是唯一正式业务内核。
 2. WhatsApp 与 WeChat 都只能保留薄适配层职责。
-3. `/api/sync/events` 与 `schema_version=1` 旧事件只保留历史兼容读取、回放、迁移语义。
+3. `schema_version=1` 旧事件只保留历史兼容读取、回放、迁移语义；`/api/sync/events` 已从当前 WSGI 支持面退役。
 4. 不允许把平台原始 `raw` 结构直接泄漏进 core 业务判断。
 5. 不允许把 `if platform == ...` 大量堆进核心业务主路径。
 6. 当前优先级是逻辑单内核，不是物理目录搬迁。
@@ -102,7 +102,7 @@ WeChat 仍然耦合过深的地方：
 
 结论：WeChat 方向是对的，但 Python core 还没有形成“只吃标准化入站、只吐标准化动作”的真正 runtime 边界。
 
-### 2.4 `sync_events.py` 为什么只能算历史兼容导入器
+### 2.4 `sync_events.py` 为什么只能算已退役的历史兼容导入器
 
 `sync_events.py` 的角色必须明确降级为历史兼容导入器，原因有 5 个：
 
@@ -112,13 +112,13 @@ WeChat 仍然耦合过深的地方：
 4. 它通过 `source_transaction_id -> whatsapp-local-tx-*` 重建 message id，本质是在回放旧本地账本事实，不是 live 决策。
 5. 它不会返回待执行动作，因此不可能成为“收消息 -> 决策 -> 回复”的正式主链路。
 
-所以 `/api/sync/events` 可以继续存在，但语义只能是：
+因此 `sync_events.py` 即使保留，也只能承载历史参考或迁移语义：
 
-- 历史导入
-- 兼容回放
-- 迁移补录
+- 历史导入参考
+- 兼容回放参考
+- 迁移补录辅助
 
-不能再承担正式 live path。
+`/api/sync/events` 本身不再作为当前支持的在线接口。
 
 ## 3. 备选架构方案
 
@@ -443,13 +443,13 @@ Python core 已经具备成为唯一内核的条件：
 - `index.ts` 只剩连接、收消息、归一化、调用 Python core、执行动作
 - `parser / commands / database / sync` 不再承担正式业务链路
 
-### 阶段 5：旧 `sync/events` 降级为历史兼容入口
+### 阶段 5：旧 `sync/events` 从在线接口面退场
 
 目标：
 
-- 保留旧事件导入能力
-- 不再承担正式 live runtime
-- 文档与测试明确其兼容语义
+- 主代码路径不再暴露 `/api/sync/events`
+- 文档与测试不再把它当成当前支持接口
+- 如保留 `sync_events.py`，也只能作为历史兼容参考
 
 ### 阶段 6：最后再做目录搬迁
 
@@ -487,7 +487,7 @@ Python core 已经具备成为唯一内核的条件：
 1. 同一条交易文本，从 WhatsApp 和 WeChat 进入后，核心落库事实一致。
 2. `/set /undo /mx /bal /history /js /alljs /settlements /ngn` 走同一段 Python 业务逻辑。
 3. WhatsApp 不再保留正式业务写入链路。
-4. `/api/sync/events` 仍可读旧事件，但不再承担正式 live path。
+4. `/api/sync/events` 不再属于当前支持接口面，主代码路径不再依赖它。
 5. 账期关闭、快照、报表只依赖统一账本事实源。
 
 ## 13. 本轮结论
