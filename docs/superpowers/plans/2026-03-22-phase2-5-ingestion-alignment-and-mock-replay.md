@@ -1,10 +1,12 @@
 # Phase 2.5 Ingestion Alignment and Mock Replay Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+>
+> **Superseded note (2026-03-22):** `/api/sync/events` 与 WhatsApp 本地 V1 兼容链路已退役。本文中凡是要求继续保留 compatibility sync 或 `sync_events.py` 的描述，仅代表历史背景，不再作为现行执行依据。
 
-**Goal:** Align live runtime input, compatibility sync input, and mock replay input behind one stable transaction-ingestion contract so P1/P2 period snapshots become reproducible without touching real adapter cutover.
+**Goal:** Align live runtime input and mock replay input behind one stable transaction-ingestion contract so P1/P2 period snapshots become reproducible without touching real adapter cutover.
 
-**Architecture:** Keep WeChat and WhatsApp adapters on the existing `POST /api/core/messages` boundary and keep `POST /api/sync/events` as compatibility-only. Add a thin ingestion layer between parser/sync payloads and `BookkeepingDB.add_transaction()` so runtime messages, compatibility events, and test mock records all persist through one stable contract, then make mock replay and legacy backfill both capable of generating complete `accounting_periods`, `period_group_snapshots`, and `period_card_stats`.
+**Architecture:** Keep WeChat and WhatsApp adapters on the existing `POST /api/core/messages` boundary. Add a thin ingestion layer between runtime/mock payloads and `BookkeepingDB.add_transaction()` so runtime messages and test mock records all persist through one stable contract, then make mock replay and legacy backfill both capable of generating complete `accounting_periods`, `period_group_snapshots`, and `period_card_stats`.
 
 **Tech Stack:** Python 3, sqlite3, optional PostgreSQL via `psycopg` compatibility layer, `unittest`, WSGI app, existing `bookkeeping_core` services.
 

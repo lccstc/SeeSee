@@ -1,4 +1,4 @@
-export function getSyncChatName(chatId: string, chatName?: string | null): string {
+export function resolveChatName(chatId: string, chatName?: string | null): string {
   const normalized = chatName?.trim();
   return normalized ? normalized : chatId;
 }

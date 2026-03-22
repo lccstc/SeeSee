@@ -140,7 +140,7 @@ WeChat Adapter -> Python Core -> Unified DB
 
 - 仍然保留两套解析、命令、账本规则
 - 任何新业务都要改 TS 与 Python 两边
-- `/api/sync/events` 继续承担正式链路，无法真正统一 live runtime
+- 若继续让 `/api/sync/events` 承担正式链路，将无法真正统一 live runtime
 - “共用总账”只是数据汇聚，不是内核统一
 
 结论：拒绝。

@@ -251,12 +251,13 @@ Expected:
 - 不复用 `/api/sync/events`
 - 返回 `CoreAction[]`
 
-- [ ] **Step 3: 保留 sync/events 历史兼容测试**
+- [ ] **Step 3: 历史背景记录：原计划曾保留 sync/events 兼容测试（现已退役）**
 
 要求：
 
-- `/api/sync/events` 原有兼容测试继续通过
-- runtime API 与 sync/events 语义明确分离
+- 这里的 `/api/sync/events` 描述只代表当时背景
+- 当前仓库不再维护该接口测试
+- runtime API 与已退役接口的历史边界保持可读
 
 Run:
 
@@ -387,7 +388,7 @@ Expected:
 
 - WeChat 已切到 unified runtime
 - WhatsApp 已不再本地写账
-- `/api/sync/events` 已降级
+- `/api/sync/events` 已退役
 - tests 全绿
 
 - [ ] **Step 3: 再单独立目录搬迁计划**
