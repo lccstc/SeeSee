@@ -3,7 +3,6 @@
 // ============================================================
 
 import { readFileSync, writeFileSync, existsSync } from "fs";
-import os from "node:os";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
 
@@ -23,15 +22,6 @@ export interface Config {
     token: string;
     requestTimeoutMs: number;
   };
-  sync?: {
-    enabled: boolean;
-    endpoint: string;
-    token: string;
-    sourceMachine: string;
-    flushIntervalMs: number;
-    batchSize: number;
-    requestTimeoutMs: number;
-  };
 }
 
 const defaultConfig: Config = {
@@ -43,15 +33,6 @@ const defaultConfig: Config = {
   coreApi: {
     endpoint: "",
     token: "",
-    requestTimeoutMs: 5000,
-  },
-  sync: {
-    enabled: false,
-    endpoint: "",
-    token: "",
-    sourceMachine: os.hostname() || "whatsapp-node",
-    flushIntervalMs: 1000,
-    batchSize: 20,
     requestTimeoutMs: 5000,
   },
 };
@@ -72,10 +53,6 @@ export function loadConfig(configPath?: string): Config {
       coreApi: {
         ...defaultConfig.coreApi,
         ...(parsed.coreApi ?? {}),
-      },
-      sync: {
-        ...defaultConfig.sync,
-        ...(parsed.sync ?? {}),
       },
     };
   } else {

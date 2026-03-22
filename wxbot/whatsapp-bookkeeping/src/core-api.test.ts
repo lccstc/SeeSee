@@ -108,6 +108,33 @@ test("index.ts no longer keeps the old parser/commands/database/sync main chain"
   assert.ok(!staticImports.includes("./sync.js"));
 });
 
+test("config.ts no longer defines the legacy sync configuration", () => {
+  const source = readFileSync(resolve(projectRoot, "src/config.ts"), "utf8");
+
+  assert.ok(!source.includes("sync?: {"));
+  assert.ok(!source.includes("sync: {"));
+  assert.ok(!source.includes("flushIntervalMs"));
+  assert.ok(!source.includes("sourceMachine"));
+});
+
+test("package.json no longer depends on the legacy SQLite stack", () => {
+  const packageJson = JSON.parse(readFileSync(resolve(projectRoot, "package.json"), "utf8")) as {
+    dependencies?: Record<string, string>;
+    devDependencies?: Record<string, string>;
+  };
+
+  assert.equal(packageJson.dependencies?.["better-sqlite3"], undefined);
+  assert.equal(packageJson.devDependencies?.["@types/better-sqlite3"], undefined);
+});
+
+test("README only documents the V2 core API path", () => {
+  const readme = readFileSync(resolve(projectRoot, "README.md"), "utf8");
+
+  assert.ok(!readme.includes("/api/sync/events"));
+  assert.ok(!readme.includes("sync_outbox"));
+  assert.ok(!readme.includes("sync.enabled"));
+});
+
 test("normalizeMessage maps the canonical sender and Unix seconds timestamp at runtime", async () => {
   const { normalizeMessage } = await import(runtimeIndexUrl.href);
 
