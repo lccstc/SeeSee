@@ -1,293 +1,49 @@
 ﻿from __future__ import annotations
 
 import csv
-import sqlite3
-from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from .models import ReminderPayload
 
 
-def _looks_like_postgres_dsn(target: str | Path) -> bool:
+DBRow = dict[str, Any]
+
+
+def is_postgres_dsn(target: str | Path) -> bool:
     value = str(target)
     return value.startswith("postgres://") or value.startswith("postgresql://")
 
 
-class BookkeepingDB:
-    def __new__(cls, db_path: str | Path):
-        if cls is BookkeepingDB and _looks_like_postgres_dsn(db_path):
-            return super().__new__(PostgresBookkeepingDB)
-        return super().__new__(cls)
+def require_postgres_dsn(target: str | Path, *, context: str) -> str:
+    value = str(target or "").strip()
+    if not is_postgres_dsn(value):
+        raise ValueError(f"{context} must use a PostgreSQL DSN")
+    return value
 
-    def __init__(self, db_path: str | Path) -> None:
-        self.db_path = Path(db_path)
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self.conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
-        self.conn.row_factory = sqlite3.Row
-        self.conn.execute("PRAGMA journal_mode=WAL")
-        self.conn.execute("PRAGMA busy_timeout=5000")
-        self._init_schema()
 
-    def _init_schema(self) -> None:
-        self.conn.executescript(
-            """
-            CREATE TABLE IF NOT EXISTS transactions (
-              id INTEGER PRIMARY KEY AUTOINCREMENT,
-              platform TEXT NOT NULL,
-              group_key TEXT NOT NULL,
-              group_num INTEGER,
-              chat_id TEXT NOT NULL,
-              chat_name TEXT NOT NULL,
-              sender_id TEXT NOT NULL,
-              sender_name TEXT NOT NULL,
-              message_id TEXT,
-              input_sign INTEGER NOT NULL,
-              amount REAL NOT NULL,
-              category TEXT NOT NULL,
-              rate REAL,
-              rmb_value REAL NOT NULL,
-              raw TEXT NOT NULL,
-              ngn_rate REAL,
-              usd_amount REAL,
-              unit_face_value REAL,
-              unit_count REAL,
-              parse_version TEXT NOT NULL DEFAULT '1',
-              created_at TEXT NOT NULL DEFAULT (datetime('now')),
-              deleted INTEGER NOT NULL DEFAULT 0,
-              settled INTEGER NOT NULL DEFAULT 0
-            );
+class _BookkeepingStoreBase:
+    """Shared bookkeeping persistence methods for the unified core store."""
 
-            CREATE TABLE IF NOT EXISTS accounting_periods (
-              id INTEGER PRIMARY KEY AUTOINCREMENT,
-              start_at TEXT NOT NULL,
-              end_at TEXT NOT NULL,
-              closed_at TEXT NOT NULL,
-              closed_by TEXT NOT NULL,
-              note TEXT,
-              has_adjustment INTEGER NOT NULL DEFAULT 0,
-              snapshot_version INTEGER NOT NULL DEFAULT 1
-            );
-
-            CREATE TABLE IF NOT EXISTS period_group_snapshots (
-              id INTEGER PRIMARY KEY AUTOINCREMENT,
-              period_id INTEGER NOT NULL,
-              group_key TEXT NOT NULL,
-              platform TEXT NOT NULL,
-              chat_name TEXT NOT NULL,
-              group_num INTEGER,
-              business_role TEXT,
-              opening_balance REAL NOT NULL DEFAULT 0,
-              income REAL NOT NULL DEFAULT 0,
-              expense REAL NOT NULL DEFAULT 0,
-              closing_balance REAL NOT NULL DEFAULT 0,
-              transaction_count INTEGER NOT NULL DEFAULT 0,
-              anomaly_flags_json TEXT NOT NULL DEFAULT '[]',
-              UNIQUE(period_id, group_key)
-            );
-
-            CREATE TABLE IF NOT EXISTS period_card_stats (
-              id INTEGER PRIMARY KEY AUTOINCREMENT,
-              period_id INTEGER NOT NULL,
-              group_key TEXT NOT NULL,
-              business_role TEXT,
-              card_type TEXT NOT NULL,
-              usd_amount REAL NOT NULL DEFAULT 0,
-              rate REAL,
-              rmb_amount REAL NOT NULL DEFAULT 0,
-              unit_face_value REAL,
-              unit_count REAL,
-              sample_raw TEXT
-            );
-
-            CREATE TABLE IF NOT EXISTS settlements (
-              id INTEGER PRIMARY KEY AUTOINCREMENT,
-              platform TEXT NOT NULL,
-              group_key TEXT NOT NULL,
-              settle_date TEXT NOT NULL,
-              total_rmb REAL NOT NULL,
-              detail TEXT NOT NULL,
-              settled_at TEXT NOT NULL DEFAULT (datetime('now')),
-              settled_by TEXT NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS groups (
-              group_key TEXT PRIMARY KEY,
-              platform TEXT NOT NULL,
-              chat_id TEXT NOT NULL,
-              chat_name TEXT NOT NULL,
-              group_num INTEGER,
-              business_role TEXT,
-              role_source TEXT,
-              capture_enabled INTEGER NOT NULL DEFAULT 1,
-              status TEXT NOT NULL DEFAULT 'active',
-              created_at TEXT NOT NULL DEFAULT (datetime('now')),
-              updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-            );
-
-            CREATE TABLE IF NOT EXISTS settings (
-              key TEXT PRIMARY KEY,
-              value TEXT,
-              updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-            );
-
-            CREATE TABLE IF NOT EXISTS whitelist (
-              user_key TEXT PRIMARY KEY,
-              added_by TEXT NOT NULL,
-              added_at TEXT NOT NULL DEFAULT (datetime('now')),
-              note TEXT
-            );
-
-            CREATE TABLE IF NOT EXISTS admins (
-              user_key TEXT PRIMARY KEY,
-              added_by TEXT NOT NULL,
-              added_at TEXT NOT NULL DEFAULT (datetime('now')),
-              note TEXT
-            );
-
-            CREATE TABLE IF NOT EXISTS reminders (
-              id INTEGER PRIMARY KEY AUTOINCREMENT,
-              platform TEXT NOT NULL,
-              chat_id TEXT NOT NULL,
-              sender_id TEXT NOT NULL,
-              message TEXT NOT NULL,
-              amount REAL NOT NULL,
-              category TEXT NOT NULL,
-              rate REAL,
-              rmb_value REAL NOT NULL,
-              ngn_value REAL,
-              duration_minutes INTEGER NOT NULL DEFAULT 0,
-              remind_at TEXT NOT NULL,
-              created_at TEXT NOT NULL DEFAULT (datetime('now')),
-              sent INTEGER NOT NULL DEFAULT 0
-            );
-
-            CREATE TABLE IF NOT EXISTS identity_bindings (
-              platform TEXT NOT NULL,
-              chat_id TEXT NOT NULL,
-              observed_key TEXT NOT NULL,
-              canonical_id TEXT NOT NULL,
-              observed_name TEXT,
-              updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-              PRIMARY KEY (platform, chat_id, observed_key)
-            );
-
-            CREATE TABLE IF NOT EXISTS manual_adjustments (
-              id INTEGER PRIMARY KEY AUTOINCREMENT,
-              settlement_id INTEGER NOT NULL,
-              group_key TEXT NOT NULL,
-              opening_delta REAL NOT NULL DEFAULT 0,
-              income_delta REAL NOT NULL DEFAULT 0,
-              expense_delta REAL NOT NULL DEFAULT 0,
-              closing_delta REAL NOT NULL DEFAULT 0,
-              note TEXT NOT NULL,
-              created_by TEXT NOT NULL,
-              created_at TEXT NOT NULL DEFAULT (datetime('now'))
-            );
-
-            CREATE TABLE IF NOT EXISTS group_combinations (
-              id INTEGER PRIMARY KEY AUTOINCREMENT,
-              name TEXT NOT NULL UNIQUE,
-              note TEXT,
-              created_by TEXT NOT NULL,
-              created_at TEXT NOT NULL DEFAULT (datetime('now')),
-              updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-            );
-
-            CREATE TABLE IF NOT EXISTS group_combination_items (
-              combination_id INTEGER NOT NULL,
-              group_num INTEGER NOT NULL,
-              PRIMARY KEY (combination_id, group_num)
-            );
-
-            CREATE TABLE IF NOT EXISTS ingested_events (
-              event_id TEXT PRIMARY KEY,
-              event_type TEXT NOT NULL,
-              platform TEXT NOT NULL,
-              source_machine TEXT NOT NULL,
-              schema_version INTEGER NOT NULL,
-              occurred_at TEXT NOT NULL,
-              ingested_at TEXT NOT NULL DEFAULT (datetime('now'))
-            );
-
-            CREATE INDEX IF NOT EXISTS idx_tx_group_key ON transactions(group_key, deleted);
-            CREATE INDEX IF NOT EXISTS idx_tx_platform_group ON transactions(platform, group_key, deleted);
-            CREATE INDEX IF NOT EXISTS idx_tx_settled ON transactions(group_key, settled, deleted);
-            CREATE INDEX IF NOT EXISTS idx_groups_num ON groups(group_num);
-            CREATE INDEX IF NOT EXISTS idx_manual_adjustments_settlement ON manual_adjustments(settlement_id, group_key);
-            """
-        )
-        self._ensure_column("groups", "business_role", "business_role TEXT")
-        self._ensure_column("groups", "role_source", "role_source TEXT")
-        self._ensure_column("groups", "capture_enabled", "capture_enabled INTEGER NOT NULL DEFAULT 1")
-        self._ensure_column("groups", "status", "status TEXT NOT NULL DEFAULT 'active'")
-        self._ensure_column("transactions", "usd_amount", "usd_amount REAL")
-        self._ensure_column("transactions", "unit_face_value", "unit_face_value REAL")
-        self._ensure_column("transactions", "unit_count", "unit_count REAL")
-        self._ensure_column("transactions", "parse_version", "parse_version TEXT NOT NULL DEFAULT '1'")
-        self._ensure_column("accounting_periods", "end_at", "end_at TEXT NOT NULL DEFAULT ''")
-        self._ensure_column("accounting_periods", "closed_at", "closed_at TEXT NOT NULL DEFAULT ''")
-        self._ensure_column("accounting_periods", "closed_by", "closed_by TEXT NOT NULL DEFAULT 'legacy-migration'")
-        self._ensure_column("accounting_periods", "note", "note TEXT")
-        self._ensure_column("accounting_periods", "has_adjustment", "has_adjustment INTEGER NOT NULL DEFAULT 0")
-        self._ensure_column("accounting_periods", "snapshot_version", "snapshot_version INTEGER NOT NULL DEFAULT 1")
-        self._backfill_accounting_periods()
-        self._ensure_column("transactions", "settlement_id", "settlement_id INTEGER")
-        self._ensure_column("transactions", "settled_at", "settled_at TEXT")
-        self.conn.execute("CREATE INDEX IF NOT EXISTS idx_tx_settlement_id ON transactions(settlement_id)")
-        self.conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('ngn_rate', '')")
-        self._backfill_settlement_links()
-        self.conn.commit()
-
-    def _ensure_column(self, table_name: str, column_name: str, definition: str) -> None:
-        rows = self.conn.execute(f"PRAGMA table_info({table_name})").fetchall()
-        columns = {str(row["name"]) for row in rows}
-        if column_name not in columns:
-            self.conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {definition}")
-
-    def _backfill_accounting_periods(self) -> None:
-        rows = self.conn.execute("PRAGMA table_info(accounting_periods)").fetchall()
-        columns = {str(row["name"]) for row in rows}
-        if "start_at" not in columns:
-            return
+    def _refresh_group_profile_if_exists(
+        self,
+        *,
+        platform: str,
+        group_key: str,
+        chat_id: str,
+        chat_name: str,
+    ) -> None:
         self.conn.execute(
             """
-            UPDATE accounting_periods
-            SET end_at = start_at
-            WHERE end_at IS NULL OR end_at = ''
-            """
+            UPDATE groups
+            SET platform = ?,
+                chat_id = ?,
+                chat_name = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE group_key = ?
+            """,
+            (platform, chat_id, chat_name, group_key),
         )
-        self.conn.execute(
-            """
-            UPDATE accounting_periods
-            SET closed_at = COALESCE(NULLIF(end_at, ''), start_at)
-            WHERE closed_at IS NULL OR closed_at = ''
-            """
-        )
-        self.conn.execute(
-            """
-            UPDATE accounting_periods
-            SET closed_by = 'legacy-migration'
-            WHERE closed_by IS NULL OR closed_by = ''
-            """
-        )
-        self.conn.execute(
-            """
-            UPDATE accounting_periods
-            SET has_adjustment = 0
-            WHERE has_adjustment IS NULL
-            """
-        )
-        self.conn.execute(
-            """
-            UPDATE accounting_periods
-            SET snapshot_version = 1
-            WHERE snapshot_version IS NULL
-            """
-        )
-
-    @staticmethod
-    def _utcnow_text() -> str:
-        return datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
 
     def add_transaction(
         self,
@@ -313,7 +69,6 @@ class BookkeepingDB:
         created_at: str | None = None,
         deleted: int = 0,
         settled: int = 0,
-        settlement_id: int | None = None,
         settled_at: str | None = None,
         ngn_rate_override: float | None = None,
     ) -> int:
@@ -325,8 +80,8 @@ class BookkeepingDB:
               sender_id, sender_name, message_id, input_sign, amount,
               category, rate, rmb_value, raw, parse_version, usd_amount,
               unit_face_value, unit_count, ngn_rate, created_at,
-              deleted, settled, settlement_id, settled_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')), ?, ?, ?, ?)
+              deleted, settled, settled_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP), ?, ?, ?)
             """,
             (
                 platform,
@@ -351,14 +106,19 @@ class BookkeepingDB:
                 created_at,
                 deleted,
                 settled,
-                settlement_id,
                 settled_at,
             ),
+        )
+        self._refresh_group_profile_if_exists(
+            platform=platform,
+            group_key=group_key,
+            chat_id=chat_id,
+            chat_name=chat_name,
         )
         self.conn.commit()
         return int(cur.lastrowid)
 
-    def undo_last(self, group_key: str) -> sqlite3.Row | None:
+    def undo_last(self, group_key: str) -> DBRow | None:
         row = self.conn.execute(
             """
             SELECT * FROM transactions
@@ -388,16 +148,32 @@ class BookkeepingDB:
             "by_category": {row["category"]: {"count": int(row["count"]), "total_rmb": float(row["total_rmb"])} for row in cat_rows},
         }
 
-    def get_history(self, group_key: str, limit: int = 20) -> list[sqlite3.Row]:
+    def get_history(self, group_key: str, limit: int = 20) -> list[DBRow]:
         return self.conn.execute(
             "SELECT * FROM transactions WHERE group_key = ? AND deleted = 0 ORDER BY id DESC LIMIT ?",
             (group_key, limit),
         ).fetchall()
 
-    def get_history_by_category(self, group_key: str, category: str, limit: int = 50) -> list[sqlite3.Row]:
+    def get_history_by_category(self, group_key: str, category: str, limit: int = 50) -> list[DBRow]:
         return self.conn.execute(
             "SELECT * FROM transactions WHERE group_key = ? AND deleted = 0 AND category = ? ORDER BY id DESC LIMIT ?",
             (group_key, category, limit),
+        ).fetchall()
+
+    def list_latest_transactions(self, limit: int = 8) -> list[DBRow]:
+        return self.conn.execute(
+            """
+            SELECT
+              tx.*,
+              g.business_role AS business_role,
+              g.group_num AS mapped_group_num
+            FROM transactions tx
+            LEFT JOIN groups g ON g.group_key = tx.group_key
+            WHERE tx.deleted = 0
+            ORDER BY tx.created_at DESC, tx.id DESC
+            LIMIT ?
+            """,
+            (limit,),
         ).fetchall()
 
     def clear_group(self, group_key: str) -> int:
@@ -435,74 +211,16 @@ class BookkeepingDB:
             )
         return [{"category": key, "rate_groups": value} for key, value in category_map.items()]
 
-    def get_unsettled_transactions(self, group_key: str) -> list[sqlite3.Row]:
+    def get_unsettled_transactions(self, group_key: str) -> list[DBRow]:
         return self.conn.execute(
             "SELECT * FROM transactions WHERE group_key = ? AND deleted = 0 AND settled = 0 ORDER BY id ASC",
             (group_key,),
         ).fetchall()
 
-    def get_groups_with_unsettled_transactions(self) -> list[sqlite3.Row]:
+    def get_groups_with_unsettled_transactions(self) -> list[DBRow]:
         return self.conn.execute(
             "SELECT DISTINCT platform, group_key, chat_id, chat_name FROM transactions WHERE deleted = 0 AND settled = 0 ORDER BY group_key"
         ).fetchall()
-
-    def settle_transactions(
-        self,
-        platform: str,
-        group_key: str,
-        txs: list[sqlite3.Row],
-        settled_by: str,
-        settled_at: str | None = None,
-    ) -> dict:
-        if not txs:
-            return {"total_rmb": 0.0, "detail": ""}
-        settled_at_text = settled_at or self._utcnow_text()
-        total_rmb = sum(float(tx["rmb_value"]) for tx in txs)
-        detail_map: dict[str, dict] = {}
-        for tx in txs:
-            bucket = detail_map.setdefault(tx["category"], {"count": 0, "total": 0.0})
-            bucket["count"] += 1
-            bucket["total"] += float(tx["rmb_value"])
-        detail = "; ".join(
-            f"{cat.upper()}: {info['count']} txs {'+' if info['total'] >= 0 else '-'}{abs(info['total']):.2f}"
-            for cat, info in detail_map.items()
-        )
-        placeholders = ",".join("?" for _ in txs)
-        ids = [int(tx["id"]) for tx in txs]
-        cur = self.conn.execute(
-            "INSERT INTO settlements (platform, group_key, settle_date, total_rmb, detail, settled_at, settled_by) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (platform, group_key, settled_at_text, total_rmb, detail, settled_at_text, settled_by),
-        )
-        settlement_id = int(cur.lastrowid)
-        self.conn.execute(
-            f"UPDATE transactions SET settled = 1, settlement_id = ?, settled_at = ? WHERE id IN ({placeholders})",
-            [settlement_id, settled_at_text, *ids],
-        )
-        self.conn.commit()
-        return {"total_rmb": total_rmb, "detail": detail, "settlement_id": settlement_id, "settled_at": settled_at_text}
-
-    def get_settlements(self, group_key: str, limit: int = 10) -> list[sqlite3.Row]:
-        return self.conn.execute(
-            "SELECT * FROM settlements WHERE group_key = ? ORDER BY id DESC LIMIT ?",
-            (group_key, limit),
-        ).fetchall()
-
-    def get_settlement_by_id(self, settlement_id: int) -> sqlite3.Row | None:
-        return self.conn.execute(
-            "SELECT * FROM settlements WHERE id = ?",
-            (settlement_id,),
-        ).fetchone()
-
-    def get_previous_settlement(self, group_key: str, settlement_id: int) -> sqlite3.Row | None:
-        return self.conn.execute(
-            """
-            SELECT * FROM settlements
-            WHERE group_key = ? AND id < ?
-            ORDER BY id DESC
-            LIMIT 1
-            """,
-            (group_key, settlement_id),
-        ).fetchone()
 
     def set_group(self, *, platform: str, group_key: str, chat_id: str, chat_name: str, group_num: int) -> bool:
         if group_num < 0 or group_num > 9:
@@ -510,13 +228,13 @@ class BookkeepingDB:
         self.conn.execute(
             """
             INSERT INTO groups (group_key, platform, chat_id, chat_name, group_num, updated_at)
-            VALUES (?, ?, ?, ?, ?, datetime('now'))
+            VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             ON CONFLICT(group_key) DO UPDATE SET
               platform = excluded.platform,
               chat_id = excluded.chat_id,
               chat_name = excluded.chat_name,
               group_num = excluded.group_num,
-              updated_at = datetime('now')
+              updated_at = CURRENT_TIMESTAMP
             """,
             (group_key, platform, chat_id, chat_name, group_num),
         )
@@ -531,7 +249,7 @@ class BookkeepingDB:
         row = self.conn.execute("SELECT 1 FROM groups WHERE group_key = ? AND group_num IS NOT NULL", (group_key,)).fetchone()
         return row is not None
 
-    def get_groups_by_num(self, group_num: int) -> list[sqlite3.Row]:
+    def get_groups_by_num(self, group_num: int) -> list[DBRow]:
         return self.conn.execute("SELECT * FROM groups WHERE group_num = ? ORDER BY chat_name", (group_num,)).fetchall()
 
     def get_group_number_stats(self) -> dict[int, int]:
@@ -541,7 +259,7 @@ class BookkeepingDB:
             stats[int(row["group_num"])] = int(row["cnt"])
         return stats
 
-    def get_all_groups(self) -> list[sqlite3.Row]:
+    def get_all_groups(self) -> list[DBRow]:
         return self.conn.execute(
             """
             SELECT
@@ -558,7 +276,7 @@ class BookkeepingDB:
             """
         ).fetchall()
 
-    def list_groups(self) -> list[sqlite3.Row]:
+    def list_groups(self) -> list[DBRow]:
         return self.get_all_groups()
 
     def get_group_count(self) -> int:
@@ -571,7 +289,11 @@ class BookkeepingDB:
 
     def add_to_whitelist(self, user_key: str, added_by: str, note: str | None = None) -> None:
         self.conn.execute(
-            "INSERT OR IGNORE INTO whitelist (user_key, added_by, note) VALUES (?, ?, ?)",
+            """
+            INSERT INTO whitelist (user_key, added_by, note)
+            VALUES (?, ?, ?)
+            ON CONFLICT(user_key) DO NOTHING
+            """,
             (user_key, added_by, note),
         )
         self.conn.commit()
@@ -585,12 +307,16 @@ class BookkeepingDB:
         row = self.conn.execute("SELECT 1 FROM whitelist WHERE user_key = ?", (user_key,)).fetchone()
         return row is not None
 
-    def get_whitelist(self) -> list[sqlite3.Row]:
+    def get_whitelist(self) -> list[DBRow]:
         return self.conn.execute("SELECT * FROM whitelist ORDER BY added_at").fetchall()
 
     def add_admin(self, user_key: str, added_by: str, note: str | None = None) -> None:
         self.conn.execute(
-            "INSERT OR IGNORE INTO admins (user_key, added_by, note) VALUES (?, ?, ?)",
+            """
+            INSERT INTO admins (user_key, added_by, note)
+            VALUES (?, ?, ?)
+            ON CONFLICT(user_key) DO NOTHING
+            """,
             (user_key, added_by, note),
         )
         self.conn.commit()
@@ -604,7 +330,7 @@ class BookkeepingDB:
         row = self.conn.execute("SELECT 1 FROM admins WHERE user_key = ?", (user_key,)).fetchone()
         return row is not None
 
-    def get_admins(self) -> list[sqlite3.Row]:
+    def get_admins(self) -> list[DBRow]:
         return self.conn.execute("SELECT * FROM admins ORDER BY added_at").fetchall()
 
     def bind_identity(self, *, platform: str, chat_id: str, observed_id: str, observed_name: str, canonical_id: str) -> None:
@@ -620,11 +346,11 @@ class BookkeepingDB:
                 self.conn.execute(
                     """
                     INSERT INTO identity_bindings (platform, chat_id, observed_key, canonical_id, observed_name, updated_at)
-                    VALUES (?, ?, ?, ?, ?, datetime('now'))
+                    VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                     ON CONFLICT(platform, chat_id, observed_key) DO UPDATE SET
                       canonical_id = excluded.canonical_id,
                       observed_name = excluded.observed_name,
-                      updated_at = datetime('now')
+                      updated_at = CURRENT_TIMESTAMP
                     """,
                     (platform, scope, key, canonical_id, observed_name or observed_id),
                 )
@@ -647,7 +373,7 @@ class BookkeepingDB:
         return str(observed_id or observed_name or '')
 
     def set_ngn_rate(self, rate: str) -> None:
-        self.conn.execute("UPDATE settings SET value = ?, updated_at = datetime('now') WHERE key = 'ngn_rate'", (rate,))
+        self.conn.execute("UPDATE settings SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE key = 'ngn_rate'", (rate,))
         self.conn.commit()
 
     def get_ngn_rate(self) -> float | None:
@@ -674,7 +400,7 @@ class BookkeepingDB:
     def add_manual_adjustment(
         self,
         *,
-        settlement_id: int,
+        period_id: int,
         group_key: str,
         opening_delta: float,
         income_delta: float,
@@ -686,12 +412,12 @@ class BookkeepingDB:
         cur = self.conn.execute(
             """
             INSERT INTO manual_adjustments (
-              settlement_id, group_key, opening_delta, income_delta, expense_delta,
+              period_id, group_key, opening_delta, income_delta, expense_delta,
               closing_delta, note, created_by
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                settlement_id,
+                period_id,
                 group_key,
                 opening_delta,
                 income_delta,
@@ -704,14 +430,14 @@ class BookkeepingDB:
         self.conn.commit()
         return int(cur.lastrowid)
 
-    def get_manual_adjustments(self, settlement_id: int) -> list[sqlite3.Row]:
+    def get_manual_adjustments(self, period_id: int) -> list[DBRow]:
         return self.conn.execute(
-            "SELECT * FROM manual_adjustments WHERE settlement_id = ? ORDER BY id ASC",
-            (settlement_id,),
+            "SELECT * FROM manual_adjustments WHERE period_id = ? ORDER BY id ASC",
+            (period_id,),
         ).fetchall()
 
-    def get_manual_adjustment_total(self, group_key: str, up_to_settlement_id: int | None = None) -> float:
-        if up_to_settlement_id is None:
+    def get_manual_adjustment_total(self, group_key: str, up_to_period_id: int | None = None) -> float:
+        if up_to_period_id is None:
             row = self.conn.execute(
                 "SELECT COALESCE(SUM(closing_delta), 0) AS total FROM manual_adjustments WHERE group_key = ?",
                 (group_key,),
@@ -721,40 +447,19 @@ class BookkeepingDB:
                 """
                 SELECT COALESCE(SUM(closing_delta), 0) AS total
                 FROM manual_adjustments
-                WHERE group_key = ? AND settlement_id <= ?
+                WHERE group_key = ? AND period_id <= ?
                 """,
-                (group_key, up_to_settlement_id),
+                (group_key, up_to_period_id),
             ).fetchone()
         return float(row["total"] or 0)
 
-    def list_settlements(self, group_key: str | None = None) -> list[sqlite3.Row]:
-        if group_key is None:
-            return self.conn.execute(
-                "SELECT * FROM settlements ORDER BY settled_at ASC, id ASC"
-            ).fetchall()
-        return self.conn.execute(
-            "SELECT * FROM settlements WHERE group_key = ? ORDER BY settled_at ASC, id ASC",
-            (group_key,),
-        ).fetchall()
-
-    def list_settlement_transactions(self, settlement_id: int) -> list[sqlite3.Row]:
-        return self.conn.execute(
-            """
-            SELECT *
-            FROM transactions
-            WHERE settlement_id = ?
-            ORDER BY created_at ASC, id ASC
-            """,
-            (settlement_id,),
-        ).fetchall()
-
-    def get_group_by_key(self, group_key: str) -> sqlite3.Row | None:
+    def get_group_by_key(self, group_key: str) -> DBRow | None:
         return self.conn.execute(
             "SELECT * FROM groups WHERE group_key = ?",
             (group_key,),
         ).fetchone()
 
-    def list_accounting_periods(self) -> list[sqlite3.Row]:
+    def list_accounting_periods(self) -> list[DBRow]:
         return self.conn.execute(
             "SELECT * FROM accounting_periods ORDER BY id ASC"
         ).fetchall()
@@ -839,7 +544,7 @@ class BookkeepingDB:
             return int(cur.lastrowid)
         raise RuntimeError("failed to insert period_group_snapshots row")
 
-    def list_period_group_snapshots(self, period_id: int) -> list[sqlite3.Row]:
+    def list_period_group_snapshots(self, period_id: int) -> list[DBRow]:
         return self.conn.execute(
             """
             SELECT *
@@ -863,7 +568,7 @@ class BookkeepingDB:
         ).fetchone()
         return float(row["total"] or 0)
 
-    def list_group_transactions_between(self, group_key: str, start_at: str, end_at: str) -> list[sqlite3.Row]:
+    def list_group_transactions_between(self, group_key: str, start_at: str, end_at: str) -> list[DBRow]:
         return self.conn.execute(
             """
             SELECT *
@@ -877,7 +582,82 @@ class BookkeepingDB:
             (group_key, start_at, end_at),
         ).fetchall()
 
-    def list_accounting_period_snapshots(self) -> list[sqlite3.Row]:
+    def list_period_transactions(self, period_id: int) -> list[DBRow]:
+        return self.conn.execute(
+            """
+            SELECT
+              tx.*,
+              g.business_role AS business_role,
+              g.group_num AS mapped_group_num
+            FROM transactions tx
+            INNER JOIN accounting_periods period ON period.id = ?
+            LEFT JOIN groups g ON g.group_key = tx.group_key
+            WHERE tx.created_at > period.start_at
+              AND tx.created_at <= period.end_at
+              AND (tx.deleted = 0 OR tx.settled = 1)
+            ORDER BY tx.created_at DESC, tx.id DESC
+            """,
+            (period_id,),
+        ).fetchall()
+
+    def list_current_window_transactions(self, start_after: str | None = None) -> list[DBRow]:
+        if start_after is None:
+            return self.conn.execute(
+                """
+                SELECT
+                  tx.*,
+                  g.business_role AS business_role,
+                  g.group_num AS mapped_group_num
+                FROM transactions tx
+                LEFT JOIN groups g ON g.group_key = tx.group_key
+                WHERE tx.deleted = 0
+                  AND tx.settled = 0
+                ORDER BY tx.created_at DESC, tx.id DESC
+                """
+            ).fetchall()
+        return self.conn.execute(
+            """
+            SELECT
+              tx.*,
+              g.business_role AS business_role,
+              g.group_num AS mapped_group_num
+            FROM transactions tx
+            LEFT JOIN groups g ON g.group_key = tx.group_key
+            WHERE tx.deleted = 0
+              AND tx.settled = 0
+              AND tx.created_at > ?
+            ORDER BY tx.created_at DESC, tx.id DESC
+            """,
+            (start_after,),
+        ).fetchall()
+
+    def mark_transactions_closed(
+        self,
+        transaction_ids: list[int],
+        *,
+        settled_at: str,
+        commit: bool = True,
+    ) -> int:
+        ids = [int(item) for item in transaction_ids]
+        if not ids:
+            return 0
+        placeholders = ",".join("?" for _ in ids)
+        cur = self.conn.execute(
+            f"""
+            UPDATE transactions
+            SET settled = 1,
+                settled_at = ?
+            WHERE id IN ({placeholders})
+              AND deleted = 0
+              AND settled = 0
+            """,
+            [settled_at, *ids],
+        )
+        if commit:
+            self.conn.commit()
+        return int(cur.rowcount or 0)
+
+    def list_accounting_period_snapshots(self) -> list[DBRow]:
         return self.conn.execute(
             """
             SELECT
@@ -915,7 +695,7 @@ class BookkeepingDB:
                 ),
             )
 
-    def list_period_card_stats(self, period_id: int) -> list[sqlite3.Row]:
+    def list_period_card_stats(self, period_id: int) -> list[DBRow]:
         return self.conn.execute(
             """
             SELECT *
@@ -930,10 +710,10 @@ class BookkeepingDB:
         cur = self.conn.execute(
             """
             INSERT INTO group_combinations (name, note, created_by, updated_at)
-            VALUES (?, ?, ?, datetime('now'))
+            VALUES (?, ?, ?, CURRENT_TIMESTAMP)
             ON CONFLICT(name) DO UPDATE SET
               note = excluded.note,
-              updated_at = datetime('now')
+              updated_at = CURRENT_TIMESTAMP
             """,
             (name, note, created_by),
         )
@@ -951,7 +731,7 @@ class BookkeepingDB:
         self.conn.commit()
         return combination_id
 
-    def list_group_combinations(self) -> list[sqlite3.Row]:
+    def list_group_combinations(self) -> list[DBRow]:
         return self.conn.execute(
             """
             SELECT
@@ -961,7 +741,7 @@ class BookkeepingDB:
               gc.created_by,
               gc.created_at,
               gc.updated_at,
-              GROUP_CONCAT(gci.group_num, ',') AS group_numbers
+              COALESCE(STRING_AGG(CAST(gci.group_num AS TEXT), ',' ORDER BY gci.group_num), '') AS group_numbers
             FROM group_combinations gc
             LEFT JOIN group_combination_items gci ON gci.combination_id = gc.id
             GROUP BY gc.id, gc.name, gc.note, gc.created_by, gc.created_at, gc.updated_at
@@ -990,54 +770,11 @@ class BookkeepingDB:
         self.conn.execute("UPDATE reminders SET sent = 1 WHERE id = ?", (reminder_id,))
         self.conn.commit()
 
-    def _backfill_settlement_links(self) -> None:
-        groups = self.conn.execute(
-            "SELECT DISTINCT group_key FROM settlements ORDER BY group_key"
-        ).fetchall()
-        for row in groups:
-            group_key = str(row["group_key"])
-            settlements = self.conn.execute(
-                """
-                SELECT id, settled_at
-                FROM settlements
-                WHERE group_key = ?
-                ORDER BY settled_at ASC, id ASC
-                """,
-                (group_key,),
-            ).fetchall()
-            previous_cutoff = ""
-            for settlement in settlements:
-                settlement_id = int(settlement["id"])
-                settled_at = str(settlement["settled_at"])
-                txs = self.conn.execute(
-                    """
-                    SELECT id
-                    FROM transactions
-                    WHERE group_key = ?
-                      AND deleted = 0
-                      AND settled = 1
-                      AND settlement_id IS NULL
-                      AND created_at > ?
-                      AND created_at <= ?
-                    ORDER BY created_at ASC, id ASC
-                    """,
-                    (group_key, previous_cutoff, settled_at),
-                ).fetchall()
-                if txs:
-                    placeholders = ",".join("?" for _ in txs)
-                    ids = [int(item["id"]) for item in txs]
-                    self.conn.execute(
-                        f"UPDATE transactions SET settlement_id = ?, settled_at = ? WHERE id IN ({placeholders})",
-                        [settlement_id, settled_at, *ids],
-                    )
-                previous_cutoff = settled_at
-        self.conn.commit()
-
     def close(self) -> None:
         self.conn.close()
 
     @staticmethod
-    def _reminder_from_row(row: sqlite3.Row) -> ReminderPayload:
+    def _reminder_from_row(row: DBRow) -> ReminderPayload:
         return ReminderPayload(
             id=int(row["id"]),
             platform=row["platform"],
@@ -1092,7 +829,7 @@ class _PostgresConnectionCompat:
 
     @staticmethod
     def _translate(sql: str) -> str:
-        return sql.replace("datetime('now')", "CURRENT_TIMESTAMP").replace("?", "%s")
+        return sql.replace("?", "%s")
 
     def execute(self, sql: str, params=()):
         cursor = self._raw_connection.execute(self._translate(sql), tuple(params))
@@ -1108,23 +845,21 @@ class _PostgresConnectionCompat:
         self._raw_connection.close()
 
 
-class PostgresBookkeepingDB(BookkeepingDB):
+class BookkeepingDB(_BookkeepingStoreBase):
     def __init__(self, db_path: str | Path) -> None:
         try:
             import psycopg
         except ImportError as exc:
             raise RuntimeError("PostgreSQL backend requires psycopg to be installed") from exc
 
-        self.db_path = str(db_path)
-        self._raw_conn = psycopg.connect(str(db_path))
+        dsn = require_postgres_dsn(db_path, context="Bookkeeping database")
+        self.db_path = dsn
+        self._raw_conn = psycopg.connect(dsn)
         self.conn = _PostgresConnectionCompat(self._raw_conn)
         self._init_schema()
 
     def _init_schema(self) -> None:
-        schema_path = Path(__file__).resolve().parents[1] / "sql" / "postgres_schema.sql"
-        statements = [item.strip() for item in schema_path.read_text(encoding="utf-8-sig").split(";") if item.strip()]
-        for statement in statements:
-            self.conn.execute(statement)
+        self._verify_schema()
         self.conn.execute(
             """
             INSERT INTO settings (key, value, updated_at)
@@ -1132,78 +867,161 @@ class PostgresBookkeepingDB(BookkeepingDB):
             ON CONFLICT(key) DO NOTHING
             """
         )
-        self._ensure_column("groups", "business_role", "business_role TEXT")
-        self._ensure_column("groups", "role_source", "role_source TEXT")
-        self._ensure_column("groups", "capture_enabled", "capture_enabled INTEGER NOT NULL DEFAULT 1")
-        self._ensure_column("groups", "status", "status TEXT NOT NULL DEFAULT 'active'")
-        self._ensure_column("transactions", "usd_amount", "usd_amount NUMERIC(18, 4)")
-        self._ensure_column("transactions", "unit_face_value", "unit_face_value NUMERIC(18, 6)")
-        self._ensure_column("transactions", "unit_count", "unit_count NUMERIC(18, 6)")
-        self._ensure_column("transactions", "parse_version", "parse_version TEXT NOT NULL DEFAULT '1'")
-        self._ensure_column("accounting_periods", "end_at", "end_at TIMESTAMP")
-        self._ensure_column("accounting_periods", "closed_at", "closed_at TIMESTAMP")
-        self._ensure_column("accounting_periods", "closed_by", "closed_by TEXT")
-        self._ensure_column("accounting_periods", "note", "note TEXT")
-        self._ensure_column("accounting_periods", "has_adjustment", "has_adjustment INTEGER")
-        self._ensure_column("accounting_periods", "snapshot_version", "snapshot_version INTEGER")
-        self._backfill_accounting_periods()
-        self.conn.execute("ALTER TABLE accounting_periods ALTER COLUMN end_at SET NOT NULL")
-        self.conn.execute("ALTER TABLE accounting_periods ALTER COLUMN closed_at SET NOT NULL")
-        self.conn.execute("ALTER TABLE accounting_periods ALTER COLUMN closed_by SET NOT NULL")
-        self.conn.execute("ALTER TABLE accounting_periods ALTER COLUMN has_adjustment SET NOT NULL")
-        self.conn.execute("ALTER TABLE accounting_periods ALTER COLUMN snapshot_version SET NOT NULL")
         self.conn.commit()
 
-    def _ensure_column(self, table_name: str, column_name: str, definition: str) -> None:
-        row = self.conn.execute(
-            "SELECT 1 FROM information_schema.columns WHERE table_name = ? AND column_name = ? LIMIT 1",
-            (table_name, column_name),
-        ).fetchone()
-        if row is None:
-            self.conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {definition}")
-
-    def _backfill_accounting_periods(self) -> None:
-        row = self.conn.execute(
-            "SELECT 1 FROM information_schema.columns WHERE table_name = ? AND column_name = ? LIMIT 1",
-            ("accounting_periods", "start_at"),
-        ).fetchone()
-        if row is None:
-            return
-        self.conn.execute(
-            """
-            UPDATE accounting_periods
-            SET end_at = start_at
-            WHERE end_at IS NULL
-            """
-        )
-        self.conn.execute(
-            """
-            UPDATE accounting_periods
-            SET closed_at = COALESCE(end_at, start_at)
-            WHERE closed_at IS NULL
-            """
-        )
-        self.conn.execute(
-            """
-            UPDATE accounting_periods
-            SET closed_by = 'legacy-migration'
-            WHERE closed_by IS NULL OR closed_by = ''
-            """
-        )
-        self.conn.execute(
-            """
-            UPDATE accounting_periods
-            SET has_adjustment = 0
-            WHERE has_adjustment IS NULL
-            """
-        )
-        self.conn.execute(
-            """
-            UPDATE accounting_periods
-            SET snapshot_version = 1
-            WHERE snapshot_version IS NULL
-            """
-        )
+    def _verify_schema(self) -> None:
+        required_columns = {
+            "transactions": {
+                "id",
+                "platform",
+                "group_key",
+                "group_num",
+                "chat_id",
+                "chat_name",
+                "sender_id",
+                "sender_name",
+                "message_id",
+                "input_sign",
+                "amount",
+                "category",
+                "rate",
+                "rmb_value",
+                "raw",
+                "ngn_rate",
+                "usd_amount",
+                "unit_face_value",
+                "unit_count",
+                "parse_version",
+                "created_at",
+                "deleted",
+                "settled",
+                "settled_at",
+            },
+            "accounting_periods": {
+                "id",
+                "start_at",
+                "end_at",
+                "closed_at",
+                "closed_by",
+                "note",
+                "has_adjustment",
+                "snapshot_version",
+            },
+            "period_group_snapshots": {
+                "id",
+                "period_id",
+                "group_key",
+                "platform",
+                "chat_name",
+                "group_num",
+                "business_role",
+                "opening_balance",
+                "income",
+                "expense",
+                "closing_balance",
+                "transaction_count",
+                "anomaly_flags_json",
+            },
+            "period_card_stats": {
+                "id",
+                "period_id",
+                "group_key",
+                "business_role",
+                "card_type",
+                "usd_amount",
+                "rate",
+                "rmb_amount",
+                "unit_face_value",
+                "unit_count",
+                "sample_raw",
+            },
+            "groups": {
+                "group_key",
+                "platform",
+                "chat_id",
+                "chat_name",
+                "group_num",
+                "business_role",
+                "role_source",
+                "capture_enabled",
+                "status",
+                "created_at",
+                "updated_at",
+            },
+            "settings": {"key", "value", "updated_at"},
+            "whitelist": {"user_key", "added_by", "added_at", "note"},
+            "admins": {"user_key", "added_by", "added_at", "note"},
+            "reminders": {
+                "id",
+                "platform",
+                "chat_id",
+                "sender_id",
+                "message",
+                "amount",
+                "category",
+                "rate",
+                "rmb_value",
+                "ngn_value",
+                "duration_minutes",
+                "remind_at",
+                "created_at",
+                "sent",
+            },
+            "identity_bindings": {
+                "platform",
+                "chat_id",
+                "observed_key",
+                "canonical_id",
+                "observed_name",
+                "updated_at",
+            },
+            "manual_adjustments": {
+                "id",
+                "period_id",
+                "group_key",
+                "opening_delta",
+                "income_delta",
+                "expense_delta",
+                "closing_delta",
+                "note",
+                "created_by",
+                "created_at",
+            },
+            "group_combinations": {"id", "name", "note", "created_by", "created_at", "updated_at"},
+            "group_combination_items": {"combination_id", "group_num"},
+            "ingested_events": {
+                "event_id",
+                "event_type",
+                "platform",
+                "source_machine",
+                "schema_version",
+                "occurred_at",
+                "ingested_at",
+            },
+        }
+        mismatches: list[str] = []
+        for table_name, expected_columns in required_columns.items():
+            rows = self.conn.execute(
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = current_schema()
+                  AND table_name = ?
+                """,
+                (table_name,),
+            ).fetchall()
+            actual_columns = {str(row["column_name"]) for row in rows}
+            if not actual_columns:
+                mismatches.append(f"missing table: {table_name}")
+                continue
+            missing_columns = sorted(expected_columns - actual_columns)
+            if missing_columns:
+                mismatches.append(f"missing columns in {table_name}: {', '.join(missing_columns)}")
+        if mismatches:
+            raise RuntimeError(
+                "PostgreSQL schema mismatch. Apply the current postgres_schema.sql before starting the runtime: "
+                + "; ".join(mismatches)
+            )
 
     def add_transaction(
         self,
@@ -1229,7 +1047,6 @@ class PostgresBookkeepingDB(BookkeepingDB):
         created_at: str | None = None,
         deleted: int = 0,
         settled: int = 0,
-        settlement_id: int | None = None,
         settled_at: str | None = None,
         ngn_rate_override: float | None = None,
     ) -> int:
@@ -1241,8 +1058,8 @@ class PostgresBookkeepingDB(BookkeepingDB):
               sender_id, sender_name, message_id, input_sign, amount,
               category, rate, rmb_value, raw, parse_version, usd_amount,
               unit_face_value, unit_count, ngn_rate, created_at,
-              deleted, settled, settlement_id, settled_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP), ?, ?, ?, ?)
+              deleted, settled, settled_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP), ?, ?, ?)
             RETURNING id
             """,
             (
@@ -1268,56 +1085,18 @@ class PostgresBookkeepingDB(BookkeepingDB):
                 created_at,
                 deleted,
                 settled,
-                settlement_id,
                 settled_at,
             ),
         )
         row = cur.fetchone()
+        self._refresh_group_profile_if_exists(
+            platform=platform,
+            group_key=group_key,
+            chat_id=chat_id,
+            chat_name=chat_name,
+        )
         self.conn.commit()
         return int(row["id"])
-
-    def settle_transactions(
-        self,
-        platform: str,
-        group_key: str,
-        txs: list[sqlite3.Row],
-        settled_by: str,
-        *,
-        settled_at: str | None = None,
-    ) -> dict:
-        if not txs:
-            return {"settlement_id": None, "total_rmb": 0.0, "detail": ""}
-
-        settled_at = settled_at or self._utcnow_text()
-        total_rmb = sum(float(tx["rmb_value"]) for tx in txs)
-        detail_map: dict[str, dict[str, float]] = {}
-        for tx in txs:
-            item = detail_map.setdefault(str(tx["category"]), {"count": 0.0, "total": 0.0})
-            item["count"] += 1
-            item["total"] += float(tx["rmb_value"])
-        detail = "; ".join(
-            f"{category.upper()}: {int(info['count'])} txs {'+' if info['total'] >= 0 else '-'}{abs(info['total']):.2f}"
-            for category, info in detail_map.items()
-        )
-        cur = self.conn.execute(
-            """
-            INSERT INTO settlements (
-              platform, group_key, settle_date, total_rmb, detail, settled_at, settled_by
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
-            RETURNING id
-            """,
-            (platform, group_key, "unsettled", total_rmb, detail, settled_at, settled_by),
-        )
-        settlement_row = cur.fetchone()
-        settlement_id = int(settlement_row["id"])
-        ids = [int(tx["id"]) for tx in txs]
-        placeholders = ",".join("?" for _ in ids)
-        self.conn.execute(
-            f"UPDATE transactions SET settled = 1, settlement_id = ?, settled_at = ? WHERE id IN ({placeholders})",
-            [settlement_id, settled_at, *ids],
-        )
-        self.conn.commit()
-        return {"settlement_id": settlement_id, "total_rmb": total_rmb, "detail": detail}
 
     def add_to_whitelist(self, user_key: str, added_by: str, note: str | None = None) -> None:
         self.conn.execute(
@@ -1344,7 +1123,7 @@ class PostgresBookkeepingDB(BookkeepingDB):
     def add_manual_adjustment(
         self,
         *,
-        settlement_id: int,
+        period_id: int,
         group_key: str,
         opening_delta: float,
         income_delta: float,
@@ -1356,13 +1135,13 @@ class PostgresBookkeepingDB(BookkeepingDB):
         cur = self.conn.execute(
             """
             INSERT INTO manual_adjustments (
-              settlement_id, group_key, opening_delta, income_delta, expense_delta,
+              period_id, group_key, opening_delta, income_delta, expense_delta,
               closing_delta, note, created_by
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             RETURNING id
             """,
             (
-                settlement_id,
+                period_id,
                 group_key,
                 opening_delta,
                 income_delta,

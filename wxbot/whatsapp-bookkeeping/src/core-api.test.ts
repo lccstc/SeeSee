@@ -108,6 +108,12 @@ test("index.ts no longer keeps the old parser/commands/database/sync main chain"
   assert.ok(!staticImports.includes("./sync.js"));
 });
 
+test("index.ts no longer declares legacy sync config source fields", () => {
+  const source = readFileSync(resolve(projectRoot, "src/index.ts"), "utf8");
+
+  assert.ok(!source.includes("sync?: {"));
+});
+
 test("config.ts no longer defines the legacy sync configuration", () => {
   const source = readFileSync(resolve(projectRoot, "src/config.ts"), "utf8");
 
@@ -160,6 +166,45 @@ test("normalizeMessage maps the canonical sender and Unix seconds timestamp at r
   assert.equal(message.sender_name, "217944491602115@lid");
   assert.equal(message.sender_kind, "user");
   assert.equal(message.received_at, new Date(1710000000 * 1000).toISOString());
+});
+
+test("normalizeMessage prefers provided sender display name over raw sender id", async () => {
+  const { normalizeMessage } = await import(runtimeIndexUrl.href);
+
+  const message = normalizeMessage({
+    from: "243563921170506@lid",
+    fromMe: false,
+    chatId: "120363424645412524@g.us",
+    chatName: "测试群",
+    content: "+50xb5",
+    timestamp: 1710000000,
+    messageId: "msg-display-name",
+    participant: "243563921170506@lid",
+    senderName: "虎游堂-神在ι",
+  } as any);
+
+  assert.equal(message.sender_id, "243563921170506@lid");
+  assert.equal(message.sender_name, "虎游堂-神在ι");
+});
+
+test("isValidCoreEnvelope rejects envelopes missing required runtime identifiers", async () => {
+  const { isValidCoreEnvelope } = await import(runtimeIndexUrl.href);
+
+  assert.equal(
+    isValidCoreEnvelope({
+      ...envelope,
+      message_id: "",
+    }),
+    false
+  );
+  assert.equal(
+    isValidCoreEnvelope({
+      ...envelope,
+      sender_id: "",
+    }),
+    false
+  );
+  assert.equal(isValidCoreEnvelope(envelope), true);
 });
 
 test("shouldIgnoreSelfMessage keeps manual self-authored commands for runtime", async () => {

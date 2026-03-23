@@ -22,7 +22,6 @@ CREATE TABLE IF NOT EXISTS transactions (
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   deleted INTEGER NOT NULL DEFAULT 0,
   settled INTEGER NOT NULL DEFAULT 0,
-  settlement_id BIGINT,
   settled_at TIMESTAMP
 );
 
@@ -66,17 +65,6 @@ CREATE TABLE IF NOT EXISTS period_card_stats (
   unit_face_value NUMERIC(18, 6),
   unit_count NUMERIC(18, 6),
   sample_raw TEXT
-);
-
-CREATE TABLE IF NOT EXISTS settlements (
-  id BIGSERIAL PRIMARY KEY,
-  platform TEXT NOT NULL,
-  group_key TEXT NOT NULL,
-  settle_date TEXT NOT NULL,
-  total_rmb NUMERIC(18, 4) NOT NULL,
-  detail TEXT NOT NULL,
-  settled_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  settled_by TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS groups (
@@ -142,7 +130,7 @@ CREATE TABLE IF NOT EXISTS identity_bindings (
 
 CREATE TABLE IF NOT EXISTS manual_adjustments (
   id BIGSERIAL PRIMARY KEY,
-  settlement_id BIGINT NOT NULL,
+  period_id BIGINT NOT NULL,
   group_key TEXT NOT NULL,
   opening_delta NUMERIC(18, 4) NOT NULL DEFAULT 0,
   income_delta NUMERIC(18, 4) NOT NULL DEFAULT 0,
@@ -181,7 +169,6 @@ CREATE TABLE IF NOT EXISTS ingested_events (
 CREATE INDEX IF NOT EXISTS idx_tx_group_key ON transactions(group_key, deleted);
 CREATE INDEX IF NOT EXISTS idx_tx_platform_group ON transactions(platform, group_key, deleted);
 CREATE INDEX IF NOT EXISTS idx_tx_settled ON transactions(group_key, settled, deleted);
-CREATE INDEX IF NOT EXISTS idx_tx_settlement_id ON transactions(settlement_id);
 CREATE INDEX IF NOT EXISTS idx_groups_num ON groups(group_num);
-CREATE INDEX IF NOT EXISTS idx_manual_adjustments_settlement ON manual_adjustments(settlement_id, group_key);
+CREATE INDEX IF NOT EXISTS idx_manual_adjustments_period ON manual_adjustments(period_id, group_key);
 CREATE INDEX IF NOT EXISTS idx_ingested_events_platform ON ingested_events(platform, occurred_at);

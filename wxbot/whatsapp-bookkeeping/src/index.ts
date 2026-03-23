@@ -12,9 +12,6 @@ type CoreApiConfigSource = {
     token: string;
     requestTimeoutMs: number;
   };
-  sync?: {
-    token?: string;
-  };
 };
 
 type SelfMessageTracker = {
@@ -33,13 +30,22 @@ export function normalizeMessage(msg: WhatsAppMessage): NormalizedMessageEnvelop
     chat_name: msg.chatName || msg.chatId,
     is_group: msg.chatId.endsWith("@g.us"),
     sender_id: msg.from || msg.participant || "",
-    sender_name: msg.from || msg.participant || "",
+    sender_name: msg.senderName?.trim() || msg.from || msg.participant || "",
     sender_kind: msg.fromMe ? "self" : "user",
     content_type: msg.content ? "text" : undefined,
     text: msg.content?.trim() || undefined,
     from_self: msg.fromMe,
     received_at: new Date(normalizeTimestamp(msg.timestamp)).toISOString(),
   };
+}
+
+export function isValidCoreEnvelope(envelope: NormalizedMessageEnvelope): boolean {
+  return Boolean(
+    envelope.message_id?.trim() &&
+      envelope.chat_id?.trim() &&
+      envelope.sender_id?.trim() &&
+      envelope.text?.trim()
+  );
 }
 
 export function createSelfMessageTracker(now: () => number = () => Date.now()): SelfMessageTracker {
@@ -160,7 +166,20 @@ async function main(): Promise<void> {
       }
 
       try {
-        const actions = await coreApiClient.sendEnvelope(normalizeMessage(msg));
+        const envelope = normalizeMessage(msg);
+        if (!isValidCoreEnvelope(envelope)) {
+          logger.warn(
+            {
+              messageId: envelope.message_id,
+              chatId: envelope.chat_id,
+              senderId: envelope.sender_id,
+              text: envelope.text,
+            },
+            "Dropped invalid WhatsApp envelope before core API dispatch"
+          );
+          return;
+        }
+        const actions = await coreApiClient.sendEnvelope(envelope);
         await executeCoreActions(actions, actionSender);
       } catch (error) {
         logger.error({ error }, "Failed to process WhatsApp message");

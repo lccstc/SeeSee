@@ -133,7 +133,8 @@ class WeChatPlatformAPI:
             )
 
         master_users = set(getattr(self.config, "master_users", [])) if self.config is not None else set()
-        is_master = bool(self.db and (sender_id in master_users or self.db.is_admin(sender_id)))
+        is_config_master = observed_id in master_users or sender_id in master_users or sender_name in master_users
+        is_master = bool(is_config_master or (self.db and self.db.is_admin(sender_id)))
 
         if self.logger is not None:
             self.logger.info(

@@ -26,7 +26,6 @@ class WeChatConfig:
     poll_interval_seconds: float
     log_level: str
     language: str
-    db_path: str
     export_dir: str
     runtime_dir: str
     core_api: CoreApiConfig = field(default_factory=CoreApiConfig)
@@ -59,7 +58,6 @@ def load_config() -> WeChatConfig:
         "poll_interval_seconds": 1.0,
         "log_level": "INFO",
         "language": "cn",
-        "db_path": str(BASE_DIR / "data" / "bookkeeping.db"),
         "export_dir": str(BASE_DIR / "exports"),
         "runtime_dir": str(BASE_DIR / "runtime"),
         "core_api": {
@@ -71,6 +69,7 @@ def load_config() -> WeChatConfig:
     if CONFIG_PATH.exists():
         data = json.loads(CONFIG_PATH.read_text(encoding="utf-8-sig"))
         defaults.update(data)
+    defaults.pop("db_path", None)
     defaults["listen_chats"] = _clean_chat_names(defaults.get("listen_chats")) or ["文件传输助手"]
     defaults["master_users"] = [str(item).strip() for item in defaults.get("master_users", []) if str(item).strip()]
     core_api_raw = defaults.get("core_api") or {}

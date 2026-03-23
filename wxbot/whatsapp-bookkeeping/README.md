@@ -63,6 +63,9 @@ WhatsApp message
 - `send_text`
 - `send_file`
 
+另外，适配器现在会在本地先校验消息封包。
+像缺失 `message_id`、`chat_id`、`sender_id` 或空文本这类坏消息，会直接丢弃并记日志，不再继续打到总账中心。
+
 ## 真机验证
 
 1. 在总账中心启动 `bookkeeping-platform`

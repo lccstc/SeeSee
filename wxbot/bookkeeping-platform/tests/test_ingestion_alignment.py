@@ -1,21 +1,19 @@
 from __future__ import annotations
 
-import tempfile
 import unittest
-from pathlib import Path
 
 from bookkeeping_core.database import BookkeepingDB
+from tests.support.postgres_test_case import PostgresTestCase
 
 
-class StructuredTransactionContractTests(unittest.TestCase):
+class StructuredTransactionContractTests(PostgresTestCase):
     def setUp(self) -> None:
-        self.tempdir = tempfile.TemporaryDirectory()
-        self.db_path = Path(self.tempdir.name) / "ingestion-alignment.db"
-        self.db = BookkeepingDB(self.db_path)
+        super().setUp()
+        self.db = BookkeepingDB(self.make_dsn("ingestion-alignment"))
 
     def tearDown(self) -> None:
         self.db.close()
-        self.tempdir.cleanup()
+        super().tearDown()
 
     def test_structured_record_persists_parse_and_card_fields(self) -> None:
         from bookkeeping_core.ingestion import StructuredTransactionRecord, persist_transaction_record
@@ -115,17 +113,16 @@ class RecordBuilderTests(unittest.TestCase):
         self.assertEqual(sync_record.amount, 100)
 
 
-class ReplayScenarioContractTests(unittest.TestCase):
+class ReplayScenarioContractTests(PostgresTestCase):
     def setUp(self) -> None:
-        self.tempdir = tempfile.TemporaryDirectory()
-        self.db_path = Path(self.tempdir.name) / "ingestion-alignment-replay.db"
-        self.db = BookkeepingDB(self.db_path)
+        super().setUp()
+        self.db = BookkeepingDB(self.make_dsn("ingestion-alignment-replay"))
 
     def tearDown(self) -> None:
         self.db.close()
-        self.tempdir.cleanup()
+        super().tearDown()
 
-    def test_runtime_replay_helper_centralizes_card_field_backfill_for_period_stats(self) -> None:
+    def test_runtime_replay_helper_centralizes_card_field_population_for_period_stats(self) -> None:
         from tests.support.bookkeeping_replay import build_runtime_card_scenario, replay_runtime_scenario
 
         period_id = replay_runtime_scenario(

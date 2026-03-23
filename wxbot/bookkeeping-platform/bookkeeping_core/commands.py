@@ -3,6 +3,8 @@
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from .periods import AccountingPeriodService
+
 
 class _NullActionCollector:
     def send_text(self, chat_id: str, text: str) -> bool:
@@ -53,7 +55,6 @@ class CommandHandler:
             "export": lambda: self.handle_export(group_key, chat_id, sender_id),
             "js": lambda: self.handle_settle(platform, group_key, chat_id, sender_id),
             "alljs": lambda: self.handle_all_settle(platform, chat_id, sender_id),
-            "settlements": lambda: self.handle_settlements(group_key, chat_id, args),
             "mx": lambda: self.handle_mingxi(group_key, chat_id, args),
             "set": lambda: self.handle_set_group(platform, group_key, chat_id, chat_name, sender_id, args),
             "diy": lambda: self.handle_diy_send(chat_id, sender_id, args),
@@ -126,7 +127,7 @@ class CommandHandler:
 
         lines = [f"📝 Last {len(rows)} transactions:"]
         for row in reversed(rows):
-            created = datetime.strptime(row["created_at"], "%Y-%m-%d %H:%M:%S") + timedelta(hours=7)
+            created = self._parse_db_timestamp(row["created_at"]) + timedelta(hours=7)
             time_text = created.strftime("%m-%d %H:%M")
             if row["category"] == "rmb":
                 sign = "+" if row["rmb_value"] >= 0 else "-"
@@ -267,9 +268,13 @@ class CommandHandler:
         if not txs:
             self.action_collector.send_text(chat_id, "✅ No unsettled transactions")
             return
-        result = self.db.settle_transactions(platform, group_key, txs, sender_id)
-        sign = "+" if result["total_rmb"] >= 0 else "-"
-        self.action_collector.send_text(chat_id, f"✅ Settlement successful!\n📊 Transactions: {len(txs)}\n💰 Total: {sign}{abs(result['total_rmb']):.2f}\n📝 Details: {result['detail']}")
+        period_id = self._close_accounting_period(
+            txs=txs,
+            closed_by=sender_id,
+            note=f"/js from {group_key}",
+        )
+        summary = self._build_period_close_summary(period_id)
+        self.action_collector.send_text(chat_id, self._format_period_close_message(summary))
 
     def handle_all_settle(self, platform: str, chat_id: str, sender_id: str) -> None:
         if not self.can_manage(sender_id):
@@ -279,39 +284,16 @@ class CommandHandler:
         if not rows:
             self.action_collector.send_text(chat_id, "✅ No unsettled transactions in any group")
             return
-
-        self.action_collector.send_text(chat_id, f"🚀 Starting batch settlement...\n📊 {len(rows)} groups to settle")
-        total_groups = 0
-        total_txs = 0
-        total_rmb = 0.0
-        details: list[str] = []
+        txs = []
         for row in rows:
-            txs = self.db.get_unsettled_transactions(row["group_key"])
-            if not txs:
-                continue
-            bal = self.db.get_balance(row["group_key"])
-            result = self.db.settle_transactions(platform, row["group_key"], txs, sender_id)
-            total_groups += 1
-            total_txs += len(txs)
-            total_rmb += result["total_rmb"]
-            details.append(f"{row['chat_name']}: {len(txs)} txs {'+' if result['total_rmb'] >= 0 else '-'}{abs(result['total_rmb']):.2f}")
-            self.action_collector.send_text(row["chat_id"], f"✅ Happy transaction!\n📊 Balance: {'+' if bal['total'] >= 0 else ''}{bal['total']:.2f}")
-
-        sign = "+" if total_rmb >= 0 else "-"
-        summary = ["✅ Batch settlement complete!", "━━━━━━━━━━━━━━", f"📊 Groups: {total_groups}", f"📝 Transactions: {total_txs}", f"💰 Total: {sign}{abs(total_rmb):.2f}", "━━━━━━━━━━━━━━"]
-        summary.extend(details)
-        self.action_collector.send_text(chat_id, "\n".join(summary))
-
-    def handle_settlements(self, group_key: str, chat_id: str, args: str) -> None:
-        limit = int(args) if args.isdigit() else 10
-        rows = self.db.get_settlements(group_key, limit)
-        if not rows:
-            self.action_collector.send_text(chat_id, "📝 No settlement records")
-            return
-        lines = [f"📋 Last {len(rows)} settlement records:"]
-        for row in rows:
-            lines.append(f"{row['settled_at'][11:16]} | {'+' if row['total_rmb'] >= 0 else '-'}{abs(row['total_rmb']):.2f} ({row['settled_by']})")
-        self.action_collector.send_text(chat_id, "\n".join(lines))
+            txs.extend(self.db.get_unsettled_transactions(row["group_key"]))
+        period_id = self._close_accounting_period(
+            txs=txs,
+            closed_by=sender_id,
+            note="/alljs",
+        )
+        summary = self._build_period_close_summary(period_id)
+        self.action_collector.send_text(chat_id, self._format_period_close_message(summary))
 
     def handle_mingxi(self, group_key: str, chat_id: str, args: str) -> None:
         bal = self.db.get_balance(group_key)
@@ -512,3 +494,56 @@ class CommandHandler:
                 f"canonical_id={canonical_id}"
             ),
         )
+
+    def _close_accounting_period(self, *, txs, closed_by: str, note: str) -> int:
+        start_at = self._resolve_period_start_at(txs)
+        end_at = max(str(tx["created_at"]) for tx in txs)
+        return AccountingPeriodService(self.db).close_period(
+            start_at=start_at,
+            end_at=end_at,
+            closed_by=closed_by,
+            note=note,
+        )
+
+    def _resolve_period_start_at(self, txs) -> str:
+        periods = self.db.list_accounting_periods()
+        if periods:
+            latest = max(
+                periods,
+                key=lambda row: (str(row["closed_at"]), int(row["id"])),
+            )
+            return str(latest["end_at"])
+        earliest_created_at = min(str(tx["created_at"]) for tx in txs)
+        earliest_dt = self._parse_db_timestamp(earliest_created_at) - timedelta(seconds=1)
+        return earliest_dt.strftime("%Y-%m-%d %H:%M:%S")
+
+    def _build_period_close_summary(self, period_id: int) -> dict[str, float | int]:
+        rows = self.db.list_period_group_snapshots(period_id)
+        active_rows = [row for row in rows if int(row["transaction_count"] or 0) > 0]
+        total_rmb = sum(float(row["income"] or 0) - float(row["expense"] or 0) for row in active_rows)
+        transaction_count = sum(int(row["transaction_count"] or 0) for row in active_rows)
+        return {
+            "period_id": period_id,
+            "group_count": len(active_rows),
+            "transaction_count": transaction_count,
+            "total_rmb": total_rmb,
+        }
+
+    @staticmethod
+    def _format_period_close_message(summary: dict[str, float | int]) -> str:
+        total_rmb = float(summary["total_rmb"])
+        sign = "+" if total_rmb >= 0 else "-"
+        return (
+            "✅ Accounting period closed!\n"
+            f"📘 Period ID: {int(summary['period_id'])}\n"
+            f"📊 Groups: {int(summary['group_count'])}\n"
+            f"📝 Transactions: {int(summary['transaction_count'])}\n"
+            f"💰 Total: {sign}{abs(total_rmb):.2f}"
+        )
+
+    @staticmethod
+    def _parse_db_timestamp(value) -> datetime:
+        if isinstance(value, datetime):
+            return value
+        text = str(value).strip()
+        return datetime.fromisoformat(text.replace("Z", "+00:00")).replace(tzinfo=None)

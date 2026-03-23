@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import json
-import tempfile
 import unittest
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -11,6 +9,7 @@ from bookkeeping_core.contracts import NormalizedMessageEnvelope
 from bookkeeping_core.database import BookkeepingDB
 from bookkeeping_core.models import IncomingMessage
 from bookkeeping_core.runtime import UnifiedBookkeepingRuntime
+from tests.support.postgres_test_case import PostgresTestCase
 from wechat_adapter.config import CoreApiConfig, WeChatConfig
 
 
@@ -19,12 +18,11 @@ class _FakeListenedChat:
         self.who = who
 
 
-class UnifiedRuntimeTests(unittest.TestCase):
+class UnifiedRuntimeTests(PostgresTestCase):
     def setUp(self) -> None:
-        self.tempdir = tempfile.TemporaryDirectory()
-        self.db_path = Path(self.tempdir.name) / "runtime.db"
-        self.export_dir = Path(self.tempdir.name) / "exports"
-        self.db = BookkeepingDB(self.db_path)
+        super().setUp()
+        self.export_dir = self.temp_path / "exports"
+        self.db = BookkeepingDB(self.make_dsn("runtime"))
         self.runtime = UnifiedBookkeepingRuntime(
             db=self.db,
             master_users=["master-user"],
@@ -33,7 +31,7 @@ class UnifiedRuntimeTests(unittest.TestCase):
 
     def tearDown(self) -> None:
         self.db.close()
-        self.tempdir.cleanup()
+        super().tearDown()
 
     def test_normalized_message_envelope_from_dict_populates_required_contract_fields(self) -> None:
         envelope = NormalizedMessageEnvelope.from_dict(
@@ -254,7 +252,6 @@ class UnifiedRuntimeTests(unittest.TestCase):
             poll_interval_seconds=1.0,
             log_level="INFO",
             language="cn",
-            db_path="/tmp/bookkeeping.db",
             export_dir="/tmp/exports",
             runtime_dir="/tmp/runtime",
         )
@@ -300,7 +297,6 @@ class UnifiedRuntimeTests(unittest.TestCase):
             poll_interval_seconds=1.0,
             log_level="INFO",
             language="cn",
-            db_path="/tmp/bookkeeping.db",
             export_dir="/tmp/exports",
             runtime_dir="/tmp/runtime",
         )
@@ -338,7 +334,6 @@ class UnifiedRuntimeTests(unittest.TestCase):
             poll_interval_seconds=1.0,
             log_level="INFO",
             language="cn",
-            db_path="/tmp/bookkeeping.db",
             export_dir="/tmp/exports",
             runtime_dir="/tmp/runtime",
         )
@@ -385,7 +380,6 @@ class UnifiedRuntimeTests(unittest.TestCase):
             poll_interval_seconds=1.0,
             log_level="INFO",
             language="cn",
-            db_path="/tmp/bookkeeping.db",
             export_dir="/tmp/exports",
             runtime_dir="/tmp/runtime",
         )
@@ -400,73 +394,27 @@ class UnifiedRuntimeTests(unittest.TestCase):
         self.assertEqual(messages[0].text, "hello")
         api.send_text.assert_not_called()
 
-    def test_wechat_main_processes_runtime_actions_through_action_executor(self) -> None:
+    def test_wechat_main_requires_remote_core_api_configuration(self) -> None:
         from wechat_adapter import main as wechat_main
 
-        self.assertFalse(hasattr(wechat_main, "_handle_control_command"))
-
-        fake_message = NormalizedMessageEnvelope.from_dict(
-            {
-                "platform": "wechat",
-                "message_id": "msg-main-1",
-                "chat_id": "room-a",
-                "chat_name": "客户群-A",
-                "is_group": True,
-                "sender_id": "user-1",
-                "sender_name": "User One",
-                "sender_kind": "user",
-                "content_type": "text",
-                "text": "hello",
-                "received_at": "2026-03-21 10:00:00",
-            }
-        )
-        fake_platform_api = MagicMock()
-        fake_platform_api.listen_chats = ["文件传输助手"]
-        fake_platform_api.self_name = ""
-        fake_platform_api.self_wxid = ""
-        fake_platform_api.poll_messages.return_value = [fake_message]
-        fake_runtime = MagicMock()
-        fake_runtime.process_envelope.return_value = [
-            {
-                "action_type": "send_text",
-                "chat_id": "room-a",
-                "text": "hello back",
-            },
-            {
-                "action_type": "send_file",
-                "chat_id": "room-a",
-                "file_path": "/tmp/report.csv",
-            },
-        ]
-        fake_runtime.flush_due_actions.return_value = []
-        fake_db = MagicMock()
-        fake_db.close.return_value = None
         config = WeChatConfig(
             listen_chats=["文件传输助手"],
             master_users=[],
             poll_interval_seconds=1.0,
             log_level="INFO",
             language="cn",
-            db_path="/tmp/bookkeeping.db",
             export_dir="/tmp/exports",
             runtime_dir="/tmp/runtime",
         )
 
         with (
             patch.object(wechat_main, "load_config", return_value=config),
-            patch.object(wechat_main, "save_config"),
-            patch.object(wechat_main, "WeChatPlatformAPI", return_value=fake_platform_api),
-            patch.object(wechat_main, "BookkeepingDB", return_value=fake_db),
-            patch.object(wechat_main, "UnifiedBookkeepingRuntime", return_value=fake_runtime),
-            patch.object(wechat_main.time, "sleep", side_effect=KeyboardInterrupt),
+            patch.object(wechat_main, "WeChatPlatformAPI") as platform_api_cls,
         ):
             exit_code = wechat_main.main()
 
-        self.assertEqual(exit_code, 0)
-        fake_runtime.process_envelope.assert_called_once_with(fake_message)
-        fake_platform_api.send_text.assert_called_once_with("room-a", "hello back")
-        fake_platform_api.send_file.assert_called_once_with("room-a", "/tmp/report.csv")
-        fake_runtime.flush_due_actions.assert_called_once_with()
+        self.assertEqual(exit_code, 1)
+        platform_api_cls.assert_not_called()
 
     def test_wechat_core_api_client_posts_normalized_envelope_to_remote_runtime(self) -> None:
         from wechat_adapter.core_api import WeChatCoreApiClient
@@ -563,15 +511,12 @@ class UnifiedRuntimeTests(unittest.TestCase):
                 "text": "hello back",
             }
         ]
-        fake_db = MagicMock()
-        fake_db.close.return_value = None
         config = WeChatConfig(
             listen_chats=["文件传输助手"],
             master_users=[],
             poll_interval_seconds=1.0,
             log_level="INFO",
             language="cn",
-            db_path="/tmp/bookkeeping.db",
             export_dir="/tmp/exports",
             runtime_dir="/tmp/runtime",
             core_api=CoreApiConfig(
@@ -585,9 +530,7 @@ class UnifiedRuntimeTests(unittest.TestCase):
             patch.object(wechat_main, "load_config", return_value=config),
             patch.object(wechat_main, "save_config"),
             patch.object(wechat_main, "WeChatPlatformAPI", return_value=fake_platform_api),
-            patch.object(wechat_main, "BookkeepingDB", return_value=fake_db),
             patch.object(wechat_main, "WeChatCoreApiClient", return_value=fake_remote_client),
-            patch.object(wechat_main, "UnifiedBookkeepingRuntime") as runtime_cls,
             patch.object(wechat_main.time, "sleep", side_effect=KeyboardInterrupt),
         ):
             exit_code = wechat_main.main()
@@ -595,7 +538,6 @@ class UnifiedRuntimeTests(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         fake_remote_client.send_envelope.assert_called_once_with(fake_message)
         fake_platform_api.send_text.assert_called_once_with("room-a", "hello back")
-        runtime_cls.assert_not_called()
 
     def test_core_action_collector_emits_send_text_and_send_file_actions(self) -> None:
         from bookkeeping_core.contracts import CoreActionCollector, core_action_to_dict
@@ -759,7 +701,7 @@ class UnifiedRuntimeTests(unittest.TestCase):
             ],
         )
 
-    def test_settlement_command_returns_legacy_emoji_text(self) -> None:
+    def test_settlement_command_closes_accounting_period_window(self) -> None:
         self.db.set_group(
             platform="wechat",
             group_key="wechat:room-settle",
@@ -787,16 +729,65 @@ class UnifiedRuntimeTests(unittest.TestCase):
             )
         )
 
-        self.assertEqual(
-            actions,
-            [
-                {
-                    "action_type": "send_text",
-                    "chat_id": "room-settle",
-                    "text": "✅ Settlement successful!\n📊 Transactions: 1\n💰 Total: +100.00\n📝 Details: RMB: 1 txs +100.00",
-                }
-            ],
+        self.assertEqual(len(self.db.list_accounting_periods()), 1)
+        self.assertEqual(self.db.get_unsettled_transactions("wechat:room-settle"), [])
+        self.assertEqual(actions[0]["action_type"], "send_text")
+        self.assertEqual(actions[0]["chat_id"], "room-settle")
+        self.assertIn("Accounting period closed", actions[0]["text"])
+        self.assertIn("Transactions: 1", actions[0]["text"])
+
+    def test_all_settlement_command_closes_current_window_for_all_groups(self) -> None:
+        self.db.set_group(
+            platform="wechat",
+            group_key="wechat:room-settle-a",
+            chat_id="room-settle-a",
+            chat_name="结算群-A",
+            group_num=3,
         )
+        self.db.set_group(
+            platform="wechat",
+            group_key="wechat:room-settle-b",
+            chat_id="room-settle-b",
+            chat_name="结算群-B",
+            group_num=4,
+        )
+        self.runtime.process_envelope(
+            self._message(
+                platform="wechat",
+                message_id="msg-settle-a-seed",
+                chat_id="room-settle-a",
+                chat_name="结算群-A",
+                text="+100rmb",
+            )
+        )
+        self.runtime.process_envelope(
+            self._message(
+                platform="wechat",
+                message_id="msg-settle-b-seed",
+                chat_id="room-settle-b",
+                chat_name="结算群-B",
+                text="+50rmb",
+            )
+        )
+
+        actions = self.runtime.process_envelope(
+            self._message(
+                platform="wechat",
+                message_id="msg-all-settle-1",
+                chat_id="room-settle-a",
+                chat_name="结算群-A",
+                text="/alljs",
+            )
+        )
+
+        periods = self.db.list_accounting_periods()
+        self.assertEqual(len(periods), 1)
+        self.assertEqual(self.db.get_groups_with_unsettled_transactions(), [])
+        snapshots = self.db.list_period_group_snapshots(int(periods[0]["id"]))
+        self.assertEqual(len(snapshots), 2)
+        self.assertEqual(actions[0]["action_type"], "send_text")
+        self.assertIn("Accounting period closed", actions[0]["text"])
+        self.assertIn("Groups: 2", actions[0]["text"])
 
     def test_command_handler_uses_action_collector_boundary(self) -> None:
         from bookkeeping_core.commands import CommandHandler

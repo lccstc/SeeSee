@@ -20,24 +20,13 @@ WhatsApp 本地记账 bot 已降级为薄适配层；正式 runtime 走 `POST /a
 
 ## 启动总账中心
 
-当前 `reporting_server.py` 已支持：
-
-- SQLite 文件路径
-- PostgreSQL DSN
-- 实时同步接收 Token
-
-### SQLite 方式
-
-```bash
-BOOKKEEPING_SYNC_TOKEN="replace-with-sync-token" \
-python3 "/Users/lcc/SeeSee/wxbot/bookkeeping-platform/reporting_server.py" \
-  --db "/Users/lcc/SeeSee/wxbot/bookkeeping-platform/data/bookkeeping.db"
-```
+当前正式 runtime 只接受 PostgreSQL DSN。
 
 ### PostgreSQL 方式
 
 ```bash
-BOOKKEEPING_SYNC_TOKEN="replace-with-sync-token" \
+BOOKKEEPING_CORE_TOKEN="replace-with-core-token" \
+BOOKKEEPING_DB_DSN="postgresql://bookkeeping:password@127.0.0.1:5432/bookkeeping" \
 PYTHONPATH="/Users/lcc/SeeSee/wxbot/bookkeeping-platform" \
 python3 "/Users/lcc/SeeSee/wxbot/bookkeeping-platform/reporting_server.py" \
   --db "postgresql://bookkeeping:password@127.0.0.1:5432/bookkeeping"
@@ -45,8 +34,11 @@ python3 "/Users/lcc/SeeSee/wxbot/bookkeeping-platform/reporting_server.py" \
 
 说明：
 
-- `--db` 传 PostgreSQL DSN 时，会自动切到 PostgreSQL 后端
+- `--db` 必须传 PostgreSQL DSN；不再支持运行时回落到 SQLite
+- `BOOKKEEPING_DB_DSN` 可作为默认值，避免每次重复输入
+- `BOOKKEEPING_CORE_TOKEN` / `--core-token` 是适配器调用 `POST /api/core/messages` 时使用的 Bearer Token
 - `POST /api/core/messages` 是正式 runtime 入口，负责在线消息处理与动作返回
+- 启动前必须先把当前版本的 `sql/postgres_schema.sql` 应用到目标数据库；运行时不再自动补列、补账或升级旧 schema
 
 ## 账期接口
 
@@ -57,14 +49,14 @@ python3 "/Users/lcc/SeeSee/wxbot/bookkeeping-platform/reporting_server.py" \
 
 页面入口：
 
-- `GET /`：首页驾驶舱，展示当前总余额、当日已实现利润、当日美元面额、未分配群数
-- `GET /workbench`：账期工作台，按 `period_id` 查看指定账期快照与卡种统计
+- `GET /`：首页驾驶舱，只展示当前总余额、当日已实现利润、当日美元面额、未归属/待处理群数，以及最近识别的结构化交易流
+- `GET /workbench`：账期工作台，按 `period_id` 查看指定账期摘要、当前未扎账窗口、群快照、卡种统计，并承接关账/修正/组合治理
 - `GET /history`：跑账历史页，按日期区间查看账期列表与卡种排行
 
 分析接口：
 
-- `GET /api/dashboard`：返回首页驾驶舱数据，兼容原有 `current_groups`、`combinations`、`recent_periods`，并新增 `summary`
-- `GET /api/workbench?period_id=<账期ID>`：返回账期工作台数据，包含 `periods`、`selected_period`、`summary`、`group_rows`、`card_stats`
+- `GET /api/dashboard`：返回首页驾驶舱数据，兼容原有 `current_groups`、`combinations`、`recent_periods`，并新增 `summary`、`latest_transactions`
+- `GET /api/workbench?period_id=<账期ID>`：返回账期工作台数据，包含 `periods`、`selected_period`、`live_window`、`summary`、`transactions`、`group_rows`、`card_stats`
 - `GET /api/history?start_date=2026-03-01&end_date=2026-03-31&card_keyword=steam&sort_by=usd_amount`：返回区间账期列表、区间汇总与卡种排行
 
 参数说明：
@@ -77,32 +69,26 @@ python3 "/Users/lcc/SeeSee/wxbot/bookkeeping-platform/reporting_server.py" \
 ### 人工验证页面
 
 1. 启动 `reporting_server.py`
-2. 打开 `/`，确认首页卡片、当前群余额、最近账期、组合汇总可加载
-3. 关闭一个账期后打开 `/workbench?period_id=<新账期ID>`，确认时间范围、群快照、卡种统计一致
-4. 打开 `/history?start_date=2026-03-01&end_date=2026-03-31`，确认区间账期列表与卡种排行正常加载
-5. 使用 `card_keyword` 和 `sort_by` 反复切换，确认排行刷新且时间范围不变
+2. 打开 `/`，确认首页只保留 4 张信号卡、最近识别交易流和跳转入口，不再出现组合管理与人工修正表单
+3. 关闭一个账期后打开 `/workbench?period_id=<新账期ID>`，确认账期摘要、当前未扎账窗口、群快照、卡种统计都能加载
+4. 在 `/workbench` 上确认关账表单、人工修正区、组合管理区都可见，并且组合列表可以刷新
+5. 打开 `/history?start_date=2026-03-01&end_date=2026-03-31`，确认区间账期列表与卡种排行正常加载
+6. 使用 `card_keyword` 和 `sort_by` 反复切换，确认排行刷新且时间范围不变
 
 ### 回归验证
 
 ```bash
+export BOOKKEEPING_TEST_DSN="postgresql://bookkeeping:password@127.0.0.1:5432/bookkeeping_test"
 python3 -m unittest tests.test_analytics -v
 python3 -m unittest tests.test_webapp -v
 python3 -m unittest -v tests.test_periods tests.test_reporting tests.test_analytics tests.test_webapp tests.test_postgres_backend
 ```
 
-### P2.5 mock replay 验证路径
-
-P2.5 的主验收路径是统一 runtime 回放：
-
-- `POST /api/core/messages` 仍是 live runtime 边界，用于在线消息处理与动作返回
-- P2.5 的 mock replay 验证使用共享 replay helper，在 `runtime.process_envelope()` 之后集中生成分析字段与账期快照，用于 SQLite / fake PostgreSQL 下的验证
-- settlement bootstrap / 历史结算补账不是 P2.5 的主验收路径
-- fake PostgreSQL 验证只使用现有 fake `psycopg` 夹具，不连接真实 PostgreSQL，也不做生产迁移
-
 建议按下面顺序验证：
 
 ```bash
-python3 -m unittest tests.test_postgres_backend.PostgresBackendTests.test_postgres_dsn_mock_replay_can_fill_workbench_and_history -v
+export BOOKKEEPING_TEST_DSN="postgresql://bookkeeping:password@127.0.0.1:5432/bookkeeping_test"
+python3 -m unittest tests.test_postgres_backend -v
 python3 -m unittest tests.test_ingestion_alignment tests.test_periods tests.test_reporting tests.test_analytics tests.test_webapp tests.test_postgres_backend -v
 ```
 
@@ -115,7 +101,12 @@ python3 -m unittest tests.test_ingestion_alignment tests.test_periods tests.test
 - `core_api.endpoint`: 远端总账中心地址，填写主机根地址，例如 `https://your-ngrok-host.ngrok-free.dev`
 - `core_api.token`: 远端总账中心 Bearer Token
 - `core_api.request_timeout_seconds`: 远端请求超时秒数
-- `db_path`: 仅保留给 WeChat 本地适配器控制面使用，不再作为正式统一账本事实源
+
+说明：
+
+- WeChat 适配器现在只支持 remote core mode
+- 不再需要 `db_path`
+- 正式事实源只有远端总账 PostgreSQL
 
 启动：
 

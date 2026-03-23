@@ -21,6 +21,7 @@ export interface WhatsAppMessage {
   fromMe: boolean;
   chatId: string;  // Group JID or user JID
   chatName: string;
+  senderName?: string;
   content: string;
   timestamp: number;
   messageId: string;
@@ -146,6 +147,7 @@ export class WhatsAppClient {
           fromMe: !!msg.key.fromMe,
           chatId,
           chatName,
+          senderName: this.resolveSenderName(msg, from),
           content: content.trim(),
           timestamp: Number(msg.messageTimestamp) || Date.now(),
           messageId: msg.key.id || "",
@@ -273,6 +275,18 @@ export class WhatsAppClient {
       this.logger.debug(`Failed to resolve group name for ${chatId}: ${error}`);
       return chatId;
     }
+  }
+
+  private resolveSenderName(message: any, senderId: string): string | undefined {
+    const pushed = typeof message?.pushName === "string" ? message.pushName.trim() : "";
+    if (pushed) {
+      return pushed;
+    }
+    const verified = typeof message?.verifiedBizName === "string" ? message.verifiedBizName.trim() : "";
+    if (verified) {
+      return verified;
+    }
+    return undefined;
   }
 
   private notifyConnectionChange(connected: boolean): void {

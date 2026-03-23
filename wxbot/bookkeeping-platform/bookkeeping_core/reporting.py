@@ -1,9 +1,15 @@
 from __future__ import annotations
 
-from collections import defaultdict
 from datetime import date
 
 from .database import BookkeepingDB
+from .role_mapping import (
+    is_financial_role,
+    list_group_num_role_rules,
+    list_role_alias_rules,
+    resolve_business_role,
+    resolve_role_source,
+)
 
 
 class ReportingService:
@@ -15,6 +21,10 @@ class ReportingService:
         for group in self.db.get_all_groups():
             adjustment_total = self.db.get_manual_adjustment_total(str(group["group_key"]))
             tx_balance = float(group["tx_balance"] or 0)
+            business_role = resolve_business_role(
+                business_role=group["business_role"],
+                group_num=int(group["group_num"]) if group["group_num"] is not None else None,
+            )
             rows.append(
                 {
                     "group_key": str(group["group_key"]),
@@ -22,25 +32,27 @@ class ReportingService:
                     "chat_id": str(group["chat_id"]),
                     "chat_name": str(group["chat_name"]),
                     "group_num": int(group["group_num"]) if group["group_num"] is not None else None,
+                    "business_role": business_role,
+                    "role_source": resolve_role_source(
+                        business_role=group["business_role"],
+                        group_num=int(group["group_num"]) if group["group_num"] is not None else None,
+                    ),
                     "current_balance": tx_balance + adjustment_total,
                 }
             )
         return rows
 
-    def get_period_group_rows(self, period_or_settlement_id: int) -> list[dict]:
+    def get_period_group_rows(self, period_id: int) -> list[dict]:
         period = self.db.conn.execute(
             "SELECT * FROM accounting_periods WHERE id = ?",
-            (period_or_settlement_id,),
+            (period_id,),
         ).fetchone()
-        if period is not None:
-            snapshot_rows = self.db.list_period_group_snapshots(period_or_settlement_id)
-            if snapshot_rows:
-                return self._get_period_snapshot_rows(period_or_settlement_id, period, snapshot_rows)
-
-        settlement = self.db.get_settlement_by_id(period_or_settlement_id)
-        if settlement is None:
+        if period is None:
             return []
-        return self._get_legacy_period_rows(period_or_settlement_id, settlement)
+        snapshot_rows = self.db.list_period_group_snapshots(period_id)
+        if not snapshot_rows:
+            return []
+        return self._get_period_snapshot_rows(period_id, period, snapshot_rows)
 
     def get_combination_summary(self, group_numbers: list[int], label: str) -> dict:
         selected = {int(num) for num in group_numbers}
@@ -72,24 +84,50 @@ class ReportingService:
         period_rows = self.db.conn.execute(
             "SELECT id FROM accounting_periods ORDER BY closed_at DESC, id DESC LIMIT 20"
         ).fetchall()
-        if period_rows:
-            for item in period_rows:
-                rows = self.get_period_group_rows(int(item["id"]))
-                if rows:
-                    recent_periods.extend(rows)
-        else:
-            settlements = self.db.conn.execute(
-                "SELECT id FROM settlements ORDER BY settled_at DESC, id DESC LIMIT 20"
-            ).fetchall()
-            for item in settlements:
-                rows = self.get_period_group_rows(int(item["id"]))
-                if rows:
-                    recent_periods.extend(rows)
+        for item in period_rows:
+            rows = self.get_period_group_rows(int(item["id"]))
+            if rows:
+                recent_periods.extend(rows)
         return {
             "summary": AnalyticsService(self.db).build_dashboard_summary(today=date.today().isoformat()),
             "current_groups": current_rows,
             "combinations": self.list_combination_summaries(),
             "recent_periods": recent_periods,
+            "latest_transactions": AnalyticsService(self.db).build_latest_transactions(),
+        }
+
+    def build_role_mapping_payload(self) -> dict:
+        from .analytics import AnalyticsService
+
+        current_rows = self.get_current_group_rows()
+        counts_by_role = {
+            "customer": 0,
+            "vendor": 0,
+            "internal": 0,
+            "unassigned": 0,
+        }
+        for row in current_rows:
+            resolved_role = str(row["business_role"] or "unassigned")
+            if resolved_role not in counts_by_role:
+                resolved_role = "unassigned"
+            counts_by_role[resolved_role] += 1
+
+        financial_summary = AnalyticsService(self.db).build_dashboard_summary(today=date.today().isoformat())
+        resolved_group_count = sum(1 for row in current_rows if row["business_role"] not in {None, "unassigned"})
+        return {
+            "summary": {
+                "resolved_group_count": resolved_group_count,
+                "financial_group_count": sum(
+                    1 for row in current_rows if is_financial_role(str(row["business_role"] or ""))
+                ),
+                "unassigned_group_count": counts_by_role["unassigned"],
+                "financial_total_balance": float(financial_summary["current_total_balance"] or 0),
+                "current_estimated_profit": float(financial_summary["current_estimated_profit"] or 0),
+                "counts_by_role": counts_by_role,
+            },
+            "current_groups": current_rows,
+            "mapping_rules": list_group_num_role_rules(),
+            "role_aliases": list_role_alias_rules(),
         }
 
     def _get_period_snapshot_rows(self, period_id: int, period_row, snapshot_rows) -> list[dict]:
@@ -97,104 +135,33 @@ class ReportingService:
         return [
             {
                 "period_id": period_id,
-                "settlement_id": period_id,
                 "group_key": str(snapshot["group_key"]),
                 "platform": str(snapshot["platform"]),
                 "chat_name": str(snapshot["chat_name"]),
                 "group_num": int(snapshot["group_num"]) if snapshot["group_num"] is not None else None,
-                "business_role": str(snapshot["business_role"]) if snapshot["business_role"] is not None else None,
+                "business_role": resolve_business_role(
+                    business_role=snapshot["business_role"],
+                    group_num=int(snapshot["group_num"]) if snapshot["group_num"] is not None else None,
+                ),
                 "opening_balance": float(snapshot["opening_balance"]),
                 "income": float(snapshot["income"]),
                 "expense": float(snapshot["expense"]),
                 "closing_balance": float(snapshot["closing_balance"]),
                 "settled_at": closed_at,
                 "closed_at": closed_at,
-                "adjustment_count": self._count_snapshot_adjustments(str(snapshot["group_key"]), closed_at),
+                "adjustment_count": self._count_snapshot_adjustments(period_id, str(snapshot["group_key"])),
             }
             for snapshot in snapshot_rows
         ]
 
-    def _get_legacy_period_rows(self, settlement_id: int, settlement) -> list[dict]:
-        group_key = str(settlement["group_key"])
-        previous = self.db.get_previous_settlement(group_key, settlement_id)
-
-        opening_cutoff = str(previous["settled_at"]) if previous is not None else None
-        opening_balance = self._sum_balance_before(group_key, opening_cutoff)
-        opening_balance += self.db.get_manual_adjustment_total(group_key, int(previous["id"])) if previous is not None else 0.0
-
-        txs = self.db.conn.execute(
-            """
-            SELECT *
-            FROM transactions
-            WHERE settlement_id = ?
-              AND (deleted = 0 OR settled = 1)
-            ORDER BY created_at ASC, id ASC
-            """,
-            (settlement_id,),
-        ).fetchall()
-        if not txs:
-            return []
-
-        income = sum(float(tx["rmb_value"]) for tx in txs if float(tx["rmb_value"]) > 0)
-        expense = sum(abs(float(tx["rmb_value"])) for tx in txs if float(tx["rmb_value"]) < 0)
-        base_closing = opening_balance + income - expense
-
-        adjustments = self.db.get_manual_adjustments(settlement_id)
-        grouped_adjustments: dict[str, dict[str, float]] = defaultdict(
-            lambda: {"opening_delta": 0.0, "income_delta": 0.0, "expense_delta": 0.0, "closing_delta": 0.0}
-        )
-        for item in adjustments:
-            target = grouped_adjustments[str(item["group_key"])]
-            target["opening_delta"] += float(item["opening_delta"])
-            target["income_delta"] += float(item["income_delta"])
-            target["expense_delta"] += float(item["expense_delta"])
-            target["closing_delta"] += float(item["closing_delta"])
-
-        group_row = self.db.conn.execute(
-            "SELECT * FROM groups WHERE group_key = ?",
-            (group_key,),
-        ).fetchone()
-        adj = grouped_adjustments[group_key]
-        return [
-            {
-                "settlement_id": settlement_id,
-                "group_key": group_key,
-                "platform": str(group_row["platform"]) if group_row is not None else str(settlement["platform"]),
-                "chat_name": str(group_row["chat_name"]) if group_row is not None else group_key,
-                "group_num": int(group_row["group_num"]) if group_row is not None and group_row["group_num"] is not None else None,
-                "opening_balance": opening_balance + adj["opening_delta"],
-                "income": income + adj["income_delta"],
-                "expense": expense + adj["expense_delta"],
-                "closing_balance": base_closing + adj["closing_delta"],
-                "settled_at": str(settlement["settled_at"]),
-                "adjustment_count": sum(1 for item in adjustments if str(item["group_key"]) == group_key),
-            }
-        ]
-
-    def _count_snapshot_adjustments(self, group_key: str, closed_at: str) -> int:
+    def _count_snapshot_adjustments(self, period_id: int, group_key: str) -> int:
         row = self.db.conn.execute(
             """
             SELECT COUNT(*) AS cnt
-            FROM settlements s
-            INNER JOIN manual_adjustments ma ON ma.settlement_id = s.id
-            WHERE s.group_key = ?
-              AND s.settled_at = ?
+            FROM manual_adjustments
+            WHERE period_id = ?
+              AND group_key = ?
             """,
-            (group_key, closed_at),
+            (period_id, group_key),
         ).fetchone()
         return int(row["cnt"] or 0)
-
-    def _sum_balance_before(self, group_key: str, cutoff: str | None) -> float:
-        if cutoff is None:
-            return 0.0
-        row = self.db.conn.execute(
-            """
-            SELECT COALESCE(SUM(rmb_value), 0) AS total
-            FROM transactions
-            WHERE group_key = ?
-              AND (deleted = 0 OR settled = 1)
-              AND created_at <= ?
-            """,
-            (group_key, cutoff),
-        ).fetchone()
-        return float(row["total"] or 0)

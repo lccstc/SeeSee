@@ -1,29 +1,34 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import date, datetime
 from pathlib import Path
 from urllib.parse import parse_qs
 
 from bookkeeping_core.analytics import AnalyticsService
 from bookkeeping_core.contracts import core_action_to_dict
-from bookkeeping_core.database import BookkeepingDB
+from bookkeeping_core.database import BookkeepingDB, require_postgres_dsn
 from bookkeeping_core.periods import AccountingPeriodService
 from bookkeeping_core.reporting import ReportingService
 from bookkeeping_core.runtime import UnifiedBookkeepingRuntime
 from bookkeeping_web.pages import (
     render_dashboard_page,
     render_history_page,
+    render_role_mapping_page,
     render_workbench_page,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def create_app(
     db_target: str | Path,
-    sync_token: str | None = None,
+    core_token: str | None = None,
     runtime_master_users: list[str] | None = None,
 ):
-    db_file = db_target
+    db_file = require_postgres_dsn(db_target, context="Web runtime database")
+    _ensure_runtime_database_is_ready(db_file)
     runtime_db = None
     runtime = None
     runtime_export_dir = _runtime_export_dir(db_file)
@@ -47,12 +52,18 @@ def create_app(
             return _respond_html(start_response, render_dashboard_page())
         if path == "/workbench":
             return _respond_html(start_response, render_workbench_page())
+        if path == "/role-mapping":
+            return _respond_html(start_response, render_role_mapping_page())
         if path == "/history":
             return _respond_html(start_response, render_history_page())
         if path == "/api/dashboard" and method == "GET":
             return _with_db(db_file, start_response, _handle_dashboard, environ)
         if path == "/api/workbench" and method == "GET":
             return _with_db(db_file, start_response, _handle_workbench, environ)
+        if path == "/api/role-mapping" and method == "GET":
+            return _with_db(db_file, start_response, _handle_role_mapping, environ)
+        if path == "/api/role-mapping/group-num" and method == "POST":
+            return _with_db(db_file, start_response, _handle_role_mapping_group_num, environ)
         if path == "/api/history" and method == "GET":
             return _with_db(db_file, start_response, _handle_history, environ)
         if path == "/api/accounting-periods" and method == "GET":
@@ -64,7 +75,7 @@ def create_app(
         if path == "/api/group-combinations":
             return _with_db(db_file, start_response, _handle_group_combinations, environ)
         if path == "/api/core/messages" and method == "POST":
-            if not _is_authorized(environ, sync_token):
+            if not _is_authorized(environ, core_token):
                 return _respond_json(start_response, 401, {"error": "Unauthorized"})
             return _handle_core_messages(get_runtime(), start_response, environ)
         return _respond_json(start_response, 404, {"error": f"Unknown path: {path}"})
@@ -80,6 +91,11 @@ def _with_db(db_target: str | Path, start_response, handler, environ=None, *args
         db.close()
 
 
+def _ensure_runtime_database_is_ready(db_target: str | Path) -> None:
+    db = BookkeepingDB(db_target)
+    db.close()
+
+
 def _handle_dashboard(db: BookkeepingDB, start_response, environ=None):
     payload = ReportingService(db).build_dashboard_payload()
     return _respond_json(start_response, 200, payload)
@@ -88,12 +104,46 @@ def _handle_dashboard(db: BookkeepingDB, start_response, environ=None):
 def _handle_workbench(db: BookkeepingDB, start_response, environ):
     params = _read_query_params(environ)
     raw_period_id = params.get("period_id")
+    use_live_period = False
     try:
-        period_id = int(raw_period_id) if raw_period_id else None
+        if raw_period_id and str(raw_period_id).lower() == "realtime":
+            period_id = None
+            use_live_period = True
+        else:
+            period_id = int(raw_period_id) if raw_period_id else None
     except ValueError as exc:
         return _respond_json(start_response, 400, {"error": f"Bad query: {exc}"})
-    payload = AnalyticsService(db).build_period_workbench(period_id=period_id)
+    payload = AnalyticsService(db).build_period_workbench(period_id=period_id, use_live_period=use_live_period)
     return _respond_json(start_response, 200, payload)
+
+
+def _handle_role_mapping(db: BookkeepingDB, start_response, environ=None):
+    payload = ReportingService(db).build_role_mapping_payload()
+    return _respond_json(start_response, 200, payload)
+
+
+def _handle_role_mapping_group_num(db: BookkeepingDB, start_response, environ):
+    try:
+        payload = _read_json_body(environ)
+        group_key = str(payload["group_key"])
+        group_num = int(payload["group_num"])
+    except (KeyError, TypeError, ValueError) as exc:
+        return _respond_json(start_response, 400, {"error": f"Bad payload: {exc}"})
+
+    group_row = db.get_group_by_key(group_key)
+    if group_row is None:
+        return _respond_json(start_response, 404, {"error": f"group not found: {group_key}"})
+
+    ok = db.set_group(
+        platform=str(group_row["platform"] or ""),
+        group_key=group_key,
+        chat_id=str(group_row["chat_id"] or ""),
+        chat_name=str(group_row["chat_name"] or ""),
+        group_num=group_num,
+    )
+    if not ok:
+        return _respond_json(start_response, 400, {"error": "group_num must be between 0 and 9"})
+    return _respond_json(start_response, 200, {"group_key": group_key, "group_num": group_num})
 
 
 def _handle_history(db: BookkeepingDB, start_response, environ):
@@ -139,7 +189,7 @@ def _handle_adjustments(db: BookkeepingDB, start_response, environ):
     try:
         payload = _read_json_body(environ)
         adjustment_id = db.add_manual_adjustment(
-            settlement_id=int(payload["settlement_id"]),
+            period_id=int(payload["period_id"]),
             group_key=str(payload["group_key"]),
             opening_delta=float(payload.get("opening_delta", 0)),
             income_delta=float(payload.get("income_delta", 0)),
@@ -178,6 +228,7 @@ def _handle_group_combinations(db: BookkeepingDB, start_response, environ):
 
 
 def _handle_core_messages(runtime: UnifiedBookkeepingRuntime, start_response, environ):
+    payload = None
     try:
         payload = _read_json_body(environ)
         if not isinstance(payload, dict):
@@ -185,6 +236,11 @@ def _handle_core_messages(runtime: UnifiedBookkeepingRuntime, start_response, en
         _validate_runtime_message_payload(payload)
         actions = [core_action_to_dict(action) for action in runtime.process_envelope(payload)]
     except (TypeError, ValueError, KeyError) as exc:
+        logger.warning(
+            "Rejected core runtime payload: %s | payload=%s",
+            exc,
+            _summarize_runtime_payload(payload),
+        )
         return _respond_json(start_response, 400, {"error": f"Bad payload: {exc}"})
     return _respond_json(start_response, 200, {"actions": actions})
 
@@ -228,11 +284,11 @@ def _respond_html(start_response, html: str):
     return [body]
 
 
-def _is_authorized(environ, sync_token: str | None) -> bool:
-    if not sync_token:
+def _is_authorized(environ, core_token: str | None) -> bool:
+    if not core_token:
         return False
     header = str(environ.get("HTTP_AUTHORIZATION") or "").strip()
-    return header == f"Bearer {sync_token}"
+    return header == f"Bearer {core_token}"
 
 
 def _validate_runtime_message_payload(payload: dict) -> None:
@@ -259,6 +315,26 @@ def _normalize_runtime_master_users(values: list[str] | None) -> list[str]:
         if text and text not in result:
             result.append(text)
     return result
+
+
+def _summarize_runtime_payload(payload) -> dict | str | None:
+    if not isinstance(payload, dict):
+        return payload
+    keys = (
+        "platform",
+        "message_id",
+        "chat_id",
+        "chat_name",
+        "is_group",
+        "sender_id",
+        "sender_name",
+        "sender_kind",
+        "content_type",
+        "text",
+        "from_self",
+        "received_at",
+    )
+    return {key: payload.get(key) for key in keys if key in payload}
 
 
 def _row_to_dict(row) -> dict:
