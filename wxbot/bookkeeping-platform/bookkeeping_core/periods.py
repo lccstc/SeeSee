@@ -19,10 +19,11 @@ class AccountingPeriodService:
         if period_id is None:
             return None
         summary = self.build_period_close_summary(period_id)
+        receipt_actions = self.build_period_group_receipt_actions(period_id)
         return {
             "period_id": period_id,
             "summary": summary,
-            "queued_action_count": 0,
+            "receipt_actions": receipt_actions,
         }
 
     def settle_all_with_receipts(self, *, closed_by: str, note: str | None = None) -> dict | None:
@@ -33,11 +34,31 @@ class AccountingPeriodService:
         if period_id is None:
             return None
         summary = self.build_period_close_summary(period_id)
+        receipt_actions = self.build_period_group_receipt_actions(period_id)
         return {
             "period_id": period_id,
             "summary": summary,
-            "queued_action_count": 0,
+            "receipt_actions": receipt_actions,
         }
+
+    def build_period_group_receipt_actions(self, period_id: int) -> list[dict[str, object]]:
+        actions: list[dict[str, object]] = []
+        for snapshot in self.db.list_period_group_snapshots(period_id):
+            transaction_count = int(snapshot["transaction_count"] or 0)
+            if transaction_count <= 0:
+                continue
+            group_row = self.db.get_group_by_key(str(snapshot["group_key"]))
+            chat_id = str(group_row["chat_id"] or "").strip() if group_row is not None else ""
+            if not chat_id:
+                continue
+            actions.append(
+                {
+                    "action_type": "send_text",
+                    "chat_id": chat_id,
+                    "text": self._format_group_close_receipt(snapshot),
+                }
+            )
+        return actions
 
     def close_group_unsettled(self, *, group_key: str, closed_by: str, note: str | None = None) -> int | None:
         txs = self.db.get_unsettled_transactions(group_key)
@@ -200,3 +221,25 @@ class AccountingPeriodService:
             return value
         text = str(value).strip()
         return datetime.fromisoformat(text.replace("Z", "+00:00")).replace(tzinfo=None)
+
+    @staticmethod
+    def _format_group_close_receipt(snapshot) -> str:
+        opening_balance = float(snapshot["opening_balance"] or 0)
+        income = float(snapshot["income"] or 0)
+        expense = float(snapshot["expense"] or 0)
+        closing_balance = float(snapshot["closing_balance"] or 0)
+        transaction_count = int(snapshot["transaction_count"] or 0)
+        return (
+            "✅ Group settled\n"
+            f"📘 Period ID: {int(snapshot['period_id'])}\n"
+            f"📝 Transactions: {transaction_count}\n"
+            f"📂 Opening Balance: {AccountingPeriodService._signed_amount(opening_balance)}\n"
+            f"💵 Income: {AccountingPeriodService._signed_amount(income)}\n"
+            f"💸 Expense: -{abs(expense):.2f}\n"
+            f"💰 Closing Balance: {AccountingPeriodService._signed_amount(closing_balance)}"
+        )
+
+    @staticmethod
+    def _signed_amount(value: float) -> str:
+        sign = "+" if value >= 0 else "-"
+        return f"{sign}{abs(value):.2f}"

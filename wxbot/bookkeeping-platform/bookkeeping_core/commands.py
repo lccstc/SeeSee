@@ -288,6 +288,14 @@ class CommandHandler:
         if result is None:
             self.action_collector.send_text(chat_id, "✅ No unsettled transactions in any group")
             return
+        for action in result.get("receipt_actions", []):
+            if action.get("action_type") != "send_text":
+                continue
+            target_chat_id = str(action.get("chat_id") or "").strip()
+            text = str(action.get("text") or "")
+            if not target_chat_id or text == "":
+                continue
+            self.action_collector.send_text(target_chat_id, text)
         summary = result["summary"]
         self.action_collector.send_text(chat_id, self._format_period_close_message(summary))
 

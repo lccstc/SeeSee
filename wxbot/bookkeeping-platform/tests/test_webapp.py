@@ -85,6 +85,43 @@ class WebAppTests(PostgresTestCase):
         response["body"] = b"".join(chunks)
         return response["status"], json.loads(response["body"].decode("utf-8"))
 
+    def _request_with_headers(
+        self,
+        method: str,
+        path: str,
+        payload: dict | None = None,
+        headers: dict[str, str] | None = None,
+        query_string: str | None = None,
+    ) -> tuple[int, dict[str, str], dict]:
+        body = b""
+        if payload is not None:
+            body = json.dumps(payload).encode("utf-8")
+        environ = {}
+        setup_testing_defaults(environ)
+        environ["REQUEST_METHOD"] = method
+        environ["PATH_INFO"] = path
+        environ["QUERY_STRING"] = query_string or ""
+        environ["CONTENT_LENGTH"] = str(len(body))
+        environ["wsgi.input"] = io.BytesIO(body)
+        if body:
+            environ["CONTENT_TYPE"] = "application/json"
+        for key, value in (headers or {}).items():
+            environ[f"HTTP_{key.upper().replace('-', '_')}"] = value
+
+        response = {"status": 500, "headers": {}, "body": b""}
+
+        def start_response(status: str, response_headers: list[tuple[str, str]]) -> None:
+            response["status"] = int(status.split(" ", 1)[0])
+            response["headers"] = {key: value for key, value in response_headers}
+
+        chunks = self.app(environ, start_response)
+        response["body"] = b"".join(chunks)
+        return (
+            response["status"],
+            response["headers"],
+            json.loads(response["body"].decode("utf-8")),
+        )
+
     def _request_text(self, method: str, path: str, *, query: dict[str, str | int] | None = None) -> tuple[int, str]:
         environ = {}
         setup_testing_defaults(environ)
@@ -174,6 +211,13 @@ class WebAppTests(PostgresTestCase):
         self.assertIsNone(payload["selected_period"])
         self.assertIn("live_window", payload)
 
+    def test_role_mapping_page_contains_group_search_and_summary_controls(self) -> None:
+        status, html = self._request_text("GET", "/role-mapping")
+        self.assertEqual(status, 200)
+        self.assertIn('id="role-current-search"', html)
+        self.assertIn('id="role-current-search-clear"', html)
+        self.assertIn('id="role-current-filter-summary"', html)
+
     def test_role_mapping_group_num_can_be_updated_via_web_api(self) -> None:
         status, payload = self._request(
             "POST",
@@ -187,6 +231,17 @@ class WebAppTests(PostgresTestCase):
         self.assertEqual(payload["group_key"], "wechat:g-100")
         self.assertEqual(payload["group_num"], 8)
         self.assertEqual(self.db.get_group_num("wechat:g-100"), 8)
+
+    def test_core_actions_endpoint_exposes_outbound_action_count_header(self) -> None:
+        status, headers, payload = self._request_with_headers(
+            "POST",
+            "/api/core/actions",
+            {},
+            headers={"Authorization": "Bearer core-secret"},
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["actions"], [])
+        self.assertEqual(headers["X-Outbound-Action-Count"], "0")
 
     def test_realtime_transaction_can_be_updated_via_web_api(self) -> None:
         transaction_id = self.db.add_transaction(
@@ -269,12 +324,15 @@ class WebAppTests(PostgresTestCase):
         self.assertEqual(status, 200)
         self.assertTrue(payload["closed"])
         self.assertGreater(payload["period_id"], self.period_id)
-        self.assertEqual(payload["queued_action_count"], 0)
+        self.assertEqual(payload["queued_action_count"], 1)
 
         status, workbench = self._request("GET", "/api/workbench", query_string="period_id=realtime")
         self.assertEqual(status, 200)
         self.assertEqual(workbench["transactions"], [])
-        self.assertEqual(self.db.claim_outbound_actions(), [])
+        queued = self.db.claim_outbound_actions()
+        self.assertEqual(len(queued), 1)
+        self.assertEqual(str(queued[0]["chat_id"]), "g-100")
+        self.assertIn("Closing Balance", str(queued[0]["text"]))
 
     def test_group_broadcast_endpoint_queues_send_text_actions_for_target_group_number(self) -> None:
         self.db.set_group(

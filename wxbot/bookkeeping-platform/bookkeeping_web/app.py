@@ -220,6 +220,7 @@ def _handle_accounting_period_settle_all(runtime: UnifiedBookkeepingRuntime, sta
                     "message": "当前没有可结账的实时交易",
                 },
             )
+        queued_action_count = runtime.service.db.enqueue_outbound_actions(result.get("receipt_actions", []))
     except (KeyError, TypeError, ValueError) as exc:
         return _respond_json(start_response, 400, {"error": f"Bad payload: {exc}"})
     return _respond_json(
@@ -229,7 +230,7 @@ def _handle_accounting_period_settle_all(runtime: UnifiedBookkeepingRuntime, sta
             "closed": True,
             "period_id": int(result["period_id"]),
             "summary": result["summary"],
-            "queued_action_count": int(result["queued_action_count"]),
+            "queued_action_count": queued_action_count,
         },
     )
 
@@ -431,7 +432,12 @@ def _handle_core_actions(runtime: UnifiedBookkeepingRuntime, start_response):
     db_actions = [_serialize_outbound_action_row(action) for action in runtime.service.db.claim_outbound_actions()]
     runtime_actions = [core_action_to_dict(action) for action in runtime.drain_outbound_actions()]
     actions = db_actions + runtime_actions
-    return _respond_json(start_response, 200, {"actions": actions})
+    return _respond_json(
+        start_response,
+        200,
+        {"actions": actions},
+        extra_headers=[("X-Outbound-Action-Count", str(len(actions)))],
+    )
 
 
 def _handle_core_actions_ack(runtime: UnifiedBookkeepingRuntime, start_response, environ):
@@ -497,15 +503,20 @@ def _read_query_params(environ) -> dict[str, str]:
     }
 
 
-def _respond_json(start_response, status_code: int, payload: dict | list):
+def _respond_json(
+    start_response,
+    status_code: int,
+    payload: dict | list,
+    extra_headers: list[tuple[str, str]] | None = None,
+):
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-    start_response(
-        f"{status_code} {'OK' if status_code < 400 else 'ERROR'}",
-        [
-            ("Content-Type", "application/json; charset=utf-8"),
-            ("Content-Length", str(len(body))),
-        ],
-    )
+    headers = [
+        ("Content-Type", "application/json; charset=utf-8"),
+        ("Content-Length", str(len(body))),
+    ]
+    if extra_headers:
+        headers.extend(extra_headers)
+    start_response(f"{status_code} {'OK' if status_code < 400 else 'ERROR'}", headers)
     return [body]
 
 

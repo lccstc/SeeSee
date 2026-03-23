@@ -3,10 +3,53 @@ from __future__ import annotations
 import argparse
 import os
 from pathlib import Path
-from wsgiref.simple_server import make_server
+from wsgiref.handlers import SimpleHandler
+from wsgiref.simple_server import ServerHandler, WSGIRequestHandler, make_server
 
 from bookkeeping_core.database import require_postgres_dsn
 from bookkeeping_web.app import create_app
+
+
+class _ReportingServerHandler(ServerHandler):
+    def close(self):
+        try:
+            if not self._should_skip_access_log():
+                self.request_handler.log_request(self.status.split(" ", 1)[0], self.bytes_sent)
+        finally:
+            SimpleHandler.close(self)
+
+    def _should_skip_access_log(self) -> bool:
+        if self.environ is None or self.headers is None or self.status is None:
+            return False
+        return (
+            str(self.environ.get("PATH_INFO") or "") == "/api/core/actions"
+            and str(self.status).startswith("200")
+            and str(self.headers.get("X-Outbound-Action-Count") or "") == "0"
+        )
+
+
+class _ReportingRequestHandler(WSGIRequestHandler):
+    def handle(self):
+        self.raw_requestline = self.rfile.readline(65537)
+        if len(self.raw_requestline) > 65536:
+            self.requestline = ""
+            self.request_version = ""
+            self.command = ""
+            self.send_error(414)
+            return
+
+        if not self.parse_request():
+            return
+
+        handler = _ReportingServerHandler(
+            self.rfile,
+            self.wfile,
+            self.get_stderr(),
+            self.get_environ(),
+            multithread=False,
+        )
+        handler.request_handler = self
+        handler.run(self.server.get_app())
 
 
 def main() -> int:
@@ -31,7 +74,7 @@ def main() -> int:
             args.master_users,
         ),
     )
-    with make_server(args.host, args.port, app) as server:
+    with make_server(args.host, args.port, app, handler_class=_ReportingRequestHandler) as server:
         print(f"Reporting center running at http://{args.host}:{args.port}")
         server.serve_forever()
     return 0

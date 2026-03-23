@@ -840,9 +840,14 @@ class UnifiedRuntimeTests(PostgresTestCase):
         self.assertEqual(self.db.get_groups_with_unsettled_transactions(), [])
         snapshots = self.db.list_period_group_snapshots(int(periods[0]["id"]))
         self.assertEqual(len(snapshots), 2)
-        self.assertEqual(actions[0]["action_type"], "send_text")
-        self.assertIn("Accounting period closed", actions[0]["text"])
-        self.assertIn("Groups: 2", actions[0]["text"])
+        self.assertEqual(len(actions), 3)
+        summary_actions = [action for action in actions if "Accounting period closed" in str(action.get("text") or "")]
+        self.assertEqual(len(summary_actions), 1)
+        self.assertEqual(summary_actions[0]["chat_id"], "room-settle-a")
+        self.assertIn("Groups: 2", summary_actions[0]["text"])
+        receipt_actions = [action for action in actions if "Closing Balance" in str(action.get("text") or "")]
+        self.assertEqual(len(receipt_actions), 2)
+        self.assertEqual({action["chat_id"] for action in receipt_actions}, {"room-settle-a", "room-settle-b"})
 
     def test_command_handler_uses_action_collector_boundary(self) -> None:
         from bookkeeping_core.commands import CommandHandler

@@ -223,12 +223,27 @@ _STYLE = """
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    width: auto;
     padding: 10px 14px;
     border-radius: 999px;
     background: var(--accent);
     color: white;
     text-decoration: none;
     border: 1px solid var(--accent);
+  }
+  .toolbar-actions {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .toolbar-actions input {
+    flex: 1 1 320px;
+    min-width: 240px;
+  }
+  .toolbar-actions button {
+    width: auto;
+    flex: 0 0 auto;
   }
   @media (max-width: 980px) {
     .cards {
@@ -483,7 +498,7 @@ def render_workbench_page() -> str:
     <input name="closed_by" placeholder="结账人备注" required />
     <button type="submit">一键结账</button>
   </form>
-  <div id="close-period-status" class="muted">直接调用后端关账服务，口径等同 `/alljs`，但不会再往各个群里补发回执。</div>
+  <div id="close-period-status" class="muted">直接调用后端关账服务，口径等同 `/alljs`；本次实际参与结账的群会各自收到一条结账回执。</div>
   <form id="group-broadcast-form">
     <input name="created_by" placeholder="群发人备注" required />
     <input name="group_num" type="number" min="0" max="9" step="1" placeholder="分组号，如 1" required />
@@ -516,22 +531,6 @@ def render_workbench_page() -> str:
       <div class="label">供应商交易</div>
       <div class="value" id="workbench-vendor-transactions">0</div>
     </article>
-  </div>
-</section>
-<section class="panel">
-  <div class="toolbar">
-    <div>
-      <h2>当前实时窗口</h2>
-      <div class="muted" id="workbench-live-range">显示最近一次结算之后到现在的实时交易，用于本轮结算前回查。</div>
-    </div>
-  </div>
-  <div class="table-wrap">
-    <table id="workbench-transactions-table">
-      <thead>
-        <tr><th>平台</th><th>群</th><th>角色</th><th>发送人</th><th>消息ID</th><th>金额</th><th>分类</th><th>汇率</th><th>人民币</th><th>刀数</th><th>原始文本</th><th>时间</th><th>状态</th><th>操作</th></tr>
-      </thead>
-      <tbody></tbody>
-    </table>
   </div>
 </section>
 <section class="panel">
@@ -585,6 +584,22 @@ def render_workbench_page() -> str:
     <table id="workbench-cards-table">
       <thead>
         <tr><th>卡种</th><th>角色</th><th>刀数</th><th>人民币金额</th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</section>
+<section class="panel">
+  <div class="toolbar">
+    <div>
+      <h2>当前实时窗口</h2>
+      <div class="muted" id="workbench-live-range">显示最近一次结算之后到现在的实时交易，用于本轮结算前回查。</div>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table id="workbench-transactions-table">
+      <thead>
+        <tr><th>平台</th><th>群</th><th>角色</th><th>发送人</th><th>消息ID</th><th>金额</th><th>分类</th><th>汇率</th><th>人民币</th><th>刀数</th><th>原始文本</th><th>时间</th><th>状态</th><th>操作</th></tr>
       </thead>
       <tbody></tbody>
     </table>
@@ -943,7 +958,7 @@ document.querySelector('#close-period-form').addEventListener('submit', async (e
     setWorkbenchStatus('结账人不能为空。', true, 'close-period-status');
     return;
   }
-  const confirmed = window.confirm('确认一键结账吗？这会按当前实时交易执行与 /alljs 相同的结账逻辑，但不会往其它群补发回执。');
+  const confirmed = window.confirm('确认一键结账吗？这会按当前实时交易执行与 /alljs 相同的结账逻辑，并给本次参与结账的群补发各自的回执。');
   if (!confirmed) {
     setWorkbenchStatus('已取消一键结账。', false, 'close-period-status');
     return;
@@ -962,7 +977,11 @@ document.querySelector('#close-period-form').addEventListener('submit', async (e
     setWorkbenchStatus(result.message || '当前没有可结账的实时交易', false, 'close-period-status');
     return;
   }
-  setWorkbenchStatus(`一键结账完成，账期 ID=${result.period_id}`, false, 'close-period-status');
+  setWorkbenchStatus(
+    `一键结账完成，账期 ID=${result.period_id}，已排队 ${result.queued_action_count} 条群回执。`,
+    false,
+    'close-period-status'
+  );
   form.reset();
   await loadWorkbench(result.period_id);
 });
@@ -1141,8 +1160,13 @@ def render_role_mapping_page() -> str:
       <h2>当前群角色映射</h2>
       <div class="muted">手工指定优先于组号默认映射。未归属群不会进入供应商/客户利润口径。</div>
     </div>
-    <a class="inline-link" href="/workbench">回到账期工作台</a>
+    <div class="toolbar-actions">
+      <input id="role-current-search" type="search" placeholder="按群名 / 群 Key / 平台搜索；输入 2 5、2,5、2，5 可按多个分组号汇总" autocomplete="off" />
+      <button type="button" class="inline-link" id="role-current-search-clear">清空搜索</button>
+      <a class="inline-link" href="/workbench">回到账期工作台</a>
+    </div>
   </div>
+  <div class="muted" id="role-current-filter-summary">当前群统计加载中</div>
   <div class="table-wrap">
     <table id="role-current-table">
       <thead>
@@ -1158,6 +1182,8 @@ def render_role_mapping_page() -> str:
 function money(value) {
   return Number(value || 0).toFixed(2);
 }
+
+let allCurrentRows = [];
 
 function groupNumOptions(currentGroupNum) {
   const selectedValue = currentGroupNum === null || currentGroupNum === undefined ? '' : String(currentGroupNum);
@@ -1187,6 +1213,78 @@ function roleSourceText(source) {
   if (source === 'manual') return '手工指定';
   if (source === 'group_num') return '组号映射';
   return '未映射';
+}
+
+function parseGroupNumKeywords(rawKeyword) {
+  const normalized = String(rawKeyword || '')
+    .replace(/[\\u00A0\\u1680\\u2000-\\u200A\\u202F\\u205F\\u3000]/g, ' ')
+    .trim();
+  if (!normalized) {
+    return null;
+  }
+  const parts = normalized
+    .split(/[\\s,，、]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+  if (!parts.length || !parts.every((item) => /^\\d+$/.test(item))) {
+    return null;
+  }
+  return [...new Set(parts.map((item) => Number(item)))];
+}
+
+function currentGroupMatchesKeyword(row, rawKeyword, keyword, groupNumKeywords) {
+  if (!rawKeyword) {
+    return true;
+  }
+  if (groupNumKeywords) {
+    return row.group_num !== null && row.group_num !== undefined && groupNumKeywords.includes(Number(row.group_num));
+  }
+  return [
+    row.chat_name,
+    row.group_key,
+    row.platform,
+  ].some((value) => String(value || '').toLowerCase().includes(keyword));
+}
+
+function renderCurrentGroupRows(rows, keyword = '') {
+  const emptyText = keyword ? '没有匹配的群角色映射' : '暂无群角色映射';
+  document.querySelector('#role-current-table tbody').innerHTML = rows.length
+    ? rows.map((row) => `
+      <tr>
+        <td>${row.chat_name}</td>
+        <td>${row.platform}</td>
+        <td>${row.group_num ?? '—'}</td>
+        <td>
+          <select class="group-num-select" data-group-key="${row.group_key}" data-chat-name="${row.chat_name}" data-current-group-num="${row.group_num ?? ''}">
+            ${groupNumOptions(row.group_num)}
+          </select>
+        </td>
+        <td>${roleText(row.business_role)}</td>
+        <td>${roleSourceText(row.role_source)}</td>
+        <td>${money(row.current_balance)}</td>
+      </tr>
+    `).join('')
+    : `<tr><td colspan="7" class="muted">${emptyText}</td></tr>`;
+}
+
+function renderCurrentGroupSummary(rows, rawKeyword = '', groupNumKeywords = null) {
+  const totalBalance = rows.reduce((sum, row) => sum + Number(row.current_balance || 0), 0);
+  const summaryText = !rawKeyword
+    ? `当前共 ${rows.length} 个群，当前余额合计 ${money(totalBalance)}。支持按群名、群 Key、平台模糊搜索；输入 2,3,4 这类数字列表时按多个分组号汇总。`
+    : groupNumKeywords
+      ? `已按分组号 ${groupNumKeywords.join('、')} 筛到 ${rows.length} 个群，当前余额合计 ${money(totalBalance)}。`
+      : `已按群组关键字“${rawKeyword}”筛到 ${rows.length} 个群，当前余额合计 ${money(totalBalance)}。`;
+  document.querySelector('#role-current-filter-summary').textContent = summaryText;
+}
+
+function applyCurrentGroupFilter() {
+  const input = document.querySelector('#role-current-search');
+  const rawKeyword = String(input.value || '').trim();
+  const keyword = rawKeyword.toLowerCase();
+  const groupNumKeywords = parseGroupNumKeywords(rawKeyword);
+  const filteredRows = allCurrentRows.filter((row) => currentGroupMatchesKeyword(row, rawKeyword, keyword, groupNumKeywords));
+  renderCurrentGroupRows(filteredRows, rawKeyword);
+  renderCurrentGroupSummary(filteredRows, rawKeyword, groupNumKeywords);
 }
 
 async function loadRoleMapping() {
@@ -1222,25 +1320,20 @@ async function loadRoleMapping() {
     `).join('')
     : '<tr><td colspan="2" class="muted">暂无别名规则</td></tr>';
 
-  const currentRows = data.current_groups || [];
-  document.querySelector('#role-current-table tbody').innerHTML = currentRows.length
-    ? currentRows.map((row) => `
-      <tr>
-        <td>${row.chat_name}</td>
-        <td>${row.platform}</td>
-        <td>${row.group_num ?? '—'}</td>
-        <td>
-          <select class="group-num-select" data-group-key="${row.group_key}" data-chat-name="${row.chat_name}" data-current-group-num="${row.group_num ?? ''}">
-            ${groupNumOptions(row.group_num)}
-          </select>
-        </td>
-        <td>${roleText(row.business_role)}</td>
-        <td>${roleSourceText(row.role_source)}</td>
-        <td>${money(row.current_balance)}</td>
-      </tr>
-    `).join('')
-    : '<tr><td colspan="7" class="muted">暂无群角色映射</td></tr>';
+  allCurrentRows = data.current_groups || [];
+  applyCurrentGroupFilter();
 }
+
+document.querySelector('#role-current-search').addEventListener('input', () => {
+  applyCurrentGroupFilter();
+});
+
+document.querySelector('#role-current-search-clear').addEventListener('click', () => {
+  const input = document.querySelector('#role-current-search');
+  input.value = '';
+  input.focus();
+  applyCurrentGroupFilter();
+});
 
 document.querySelector('#role-current-table').addEventListener('change', async (event) => {
   const select = event.target.closest('.group-num-select');
