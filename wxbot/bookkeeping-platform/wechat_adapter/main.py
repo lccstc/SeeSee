@@ -10,13 +10,43 @@ from .config import load_config, save_config
 from .core_api import WeChatCoreApiClient
 
 
-def _execute_actions(platform_api: WeChatPlatformAPI, actions) -> None:
+def _execute_actions(platform_api: WeChatPlatformAPI, actions) -> list[dict[str, object]]:
+    results: list[dict[str, object]] = []
     for action in actions:
         action_type = action.get("action_type")
+        success = False
         if action_type == "send_text":
-            platform_api.send_text(action["chat_id"], action["text"])
+            success = bool(platform_api.send_text(action["chat_id"], action["text"]))
         elif action_type == "send_file":
-            platform_api.send_file(action["chat_id"], action["file_path"])
+            success = bool(platform_api.send_file(action["chat_id"], action["file_path"]))
+        else:
+            raise ValueError(f"Unknown core action: {action_type}")
+        if isinstance(action.get("id"), int):
+            results.append(
+                {
+                    "id": action["id"],
+                    "success": success,
+                }
+            )
+    return results
+
+
+def _acknowledge_results(remote_core: WeChatCoreApiClient, results: list[dict[str, object]], logger, *, source: str) -> None:
+    if not results:
+        return
+    failed_count = sum(1 for item in results if not bool(item.get("success")))
+    if failed_count > 0:
+        logger.warning("%s actions failed to send: %s", source, failed_count)
+    remote_core.acknowledge_outbound_actions(results)
+
+
+def _flush_outbound_actions(platform_api: WeChatPlatformAPI, remote_core: WeChatCoreApiClient, logger) -> int:
+    actions = remote_core.fetch_outbound_actions()
+    if not actions:
+        return 0
+    results = _execute_actions(platform_api, actions)
+    _acknowledge_results(remote_core, results, logger, source="outbound")
+    return len(actions)
 
 
 def main() -> int:
@@ -48,7 +78,9 @@ def main() -> int:
         while True:
             for message in platform_api.poll_messages():
                 actions = remote_core.send_envelope(message)
-                _execute_actions(platform_api, actions)
+                results = _execute_actions(platform_api, actions)
+                _acknowledge_results(remote_core, results, logger, source="reply")
+            _flush_outbound_actions(platform_api, remote_core, logger)
             time.sleep(config.poll_interval_seconds)
     except KeyboardInterrupt:
         logger.info("WeChat adapter stopped by user")

@@ -188,6 +188,130 @@ class WebAppTests(PostgresTestCase):
         self.assertEqual(payload["group_num"], 8)
         self.assertEqual(self.db.get_group_num("wechat:g-100"), 8)
 
+    def test_realtime_transaction_can_be_updated_via_web_api(self) -> None:
+        transaction_id = self.db.add_transaction(
+            platform="wechat",
+            group_key="wechat:g-100",
+            group_num=5,
+            chat_id="g-100",
+            chat_name="客户群-Web",
+            sender_id="u-web-live",
+            sender_name="Live",
+            message_id="msg-web-live",
+            input_sign=1,
+            amount=50,
+            category="xb",
+            rate=4.9,
+            rmb_value=-245,
+            usd_amount=50,
+            raw="50 xb 4.9",
+            created_at="2026-03-20 10:00:00",
+        )
+        status, payload = self._request(
+            "POST",
+            "/api/transactions/update",
+            {
+                "transaction_id": transaction_id,
+                "sender_name": "Live-Web-Edited",
+                "amount": 50,
+                "category": "xb",
+                "rate": 5,
+                "rmb_value": -250,
+                "usd_amount": 50,
+                "note": "修正实时账单",
+                "edited_by": "finance-web",
+            },
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["transaction_id"], transaction_id)
+
+        transaction = self.db.get_transaction_by_id(transaction_id)
+        self.assertIsNotNone(transaction)
+        self.assertEqual(transaction["sender_name"], "Live-Web-Edited")
+        self.assertEqual(float(transaction["rate"]), 5.0)
+        self.assertEqual(float(transaction["rmb_value"]), -250.0)
+        self.assertEqual(transaction["parse_version"], "web-edit")
+
+        status, workbench = self._request("GET", "/api/workbench", query_string="period_id=realtime")
+        self.assertEqual(status, 200)
+        realtime_row = next(row for row in workbench["transactions"] if int(row["id"]) == transaction_id)
+        self.assertTrue(realtime_row["is_edited"])
+        self.assertEqual(realtime_row["edited_by"], "finance-web")
+        self.assertEqual(realtime_row["sender_name"], "Live-Web-Edited")
+        self.assertEqual(realtime_row["parse_version"], "web-edit")
+
+    def test_settle_all_endpoint_closes_current_realtime_transactions(self) -> None:
+        self.db.add_transaction(
+            platform="wechat",
+            group_key="wechat:g-100",
+            group_num=5,
+            chat_id="g-100",
+            chat_name="客户群-Web",
+            sender_id="u-web-live-close",
+            sender_name="Live-Close",
+            message_id="msg-web-live-close",
+            input_sign=1,
+            amount=80,
+            category="xb",
+            rate=5,
+            rmb_value=-400,
+            usd_amount=80,
+            raw="80 xb 5",
+            created_at="2026-03-20 10:30:00",
+        )
+        status, payload = self._request(
+            "POST",
+            "/api/accounting-periods/settle-all",
+            {
+                "closed_by": "网页值班员",
+            },
+        )
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["closed"])
+        self.assertGreater(payload["period_id"], self.period_id)
+        self.assertEqual(payload["queued_action_count"], 0)
+
+        status, workbench = self._request("GET", "/api/workbench", query_string="period_id=realtime")
+        self.assertEqual(status, 200)
+        self.assertEqual(workbench["transactions"], [])
+        self.assertEqual(self.db.claim_outbound_actions(), [])
+
+    def test_group_broadcast_endpoint_queues_send_text_actions_for_target_group_number(self) -> None:
+        self.db.set_group(
+            platform="wechat",
+            group_key="wechat:g-201",
+            chat_id="g-201",
+            chat_name="客户群-广播-A",
+            group_num=1,
+        )
+        self.db.set_group(
+            platform="wechat",
+            group_key="wechat:g-202",
+            chat_id="g-202",
+            chat_name="客户群-广播-B",
+            group_num=1,
+        )
+
+        status, payload = self._request(
+            "POST",
+            "/api/group-broadcasts",
+            {
+                "created_by": "网页值班员",
+                "group_num": 1,
+                "message": "今晚 8 点统一对账",
+            },
+        )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["group_num"], 1)
+        self.assertEqual(payload["target_count"], 2)
+        self.assertEqual(payload["queued_action_count"], 2)
+
+        queued = self.db.claim_outbound_actions()
+        self.assertEqual(len(queued), 2)
+        self.assertEqual({str(row["chat_id"]) for row in queued}, {"g-201", "g-202"})
+        self.assertEqual({str(row["text"]) for row in queued}, {"今晚 8 点统一对账"})
+
     def test_workbench_adjustment_updates_selected_period_read_model(self) -> None:
         status, payload = self._request(
             "POST",

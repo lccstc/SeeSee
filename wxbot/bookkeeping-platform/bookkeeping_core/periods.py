@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta
+
 from .database import BookkeepingDB
 from .role_mapping import resolve_business_role
 
@@ -7,6 +9,78 @@ from .role_mapping import resolve_business_role
 class AccountingPeriodService:
     def __init__(self, db: BookkeepingDB) -> None:
         self.db = db
+
+    def settle_group_with_receipts(self, *, group_key: str, closed_by: str, note: str | None = None) -> dict | None:
+        period_id = self.close_group_unsettled(
+            group_key=group_key,
+            closed_by=closed_by,
+            note=note,
+        )
+        if period_id is None:
+            return None
+        summary = self.build_period_close_summary(period_id)
+        return {
+            "period_id": period_id,
+            "summary": summary,
+            "queued_action_count": 0,
+        }
+
+    def settle_all_with_receipts(self, *, closed_by: str, note: str | None = None) -> dict | None:
+        period_id = self.close_all_unsettled(
+            closed_by=closed_by,
+            note=note,
+        )
+        if period_id is None:
+            return None
+        summary = self.build_period_close_summary(period_id)
+        return {
+            "period_id": period_id,
+            "summary": summary,
+            "queued_action_count": 0,
+        }
+
+    def close_group_unsettled(self, *, group_key: str, closed_by: str, note: str | None = None) -> int | None:
+        txs = self.db.get_unsettled_transactions(group_key)
+        if not txs:
+            return None
+        start_at = self._resolve_period_start_at(txs)
+        end_at = max(str(tx["created_at"]) for tx in txs)
+        return self.close_period(
+            start_at=start_at,
+            end_at=end_at,
+            closed_by=closed_by,
+            note=note,
+        )
+
+    def close_all_unsettled(self, *, closed_by: str, note: str | None = None) -> int | None:
+        rows = self.db.get_groups_with_unsettled_transactions()
+        if not rows:
+            return None
+        txs = []
+        for row in rows:
+            txs.extend(self.db.get_unsettled_transactions(str(row["group_key"])))
+        if not txs:
+            return None
+        start_at = self._resolve_period_start_at(txs)
+        end_at = max(str(tx["created_at"]) for tx in txs)
+        return self.close_period(
+            start_at=start_at,
+            end_at=end_at,
+            closed_by=closed_by,
+            note=note,
+        )
+
+    def build_period_close_summary(self, period_id: int) -> dict[str, float | int]:
+        rows = self.db.list_period_group_snapshots(period_id)
+        active_rows = [row for row in rows if int(row["transaction_count"] or 0) > 0]
+        total_rmb = sum(float(row["income"] or 0) - float(row["expense"] or 0) for row in active_rows)
+        transaction_count = sum(int(row["transaction_count"] or 0) for row in active_rows)
+        return {
+            "period_id": period_id,
+            "group_count": len(active_rows),
+            "transaction_count": transaction_count,
+            "total_rmb": total_rmb,
+        }
 
     def close_period(self, *, start_at: str, end_at: str, closed_by: str, note: str | None = None) -> int:
         groups = self.db.list_groups()
@@ -107,3 +181,22 @@ class AccountingPeriodService:
             }
             for row in buckets.values()
         ]
+
+    def _resolve_period_start_at(self, txs) -> str:
+        periods = self.db.list_accounting_periods()
+        if periods:
+            latest = max(
+                periods,
+                key=lambda row: (str(row["closed_at"]), int(row["id"])),
+            )
+            return str(latest["end_at"])
+        earliest_created_at = min(str(tx["created_at"]) for tx in txs)
+        earliest_dt = self._parse_db_timestamp(earliest_created_at) - timedelta(seconds=1)
+        return earliest_dt.strftime("%Y-%m-%d %H:%M:%S")
+
+    @staticmethod
+    def _parse_db_timestamp(value) -> datetime:
+        if isinstance(value, datetime):
+            return value
+        text = str(value).strip()
+        return datetime.fromisoformat(text.replace("Z", "+00:00")).replace(tzinfo=None)

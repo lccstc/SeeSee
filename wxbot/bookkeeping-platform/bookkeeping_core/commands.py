@@ -264,35 +264,31 @@ class CommandHandler:
         if not self.can_manage(sender_id):
             self.action_collector.send_text(chat_id, "❌ Permission denied")
             return
-        txs = self.db.get_unsettled_transactions(group_key)
-        if not txs:
-            self.action_collector.send_text(chat_id, "✅ No unsettled transactions")
-            return
-        period_id = self._close_accounting_period(
-            txs=txs,
+        period_service = AccountingPeriodService(self.db)
+        result = period_service.settle_group_with_receipts(
+            group_key=group_key,
             closed_by=sender_id,
             note=f"/js from {group_key}",
         )
-        summary = self._build_period_close_summary(period_id)
+        if result is None:
+            self.action_collector.send_text(chat_id, "✅ No unsettled transactions")
+            return
+        summary = result["summary"]
         self.action_collector.send_text(chat_id, self._format_period_close_message(summary))
 
     def handle_all_settle(self, platform: str, chat_id: str, sender_id: str) -> None:
         if not self.can_manage(sender_id):
             self.action_collector.send_text(chat_id, "❌ Permission denied")
             return
-        rows = self.db.get_groups_with_unsettled_transactions()
-        if not rows:
-            self.action_collector.send_text(chat_id, "✅ No unsettled transactions in any group")
-            return
-        txs = []
-        for row in rows:
-            txs.extend(self.db.get_unsettled_transactions(row["group_key"]))
-        period_id = self._close_accounting_period(
-            txs=txs,
+        period_service = AccountingPeriodService(self.db)
+        result = period_service.settle_all_with_receipts(
             closed_by=sender_id,
             note="/alljs",
         )
-        summary = self._build_period_close_summary(period_id)
+        if result is None:
+            self.action_collector.send_text(chat_id, "✅ No unsettled transactions in any group")
+            return
+        summary = result["summary"]
         self.action_collector.send_text(chat_id, self._format_period_close_message(summary))
 
     def handle_mingxi(self, group_key: str, chat_id: str, args: str) -> None:
@@ -494,40 +490,6 @@ class CommandHandler:
                 f"canonical_id={canonical_id}"
             ),
         )
-
-    def _close_accounting_period(self, *, txs, closed_by: str, note: str) -> int:
-        start_at = self._resolve_period_start_at(txs)
-        end_at = max(str(tx["created_at"]) for tx in txs)
-        return AccountingPeriodService(self.db).close_period(
-            start_at=start_at,
-            end_at=end_at,
-            closed_by=closed_by,
-            note=note,
-        )
-
-    def _resolve_period_start_at(self, txs) -> str:
-        periods = self.db.list_accounting_periods()
-        if periods:
-            latest = max(
-                periods,
-                key=lambda row: (str(row["closed_at"]), int(row["id"])),
-            )
-            return str(latest["end_at"])
-        earliest_created_at = min(str(tx["created_at"]) for tx in txs)
-        earliest_dt = self._parse_db_timestamp(earliest_created_at) - timedelta(seconds=1)
-        return earliest_dt.strftime("%Y-%m-%d %H:%M:%S")
-
-    def _build_period_close_summary(self, period_id: int) -> dict[str, float | int]:
-        rows = self.db.list_period_group_snapshots(period_id)
-        active_rows = [row for row in rows if int(row["transaction_count"] or 0) > 0]
-        total_rmb = sum(float(row["income"] or 0) - float(row["expense"] or 0) for row in active_rows)
-        transaction_count = sum(int(row["transaction_count"] or 0) for row in active_rows)
-        return {
-            "period_id": period_id,
-            "group_count": len(active_rows),
-            "transaction_count": transaction_count,
-            "total_rmb": total_rmb,
-        }
 
     @staticmethod
     def _format_period_close_message(summary: dict[str, float | int]) -> str:

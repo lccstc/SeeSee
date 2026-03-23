@@ -281,6 +281,9 @@ class AnalyticsService:
             "unit_face_value": float(row["unit_face_value"]) if row["unit_face_value"] is not None else None,
             "unit_count": float(row["unit_count"]) if row["unit_count"] is not None else None,
             "created_at": self._normalize_value(row["created_at"]),
+            "edited_by": self._normalize_value(self._read_optional_value(row, "edited_by")),
+            "edited_at": self._normalize_value(self._read_optional_value(row, "edited_at")),
+            "is_edited": self._read_optional_value(row, "edited_at") is not None,
             "settled": normalized_status == "settled",
             "period_status": normalized_status,
         }

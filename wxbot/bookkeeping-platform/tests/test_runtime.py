@@ -511,6 +511,7 @@ class UnifiedRuntimeTests(PostgresTestCase):
                 "text": "hello back",
             }
         ]
+        fake_remote_client.fetch_outbound_actions.return_value = []
         config = WeChatConfig(
             listen_chats=["文件传输助手"],
             master_users=[],
@@ -538,6 +539,60 @@ class UnifiedRuntimeTests(PostgresTestCase):
         self.assertEqual(exit_code, 0)
         fake_remote_client.send_envelope.assert_called_once_with(fake_message)
         fake_platform_api.send_text.assert_called_once_with("room-a", "hello back")
+        fake_remote_client.acknowledge_outbound_actions.assert_not_called()
+
+    def test_wechat_main_flushes_remote_outbound_actions_for_web_queued_messages(self) -> None:
+        from wechat_adapter import main as wechat_main
+
+        fake_platform_api = MagicMock()
+        fake_platform_api.listen_chats = ["文件传输助手"]
+        fake_platform_api.self_name = ""
+        fake_platform_api.self_wxid = ""
+        fake_platform_api.poll_messages.return_value = []
+        fake_remote_client = MagicMock()
+        fake_remote_client.fetch_outbound_actions.return_value = [
+            {
+                "id": 41,
+                "action_type": "send_text",
+                "chat_id": "room-b",
+                "text": "web diy",
+            }
+        ]
+        config = WeChatConfig(
+            listen_chats=["文件传输助手"],
+            master_users=[],
+            poll_interval_seconds=1.0,
+            log_level="INFO",
+            language="cn",
+            export_dir="/tmp/exports",
+            runtime_dir="/tmp/runtime",
+            core_api=CoreApiConfig(
+                endpoint="https://python.example.com",
+                token="core-token",
+                request_timeout_seconds=5.0,
+            ),
+        )
+
+        with (
+            patch.object(wechat_main, "load_config", return_value=config),
+            patch.object(wechat_main, "save_config"),
+            patch.object(wechat_main, "WeChatPlatformAPI", return_value=fake_platform_api),
+            patch.object(wechat_main, "WeChatCoreApiClient", return_value=fake_remote_client),
+            patch.object(wechat_main.time, "sleep", side_effect=KeyboardInterrupt),
+        ):
+            exit_code = wechat_main.main()
+
+        self.assertEqual(exit_code, 0)
+        fake_remote_client.send_envelope.assert_not_called()
+        fake_platform_api.send_text.assert_called_once_with("room-b", "web diy")
+        fake_remote_client.acknowledge_outbound_actions.assert_called_once_with(
+            [
+                {
+                    "id": 41,
+                    "success": True,
+                }
+            ]
+        )
 
     def test_core_action_collector_emits_send_text_and_send_file_actions(self) -> None:
         from bookkeeping_core.contracts import CoreActionCollector, core_action_to_dict

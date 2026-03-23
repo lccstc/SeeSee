@@ -166,9 +166,19 @@ class _BookkeepingStoreBase:
             SELECT
               tx.*,
               g.business_role AS business_role,
-              g.group_num AS mapped_group_num
+              g.group_num AS mapped_group_num,
+              edit.edited_by AS edited_by,
+              edit.edited_at AS edited_at
             FROM transactions tx
             LEFT JOIN groups g ON g.group_key = tx.group_key
+            LEFT JOIN (
+              SELECT DISTINCT ON (transaction_id)
+                transaction_id,
+                edited_by,
+                edited_at
+              FROM transaction_edit_logs
+              ORDER BY transaction_id, edited_at DESC, id DESC
+            ) edit ON edit.transaction_id = tx.id
             WHERE tx.deleted = 0
             ORDER BY tx.created_at DESC, tx.id DESC
             LIMIT ?
@@ -588,10 +598,20 @@ class _BookkeepingStoreBase:
             SELECT
               tx.*,
               g.business_role AS business_role,
-              g.group_num AS mapped_group_num
+              g.group_num AS mapped_group_num,
+              edit.edited_by AS edited_by,
+              edit.edited_at AS edited_at
             FROM transactions tx
             INNER JOIN accounting_periods period ON period.id = ?
             LEFT JOIN groups g ON g.group_key = tx.group_key
+            LEFT JOIN (
+              SELECT DISTINCT ON (transaction_id)
+                transaction_id,
+                edited_by,
+                edited_at
+              FROM transaction_edit_logs
+              ORDER BY transaction_id, edited_at DESC, id DESC
+            ) edit ON edit.transaction_id = tx.id
             WHERE tx.created_at > period.start_at
               AND tx.created_at <= period.end_at
               AND (tx.deleted = 0 OR tx.settled = 1)
@@ -607,9 +627,19 @@ class _BookkeepingStoreBase:
                 SELECT
                   tx.*,
                   g.business_role AS business_role,
-                  g.group_num AS mapped_group_num
+                  g.group_num AS mapped_group_num,
+                  edit.edited_by AS edited_by,
+                  edit.edited_at AS edited_at
                 FROM transactions tx
                 LEFT JOIN groups g ON g.group_key = tx.group_key
+                LEFT JOIN (
+                  SELECT DISTINCT ON (transaction_id)
+                    transaction_id,
+                    edited_by,
+                    edited_at
+                  FROM transaction_edit_logs
+                  ORDER BY transaction_id, edited_at DESC, id DESC
+                ) edit ON edit.transaction_id = tx.id
                 WHERE tx.deleted = 0
                   AND tx.settled = 0
                 ORDER BY tx.created_at DESC, tx.id DESC
@@ -620,9 +650,19 @@ class _BookkeepingStoreBase:
             SELECT
               tx.*,
               g.business_role AS business_role,
-              g.group_num AS mapped_group_num
+              g.group_num AS mapped_group_num,
+              edit.edited_by AS edited_by,
+              edit.edited_at AS edited_at
             FROM transactions tx
             LEFT JOIN groups g ON g.group_key = tx.group_key
+            LEFT JOIN (
+              SELECT DISTINCT ON (transaction_id)
+                transaction_id,
+                edited_by,
+                edited_at
+              FROM transaction_edit_logs
+              ORDER BY transaction_id, edited_at DESC, id DESC
+            ) edit ON edit.transaction_id = tx.id
             WHERE tx.deleted = 0
               AND tx.settled = 0
               AND tx.created_at > ?
@@ -859,6 +899,7 @@ class BookkeepingDB(_BookkeepingStoreBase):
         self._init_schema()
 
     def _init_schema(self) -> None:
+        self._ensure_support_tables()
         self._verify_schema()
         self.conn.execute(
             """
@@ -868,6 +909,59 @@ class BookkeepingDB(_BookkeepingStoreBase):
             """
         )
         self.conn.commit()
+
+    def _ensure_support_tables(self) -> None:
+        self.conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS transaction_edit_logs (
+              id BIGSERIAL PRIMARY KEY,
+              transaction_id BIGINT NOT NULL,
+              edited_by TEXT NOT NULL,
+              note TEXT,
+              before_json TEXT NOT NULL,
+              after_json TEXT NOT NULL,
+              edited_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        self.conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS outbound_actions (
+              id BIGSERIAL PRIMARY KEY,
+              action_type TEXT NOT NULL,
+              chat_id TEXT NOT NULL,
+              text TEXT,
+              file_path TEXT,
+              caption TEXT,
+              status TEXT NOT NULL DEFAULT 'pending',
+              created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              claimed_at TIMESTAMP,
+              dispatched_at TIMESTAMP
+            )
+            """
+        )
+        if not self._table_has_column("outbound_actions", "claimed_at"):
+            self.conn.execute(
+                """
+                ALTER TABLE outbound_actions
+                ADD COLUMN claimed_at TIMESTAMP
+                """
+            )
+        self.conn.commit()
+
+    def _table_has_column(self, table_name: str, column_name: str) -> bool:
+        row = self.conn.execute(
+            """
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_schema = CURRENT_SCHEMA()
+              AND table_name = ?
+              AND column_name = ?
+            LIMIT 1
+            """,
+            (table_name, column_name),
+        ).fetchone()
+        return row is not None
 
     def _verify_schema(self) -> None:
         required_columns = {
@@ -989,6 +1083,27 @@ class BookkeepingDB(_BookkeepingStoreBase):
             },
             "group_combinations": {"id", "name", "note", "created_by", "created_at", "updated_at"},
             "group_combination_items": {"combination_id", "group_num"},
+            "transaction_edit_logs": {
+                "id",
+                "transaction_id",
+                "edited_by",
+                "note",
+                "before_json",
+                "after_json",
+                "edited_at",
+            },
+            "outbound_actions": {
+                "id",
+                "action_type",
+                "chat_id",
+                "text",
+                "file_path",
+                "caption",
+                "status",
+                "created_at",
+                "claimed_at",
+                "dispatched_at",
+            },
             "ingested_events": {
                 "event_id",
                 "event_type",
@@ -1097,6 +1212,171 @@ class BookkeepingDB(_BookkeepingStoreBase):
         )
         self.conn.commit()
         return int(row["id"])
+
+    def get_transaction_by_id(self, transaction_id: int) -> DBRow | None:
+        return self.conn.execute(
+            """
+            SELECT
+              tx.*,
+              g.business_role AS business_role,
+              g.group_num AS mapped_group_num
+            FROM transactions tx
+            LEFT JOIN groups g ON g.group_key = tx.group_key
+            WHERE tx.id = ?
+            """,
+            (transaction_id,),
+        ).fetchone()
+
+    def update_transaction_fields(
+        self,
+        *,
+        transaction_id: int,
+        sender_name: str,
+        amount: float,
+        category: str,
+        rate: float | None,
+        rmb_value: float,
+        usd_amount: float | None,
+        commit: bool = True,
+    ) -> int:
+        cur = self.conn.execute(
+            """
+            UPDATE transactions
+            SET sender_name = ?,
+                amount = ?,
+                category = ?,
+                rate = ?,
+                rmb_value = ?,
+                usd_amount = ?,
+                parse_version = 'web-edit'
+            WHERE id = ?
+            """,
+            (sender_name, amount, category, rate, rmb_value, usd_amount, transaction_id),
+        )
+        if commit:
+            self.conn.commit()
+        return int(cur.rowcount or 0)
+
+    def add_transaction_edit_log(
+        self,
+        *,
+        transaction_id: int,
+        edited_by: str,
+        note: str | None,
+        before_json: str,
+        after_json: str,
+        commit: bool = True,
+    ) -> int:
+        cur = self.conn.execute(
+            """
+            INSERT INTO transaction_edit_logs (
+              transaction_id, edited_by, note, before_json, after_json
+            ) VALUES (?, ?, ?, ?, ?)
+            RETURNING id
+            """,
+            (transaction_id, edited_by, note, before_json, after_json),
+        )
+        row = cur.fetchone()
+        if commit:
+            self.conn.commit()
+        return int(row["id"])
+
+    def enqueue_outbound_actions(self, actions: list[dict], *, commit: bool = True) -> int:
+        inserted = 0
+        for action in actions:
+            action_type = str(action.get("action_type") or "").strip()
+            chat_id = str(action.get("chat_id") or "").strip()
+            if action_type not in {"send_text", "send_file"} or not chat_id:
+                continue
+            self.conn.execute(
+                """
+                INSERT INTO outbound_actions (
+                  action_type, chat_id, text, file_path, caption, status, claimed_at, dispatched_at
+                ) VALUES (?, ?, ?, ?, ?, 'pending', NULL, NULL)
+                """,
+                (
+                    action_type,
+                    chat_id,
+                    action.get("text"),
+                    action.get("file_path"),
+                    action.get("caption"),
+                ),
+            )
+            inserted += 1
+        if commit:
+            self.conn.commit()
+        return inserted
+
+    def claim_outbound_actions(self, *, limit: int = 50) -> list[DBRow]:
+        # The long-lived runtime connection serves many read-only HTTP requests.
+        # Refresh the PostgreSQL snapshot before polling the outbound queue so
+        # actions written by other request-scoped connections become visible.
+        self.conn.rollback()
+        rows = self.conn.execute(
+            """
+            SELECT *
+            FROM outbound_actions
+            WHERE status = 'pending'
+               OR (
+                    status = 'claimed'
+                AND claimed_at IS NOT NULL
+                AND claimed_at <= CURRENT_TIMESTAMP - INTERVAL '30 seconds'
+               )
+            ORDER BY created_at ASC, id ASC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+        if not rows:
+            return []
+        ids = [int(row["id"]) for row in rows]
+        placeholders = ",".join("?" for _ in ids)
+        self.conn.execute(
+            f"""
+            UPDATE outbound_actions
+            SET status = 'claimed',
+                claimed_at = CURRENT_TIMESTAMP
+            WHERE id IN ({placeholders})
+            """,
+            ids,
+        )
+        self.conn.commit()
+        return rows
+
+    def acknowledge_outbound_actions(self, results: list[dict], *, commit: bool = True) -> int:
+        updated = 0
+        for item in results:
+            try:
+                action_id = int(item["id"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            success = bool(item.get("success"))
+            if success:
+                cur = self.conn.execute(
+                    """
+                    UPDATE outbound_actions
+                    SET status = 'delivered',
+                        claimed_at = NULL,
+                        dispatched_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                    """,
+                    (action_id,),
+                )
+            else:
+                cur = self.conn.execute(
+                    """
+                    UPDATE outbound_actions
+                    SET status = 'pending',
+                        claimed_at = NULL,
+                        dispatched_at = NULL
+                    WHERE id = ?
+                    """,
+                    (action_id,),
+                )
+            updated += int(cur.rowcount or 0)
+        if commit:
+            self.conn.commit()
+        return updated
 
     def add_to_whitelist(self, user_key: str, added_by: str, note: str | None = None) -> None:
         self.conn.execute(

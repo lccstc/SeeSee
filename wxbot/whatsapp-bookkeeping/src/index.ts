@@ -3,7 +3,7 @@
 import pino from "pino";
 import { pathToFileURL } from "node:url";
 
-import type { CoreApiClient, NormalizedMessageEnvelope } from "./core-api.js";
+import type { CoreAction, CoreActionSender, CoreApiClient, NormalizedMessageEnvelope } from "./core-api.js";
 import type { WhatsAppMessage, WhatsAppClient } from "./whatsapp.js";
 
 type CoreApiConfigSource = {
@@ -14,6 +14,7 @@ type CoreApiConfigSource = {
   };
 };
 
+type CoreOutboundClient = Pick<CoreApiClient, "fetchOutboundActions" | "ackOutboundActions">;
 type SelfMessageTracker = {
   recordText(chatId: string, text: string): void;
   shouldIgnore(msg: WhatsAppMessage): boolean;
@@ -21,6 +22,8 @@ type SelfMessageTracker = {
 
 const SELF_MESSAGE_TTL_MS = 2 * 60 * 1000;
 const MAX_TRACKED_SELF_MESSAGES = 200;
+const OUTBOUND_ACTION_POLL_INTERVAL_MS = 1000;
+const OUTBOUND_ACTION_WARMUP_MS = 10_000;
 
 export function normalizeMessage(msg: WhatsAppMessage): NormalizedMessageEnvelope {
   return {
@@ -126,6 +129,67 @@ export async function createCoreApiClient(
   });
 }
 
+async function acknowledgeCoreActionResults(
+  coreApiClient: Pick<CoreApiClient, "ackOutboundActions">,
+  results: Array<{ id: number; success: boolean }>,
+  logger: Pick<pino.Logger, "warn">,
+  failureMessage: string
+): Promise<void> {
+  if (!results.length) {
+    return;
+  }
+
+  const failedCount = results.filter((item) => !item.success).length;
+  if (failedCount > 0) {
+    logger.warn({ failedCount }, failureMessage);
+  }
+  await coreApiClient.ackOutboundActions(results);
+}
+
+async function executeLocalCoreActions(actions: CoreAction[], sender: CoreActionSender) {
+  const { executeCoreActions } = await import(resolveLocalModule("core-api"));
+  return executeCoreActions(actions, sender);
+}
+
+export async function flushCoreOutboundActions(
+  coreApiClient: CoreOutboundClient,
+  sender: CoreActionSender,
+  logger: Pick<pino.Logger, "warn">
+): Promise<number> {
+  const actions = await coreApiClient.fetchOutboundActions();
+  if (!actions.length) {
+    return 0;
+  }
+  (logger as { info?: (payload: object, message: string) => void }).info?.(
+    {
+      count: actions.length,
+      actionIds: actions.map((action) => action.id).filter((id): id is number => typeof id === "number"),
+    },
+    "Fetched core outbound actions"
+  );
+
+  const results = await executeLocalCoreActions(actions, sender);
+  (logger as { info?: (payload: object, message: string) => void }).info?.(
+    {
+      results,
+    },
+    "Executed core outbound actions"
+  );
+  await acknowledgeCoreActionResults(
+    coreApiClient,
+    results,
+    logger,
+    "Core outbound actions failed to send"
+  );
+  (logger as { info?: (payload: object, message: string) => void }).info?.(
+    {
+      ackedIds: results.map((item: { id: number }) => item.id),
+    },
+    "Acknowledged core outbound actions"
+  );
+  return actions.length;
+}
+
 async function main(): Promise<void> {
   try {
     const [{ loadConfig }, { WhatsAppClient }, { executeCoreActions }] = await Promise.all([
@@ -143,6 +207,8 @@ async function main(): Promise<void> {
     });
     const coreApiClient = await createCoreApiClient(config);
     const selfMessageTracker = createSelfMessageTracker();
+    let isFlushingOutbound = false;
+    let connectedAtMs = 0;
     const actionSender = {
       sendMessage: async (to: string, text: string): Promise<boolean> => {
         const sent = await whatsapp.sendMessage(to, text);
@@ -153,6 +219,25 @@ async function main(): Promise<void> {
       },
       sendFile: async (to: string, filePath: string, caption?: string): Promise<boolean> =>
         whatsapp.sendFile(to, filePath, caption),
+    };
+    const flushOutboundActions = async (): Promise<void> => {
+      if (!whatsapp.isSocketConnected()) {
+        return;
+      }
+      if (!connectedAtMs || Date.now() - connectedAtMs < OUTBOUND_ACTION_WARMUP_MS) {
+        return;
+      }
+      if (isFlushingOutbound) {
+        return;
+      }
+      isFlushingOutbound = true;
+      try {
+        await flushCoreOutboundActions(coreApiClient, actionSender, logger);
+      } catch (error) {
+        logger.error({ error }, "Failed to flush core outbound actions");
+      } finally {
+        isFlushingOutbound = false;
+      }
     };
 
     const handleIncomingMessage = async (msg: WhatsAppMessage): Promise<void> => {
@@ -180,7 +265,13 @@ async function main(): Promise<void> {
           return;
         }
         const actions = await coreApiClient.sendEnvelope(envelope);
-        await executeCoreActions(actions, actionSender);
+        const results = await executeCoreActions(actions, actionSender);
+        await acknowledgeCoreActionResults(
+          coreApiClient,
+          results,
+          logger,
+          `Core reply actions failed to send for message ${envelope.message_id}`
+        );
       } catch (error) {
         logger.error({ error }, "Failed to process WhatsApp message");
       }
@@ -188,15 +279,23 @@ async function main(): Promise<void> {
 
     whatsapp.onMessage(handleIncomingMessage);
     whatsapp.onConnectionChange((connected: boolean) => {
+      connectedAtMs = connected ? Date.now() : 0;
       logger.info({ connected }, connected ? "WhatsApp connected" : "WhatsApp disconnected");
     });
 
-    await whatsapp.connect();
-
+    void whatsapp.connect().catch((error: unknown) => {
+      logger.error({ error }, "WhatsApp connect failed");
+    });
+    const outboundTimer = setInterval(() => {
+      void flushOutboundActions();
+    }, OUTBOUND_ACTION_POLL_INTERVAL_MS);
+    void flushOutboundActions();
     process.once("SIGINT", () => {
+      clearInterval(outboundTimer);
       void shutdown(whatsapp);
     });
     process.once("SIGTERM", () => {
+      clearInterval(outboundTimer);
       void shutdown(whatsapp);
     });
   } catch (error) {

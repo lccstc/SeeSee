@@ -480,13 +480,17 @@ def render_workbench_page() -> str:
     </label>
   </div>
   <form id="close-period-form">
-    <input name="start_at" placeholder="开始时间，如 2026-03-20 08:00:00" required />
-    <input name="end_at" placeholder="结束时间，如 2026-03-20 10:00:00" required />
-    <input name="closed_by" placeholder="关账人" required />
-    <input name="note" placeholder="关账备注，可选" />
-    <button type="submit">关闭账期</button>
+    <input name="closed_by" placeholder="结账人备注" required />
+    <button type="submit">一键结账</button>
   </form>
-  <div id="close-period-status" class="muted"></div>
+  <div id="close-period-status" class="muted">直接调用后端关账服务，口径等同 `/alljs`，但不会再往各个群里补发回执。</div>
+  <form id="group-broadcast-form">
+    <input name="created_by" placeholder="群发人备注" required />
+    <input name="group_num" type="number" min="0" max="9" step="1" placeholder="分组号，如 1" required />
+    <textarea class="full" name="message" placeholder="群发内容，等同 `/diy 1 自定义内容` 里的消息正文" required></textarea>
+    <button type="submit">群发到分组</button>
+  </form>
+  <div id="group-broadcast-status" class="muted">Web 群发会进入统一出站队列，由各平台适配器依次投递到该分组下的所有群；“群发人备注”只用于审计记录。</div>
   <div class="cards">
     <article class="card">
       <div class="label" id="workbench-profit-label">账期利润</div>
@@ -524,7 +528,7 @@ def render_workbench_page() -> str:
   <div class="table-wrap">
     <table id="workbench-transactions-table">
       <thead>
-        <tr><th>平台</th><th>群</th><th>角色</th><th>发送人</th><th>消息ID</th><th>金额</th><th>分类</th><th>汇率</th><th>人民币</th><th>刀数</th><th>解析版本</th><th>原始文本</th><th>时间</th><th>状态</th></tr>
+        <tr><th>平台</th><th>群</th><th>角色</th><th>发送人</th><th>消息ID</th><th>金额</th><th>分类</th><th>汇率</th><th>人民币</th><th>刀数</th><th>原始文本</th><th>时间</th><th>状态</th><th>操作</th></tr>
       </thead>
       <tbody></tbody>
     </table>
@@ -556,7 +560,7 @@ def render_workbench_page() -> str:
       <div class="table-wrap">
         <table id="workbench-vendor-cards-table">
           <thead>
-            <tr><th>卡种</th><th>刀数</th><th>金额</th></tr>
+            <tr><th>卡种</th><th>刀数</th><th>金额</th><th>利润</th></tr>
           </thead>
           <tbody></tbody>
         </table>
@@ -589,23 +593,29 @@ def render_workbench_page() -> str:
 <section class="panel stack">
   <div>
     <h2>治理操作</h2>
-    <div class="muted">沿用现有修正与组合接口，把治理动作从首页归位到账期工作台。</div>
+    <div class="muted">治理动作跟随上方实时窗口中的当前交易。交易修改直接落在原始账单上，组合管理继续保留在这里。</div>
   </div>
   <div class="subgrid">
     <section class="subpanel">
-      <h3>人工修正</h3>
-      <p class="muted">默认带入当前账期 ID。适合在对账后记录修正动作。</p>
-      <form id="adjustment-form">
-        <input name="period_id" id="adjustment-period-id" placeholder="账期 ID" required />
-        <input name="group_key" placeholder="群标识，如 wechat:g-100" required />
-        <input name="income_delta" placeholder="收款修正，默认 0" value="0" />
-        <input name="expense_delta" placeholder="使用修正，默认 0" value="0" />
-        <input name="opening_delta" placeholder="期初修正，默认 0" value="0" />
-        <input name="closing_delta" placeholder="期末修正，默认 0" value="0" />
-        <input name="created_by" placeholder="修正人" required />
-        <textarea class="full" name="note" placeholder="修正说明" required></textarea>
-        <button type="submit">提交修正</button>
+      <h3>交易修改</h3>
+      <p class="muted">先在上方实时窗口选择一条交易。这里只修改单笔账单字段，提交前会二次确认，并记录修改人、修改时间和修改痕迹。</p>
+      <form id="transaction-edit-form">
+        <input type="hidden" name="transaction_id" id="transaction-edit-id" />
+        <input id="transaction-edit-platform" placeholder="平台" readonly title="只读：来自当前选中的实时交易" />
+        <input id="transaction-edit-chat-name" placeholder="群" readonly title="只读：来自当前选中的实时交易" />
+        <input id="transaction-edit-role" placeholder="角色" readonly title="只读：角色来自群映射，不在这里单独改" />
+        <input id="transaction-edit-message-id" placeholder="消息ID" readonly title="只读：用于确认你选中的原始消息" />
+        <input name="sender_name" id="transaction-edit-sender-name" placeholder="发送人" required title="可改：当前账单的发送人展示名" />
+        <input name="amount" id="transaction-edit-amount" placeholder="金额" required title="可改：原始金额，保持和机器人记账口径一致" />
+        <input name="category" id="transaction-edit-category" placeholder="分类" required title="可改：如 xb、rmb 等分类" />
+        <input name="rate" id="transaction-edit-rate" placeholder="汇率" title="可改：没有汇率时可留空" />
+        <input name="rmb_value" id="transaction-edit-rmb-value" placeholder="人民币" required title="可改：后台原始人民币值。客户群保持原始负数，供应商按原始符号录入。" />
+        <input name="usd_amount" id="transaction-edit-usd-amount" placeholder="刀数" title="可改：若为空，系统仍会按金额兜底显示" />
+        <input name="edited_by" id="transaction-edit-edited-by" placeholder="修改人（操作人）" required title="必填：记录这次修改是谁做的" />
+        <textarea class="full" name="note" id="transaction-edit-note" placeholder="修改说明（必填，记录原因和依据）" required></textarea>
+        <button type="submit" id="transaction-edit-submit-btn">提交修改</button>
       </form>
+      <div class="table-note muted" id="transaction-edit-hint">请先从上方实时窗口选择一条交易。</div>
     </section>
     <section class="subpanel">
       <h3>组合管理</h3>
@@ -672,22 +682,82 @@ function roleCardSummaryText(block) {
   return `合计 ${money(block.total_usd_amount)} 刀 / ${money(block.total_display_rmb_amount ?? block.total_rmb_amount)} 元`;
 }
 
-function renderRoleCardTable(tableId, rows, emptyText) {
+function renderRoleCardTable(tableId, rows, emptyText, options = {}) {
+  const showProfit = Boolean(options.showProfit);
+  const profitByCardType = options.profitByCardType || {};
+  const colspan = showProfit ? 4 : 3;
   document.querySelector(`${tableId} tbody`).innerHTML = rows.length
-    ? rows.map((row) => `
+    ? rows.map((row) => {
+      const amount = Number(row.display_rmb_amount ?? row.rmb_amount ?? 0);
+      const profit = Number(profitByCardType[row.card_type] ?? 0);
+      return `
       <tr>
         <td>${row.card_type}</td>
         <td>${money(row.usd_amount)}</td>
-        <td>${money(row.display_rmb_amount ?? row.rmb_amount)}</td>
+        <td>${money(amount)}</td>
+        ${showProfit ? `<td>${money(profit)}</td>` : ''}
       </tr>
-    `).join('')
-    : `<tr><td colspan="3" class="muted">${emptyText}</td></tr>`;
+    `;
+    }).join('')
+    : `<tr><td colspan="${colspan}" class="muted">${emptyText}</td></tr>`;
 }
 
 function setWorkbenchStatus(text, isError = false, targetId = 'workbench-form-status') {
   const node = document.querySelector(`#${targetId}`);
   node.className = isError ? 'error' : 'muted';
   node.textContent = text;
+}
+
+function formatEditTrail(row) {
+  if (!row || !row.is_edited) {
+    return '';
+  }
+  const meta = [];
+  if (row.edited_at) {
+    meta.push(row.edited_at);
+  }
+  if (row.edited_by) {
+    meta.push(row.edited_by);
+  }
+  return `<div class="table-note muted">已修改${meta.length ? ` · ${meta.join(' · ')}` : ''}</div>`;
+}
+
+function setTransactionEditHint(text) {
+  const hint = document.querySelector('#transaction-edit-hint');
+  if (hint) {
+    hint.textContent = text;
+  }
+}
+
+function clearTransactionEditForm(hintText) {
+  document.querySelector('#transaction-edit-form').reset();
+  document.querySelector('#transaction-edit-id').value = '';
+  document.querySelector('#transaction-edit-platform').value = '';
+  document.querySelector('#transaction-edit-chat-name').value = '';
+  document.querySelector('#transaction-edit-role').value = '';
+  document.querySelector('#transaction-edit-message-id').value = '';
+  setTransactionEditHint(hintText);
+}
+
+function fillTransactionEditForm(row) {
+  const editorNode = document.querySelector('#transaction-edit-edited-by');
+  const preservedEditor = editorNode.value;
+  document.querySelector('#transaction-edit-id').value = String(row.id);
+  document.querySelector('#transaction-edit-platform').value = row.platform || '';
+  document.querySelector('#transaction-edit-chat-name').value = row.chat_name || '';
+  document.querySelector('#transaction-edit-role').value = roleText(row.business_role);
+  document.querySelector('#transaction-edit-message-id').value = row.message_id || '';
+  document.querySelector('#transaction-edit-sender-name').value = row.sender_name || '';
+  document.querySelector('#transaction-edit-amount').value = compactNumber(row.amount ?? 0);
+  document.querySelector('#transaction-edit-category').value = row.category || '';
+  document.querySelector('#transaction-edit-rate').value = row.rate === null || row.rate === undefined ? '' : compactNumber(row.rate);
+  document.querySelector('#transaction-edit-rmb-value').value = compactNumber(row.rmb_value ?? 0);
+  document.querySelector('#transaction-edit-usd-amount').value = row.usd_amount === null || row.usd_amount === undefined ? '' : compactNumber(row.usd_amount);
+  document.querySelector('#transaction-edit-note').value = '';
+  editorNode.value = preservedEditor;
+  setTransactionEditHint(
+    `当前选中：${row.chat_name || '未命名群'} / ${row.message_id || `交易ID ${row.id}`}。提交后会保留修改痕迹和时间。`
+  );
 }
 
 function updatePeriodOptions(periods, selectedId) {
@@ -701,10 +771,14 @@ function updatePeriodOptions(periods, selectedId) {
 }
 
 let currentPeriodId = null;
+let currentWorkbenchSelection = 'realtime';
+let currentEditingTransactionId = null;
+let currentTransactionsById = new Map();
 
 async function loadWorkbench(periodId) {
   const normalizedPeriodId = String(periodId || 'realtime').toLowerCase();
   const isRealtimeRequest = normalizedPeriodId === 'realtime';
+  currentWorkbenchSelection = isRealtimeRequest ? 'realtime' : String(periodId);
   const params = new URLSearchParams();
   params.set('period_id', isRealtimeRequest ? 'realtime' : String(periodId));
   const response = await fetch(`/api/workbench?${params.toString()}`);
@@ -724,7 +798,7 @@ async function loadWorkbench(periodId) {
     document.querySelector('#workbench-vendor-label').textContent = '账期供应商卡金额';
     document.querySelector('#workbench-role-card-title').textContent = '账期客户/供应商卡统计';
     history.replaceState({}, '', `/workbench?period_id=${selected.id}`);
-    document.querySelector('#adjustment-period-id').value = String(selected.id);
+    setTransactionEditHint('当前展示结算账期摘要；交易修改仍作用于上方实时窗口中的实时交易。');
   } else {
     currentPeriodId = null;
     document.querySelector('#workbench-range').textContent = (data.periods || []).length
@@ -735,7 +809,7 @@ async function loadWorkbench(periodId) {
     document.querySelector('#workbench-vendor-label').textContent = '当前供应商卡金额';
     document.querySelector('#workbench-role-card-title').textContent = '当前客户/供应商卡统计';
     history.replaceState({}, '', '/workbench?period_id=realtime');
-    document.querySelector('#adjustment-period-id').value = '';
+    setTransactionEditHint('当前为实时视图：请从上方实时窗口选择一条交易后再修改。');
   }
 
   document.querySelector('#workbench-profit').textContent = money(summary.profit);
@@ -756,10 +830,26 @@ async function loadWorkbench(periodId) {
   const roleCardBreakdown = data.role_card_breakdown || {};
   const customerCards = roleCardBreakdown.customer || { rows: [], total_usd_amount: 0, total_rmb_amount: 0, total_unit_count: 0 };
   const vendorCards = roleCardBreakdown.vendor || { rows: [], total_usd_amount: 0, total_rmb_amount: 0, total_unit_count: 0 };
+  const customerAmountByCardType = {};
+  for (const row of (customerCards.rows || [])) {
+    customerAmountByCardType[row.card_type] = Number(row.display_rmb_amount ?? row.rmb_amount ?? 0);
+  }
+  const vendorProfitByCardType = {};
+  for (const row of (vendorCards.rows || [])) {
+    const vendorAmount = Number(row.display_rmb_amount ?? row.rmb_amount ?? 0);
+    const customerAmount = Number(customerAmountByCardType[row.card_type] ?? 0);
+    vendorProfitByCardType[row.card_type] = customerAmount + vendorAmount;
+  }
   document.querySelector('#workbench-customer-summary').textContent = roleCardSummaryText(customerCards);
   document.querySelector('#workbench-vendor-summary').textContent = roleCardSummaryText(vendorCards);
   renderRoleCardTable('#workbench-customer-cards-table', customerCards.rows || [], '当前口径下暂无客户卡统计');
-  renderRoleCardTable('#workbench-vendor-cards-table', vendorCards.rows || [], '当前口径下暂无供应商卡统计');
+  renderRoleCardTable(
+    '#workbench-vendor-cards-table',
+    vendorCards.rows || [],
+    '当前口径下暂无供应商卡统计',
+    { showProfit: true, profitByCardType: vendorProfitByCardType }
+  );
+  currentTransactionsById = new Map(transactions.map((row) => [String(row.id), row]));
   document.querySelector('#workbench-transactions-table tbody').innerHTML = transactions.length
     ? transactions.map((row) => `
       <tr>
@@ -773,13 +863,36 @@ async function loadWorkbench(periodId) {
         <td>${rateText(row.rate)}</td>
         <td>${money(row.display_rmb_amount ?? row.rmb_value)}</td>
         <td>${money(row.display_usd_amount)}</td>
-        <td class="mono">${row.parse_version}</td>
         <td>${row.raw}</td>
         <td>${row.created_at}</td>
-        <td>${statusChip(row.period_status)}</td>
+        <td>${statusChip(row.period_status)}${formatEditTrail(row)}</td>
+        <td><button type="button" data-action="edit-transaction" data-transaction-id="${row.id}">修改</button></td>
       </tr>
     `).join('')
     : '<tr><td colspan="14" class="muted">当前实时窗口暂无交易</td></tr>';
+  document.querySelectorAll('[data-action="edit-transaction"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const transactionId = String(button.getAttribute('data-transaction-id') || '');
+      const row = currentTransactionsById.get(transactionId);
+      if (!row) {
+        setWorkbenchStatus('未找到要修改的交易，请刷新后重试。', true);
+        return;
+      }
+      currentEditingTransactionId = transactionId;
+      fillTransactionEditForm(row);
+      setWorkbenchStatus(`已加载交易 ${row.message_id || row.id}，请确认字段后提交修改。`);
+    });
+  });
+  if (currentEditingTransactionId && currentTransactionsById.has(currentEditingTransactionId)) {
+    fillTransactionEditForm(currentTransactionsById.get(currentEditingTransactionId));
+  } else {
+    currentEditingTransactionId = null;
+    clearTransactionEditForm(
+      isRealtimeView
+        ? '请先从上方实时窗口选择一条交易。'
+        : '当前展示结算账期摘要；若要修改，请从上方实时窗口选择一条实时交易。'
+    );
+  }
 
   document.querySelector('#workbench-groups-table tbody').innerHTML = (data.group_rows || []).map((row) => `
     <tr>
@@ -826,47 +939,113 @@ document.querySelector('#close-period-form').addEventListener('submit', async (e
   event.preventDefault();
   const form = event.currentTarget;
   const payload = Object.fromEntries(new FormData(form).entries());
-  const response = await fetch('/api/accounting-periods/close', {
+  if (!String(payload.closed_by || '').trim()) {
+    setWorkbenchStatus('结账人不能为空。', true, 'close-period-status');
+    return;
+  }
+  const confirmed = window.confirm('确认一键结账吗？这会按当前实时交易执行与 /alljs 相同的结账逻辑，但不会往其它群补发回执。');
+  if (!confirmed) {
+    setWorkbenchStatus('已取消一键结账。', false, 'close-period-status');
+    return;
+  }
+  const response = await fetch('/api/accounting-periods/settle-all', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
   const result = await response.json();
   if (!response.ok) {
-    setWorkbenchStatus(result.error || '关闭账期失败', true, 'close-period-status');
+    setWorkbenchStatus(result.error || '一键结账失败', true, 'close-period-status');
     return;
   }
-  setWorkbenchStatus(`账期已关闭，ID=${result.period_id}`, false, 'close-period-status');
+  if (!result.closed) {
+    setWorkbenchStatus(result.message || '当前没有可结账的实时交易', false, 'close-period-status');
+    return;
+  }
+  setWorkbenchStatus(`一键结账完成，账期 ID=${result.period_id}`, false, 'close-period-status');
   form.reset();
   await loadWorkbench(result.period_id);
 });
 
-document.querySelector('#adjustment-form').addEventListener('submit', async (event) => {
+document.querySelector('#group-broadcast-form').addEventListener('submit', async (event) => {
   event.preventDefault();
   const form = event.currentTarget;
   const payload = Object.fromEntries(new FormData(form).entries());
-  if (!payload.period_id && currentPeriodId) {
-    payload.period_id = String(currentPeriodId);
+  payload.group_num = Number(payload.group_num || 0);
+  if (!String(payload.created_by || '').trim()) {
+    setWorkbenchStatus('群发人不能为空。', true, 'group-broadcast-status');
+    return;
   }
-  for (const key of ['period_id', 'opening_delta', 'income_delta', 'expense_delta', 'closing_delta']) {
-    payload[key] = Number(payload[key] || 0);
+  if (!String(payload.message || '').trim()) {
+    setWorkbenchStatus('群发内容不能为空。', true, 'group-broadcast-status');
+    return;
   }
-  const response = await fetch('/api/adjustments', {
+  const confirmed = window.confirm(
+    `确认群发到分组 ${payload.group_num} 吗？\\n这会把消息排进统一出站队列，由该分组下所有群依次接收。`
+  );
+  if (!confirmed) {
+    setWorkbenchStatus('已取消群发。', false, 'group-broadcast-status');
+    return;
+  }
+  const response = await fetch('/api/group-broadcasts', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
   const result = await response.json();
   if (!response.ok) {
-    setWorkbenchStatus(result.error || '提交修正失败', true);
+    setWorkbenchStatus(result.error || '群发排队失败', true, 'group-broadcast-status');
     return;
   }
-  setWorkbenchStatus(`修正已保存，ID=${result.adjustment_id}`);
+  setWorkbenchStatus(
+    `群发已排队：分组 ${result.group_num}，目标 ${result.target_count} 个群，动作 ${result.queued_action_count} 条。`,
+    false,
+    'group-broadcast-status'
+  );
   form.reset();
-  if (currentPeriodId) {
-    document.querySelector('#adjustment-period-id').value = String(currentPeriodId);
+});
+
+document.querySelector('#transaction-edit-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const payload = Object.fromEntries(new FormData(form).entries());
+  if (!payload.transaction_id) {
+    setWorkbenchStatus('请先从上方实时窗口选择一条交易。', true);
+    return;
   }
-  loadWorkbench(currentPeriodId);
+  for (const key of ['sender_name', 'category', 'edited_by', 'note']) {
+    if (!String(payload[key] || '').trim()) {
+      setWorkbenchStatus('发送人、分类、修改人、修改说明不能为空。', true);
+      return;
+    }
+  }
+  payload.transaction_id = Number(payload.transaction_id);
+  payload.amount = Number(payload.amount || 0);
+  payload.rmb_value = Number(payload.rmb_value || 0);
+  payload.rate = payload.rate === '' ? null : Number(payload.rate);
+  payload.usd_amount = payload.usd_amount === '' ? null : Number(payload.usd_amount);
+  const messageId = document.querySelector('#transaction-edit-message-id').value || `交易ID ${payload.transaction_id}`;
+  const groupName = document.querySelector('#transaction-edit-chat-name').value || '未命名群';
+  const confirmed = window.confirm(
+    `确认修改这条实时交易吗？\n群：${groupName}\n消息：${messageId}\n提交后会记录修改人和修改时间。`
+  );
+  if (!confirmed) {
+    setWorkbenchStatus('已取消修改。');
+    return;
+  }
+  const response = await fetch('/api/transactions/update', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const result = await response.json();
+  if (!response.ok) {
+    setWorkbenchStatus(result.error || '提交修改失败', true);
+    return;
+  }
+  currentEditingTransactionId = String(result.transaction_id);
+  setWorkbenchStatus(`交易修改已保存，ID=${result.transaction_id}`);
+  await loadWorkbench(currentWorkbenchSelection);
 });
 
 document.querySelector('#combo-form').addEventListener('submit', async (event) => {

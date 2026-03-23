@@ -80,10 +80,10 @@ test("executeCoreActions dispatches send_text and send_file", async () => {
     },
   };
 
-  await executeCoreActions(
+  const results = await executeCoreActions(
     [
-      { action_type: "send_text", chat_id: "g-1", text: "hello" },
-      { action_type: "send_file", chat_id: "g-2", file_path: "/tmp/report.pdf", caption: "report" },
+      { id: 11, action_type: "send_text", chat_id: "g-1", text: "hello" },
+      { id: 12, action_type: "send_file", chat_id: "g-2", file_path: "/tmp/report.pdf", caption: "report" },
     ],
     adapter
   );
@@ -91,6 +91,83 @@ test("executeCoreActions dispatches send_text and send_file", async () => {
   assert.deepEqual(calls, [
     { method: "sendMessage", args: ["g-1", "hello"] },
     { method: "sendFile", args: ["g-2", "/tmp/report.pdf", "report"] },
+  ]);
+  assert.deepEqual(results, [
+    { id: 11, success: true },
+    { id: 12, success: true },
+  ]);
+});
+
+test("ackOutboundActions posts adapter delivery results back to core", async () => {
+  const originalFetch = globalThis.fetch;
+  const received: {
+    input: RequestInfo | URL;
+    init?: RequestInit;
+  }[] = [];
+
+  globalThis.fetch = (async (input, init) => {
+    received.push({ input, init });
+    return new Response(JSON.stringify({ updated: 2 }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  }) as typeof fetch;
+
+  try {
+    const { CoreApiClient } = await import("./core-api.ts");
+    const client = new CoreApiClient({
+      endpoint: "https://python.example.com",
+      token: "sync-token",
+      requestTimeoutMs: 1500,
+    });
+
+    const updated = await client.ackOutboundActions([
+      { id: 11, success: true },
+      { id: 12, success: false },
+    ]);
+
+    assert.equal(updated, 2);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  assert.equal(received.length, 1);
+  assert.equal(String(received[0].input), "https://python.example.com/api/core/actions/ack");
+  assert.equal(received[0].init?.method, "POST");
+  assert.deepEqual(JSON.parse(String(received[0].init?.body ?? "")), {
+    items: [
+      { id: 11, success: true },
+      { id: 12, success: false },
+    ],
+  });
+});
+
+test("flushCoreOutboundActions fetches queued web actions and acknowledges delivery", async () => {
+  const { flushCoreOutboundActions } = await import(runtimeIndexUrl.href);
+
+  let ackedItems: Array<{ id: number; success: boolean }> = [];
+  const flushed = await flushCoreOutboundActions(
+    {
+      fetchOutboundActions: async () => [
+        { id: 21, action_type: "send_text", chat_id: "g-1", text: "群发通知" },
+      ],
+      ackOutboundActions: async (items) => {
+        ackedItems = items;
+        return items.length;
+      },
+    } as any,
+    {
+      sendMessage: async () => true,
+      sendFile: async () => true,
+    },
+    {
+      warn: () => undefined,
+    } as any
+  );
+
+  assert.equal(flushed, 1);
+  assert.deepEqual(ackedItems, [
+    { id: 21, success: true },
   ]);
 });
 
