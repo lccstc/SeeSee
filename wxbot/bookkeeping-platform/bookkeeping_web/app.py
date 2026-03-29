@@ -10,11 +10,13 @@ from bookkeeping_core.analytics import AnalyticsService
 from bookkeeping_core.contracts import core_action_to_dict
 from bookkeeping_core.database import BookkeepingDB, require_postgres_dsn
 from bookkeeping_core.periods import AccountingPeriodService
+from bookkeeping_core.reconciliation import ReconciliationService
 from bookkeeping_core.reporting import ReportingService
 from bookkeeping_core.runtime import UnifiedBookkeepingRuntime
 from bookkeeping_web.pages import (
     render_dashboard_page,
     render_history_page,
+    render_reconciliation_page,
     render_role_mapping_page,
     render_workbench_page,
 )
@@ -45,6 +47,13 @@ def create_app(
             )
         return runtime
 
+    def close_runtime() -> None:
+        nonlocal runtime_db, runtime
+        if runtime_db is not None:
+            runtime_db.close()
+        runtime_db = None
+        runtime = None
+
     def app(environ, start_response):
         method = environ.get("REQUEST_METHOD", "GET").upper()
         path = environ.get("PATH_INFO", "/")
@@ -56,6 +65,8 @@ def create_app(
             return _respond_html(start_response, render_role_mapping_page())
         if path == "/history":
             return _respond_html(start_response, render_history_page())
+        if path == "/reconciliation":
+            return _respond_html(start_response, render_reconciliation_page())
         if path == "/api/dashboard" and method == "GET":
             return _with_db(db_file, start_response, _handle_dashboard, environ)
         if path == "/api/workbench" and method == "GET":
@@ -66,6 +77,12 @@ def create_app(
             return _with_db(db_file, start_response, _handle_role_mapping_group_num, environ)
         if path == "/api/history" and method == "GET":
             return _with_db(db_file, start_response, _handle_history, environ)
+        if path == "/api/reconciliation/ledger" and method == "GET":
+            return _with_db(db_file, start_response, _handle_reconciliation_ledger, environ)
+        if path == "/api/reconciliation/export" and method == "GET":
+            return _with_db(db_file, start_response, _handle_reconciliation_export, environ)
+        if path == "/api/reconciliation/adjustments" and method == "POST":
+            return _with_db(db_file, start_response, _handle_reconciliation_adjustments, environ)
         if path == "/api/accounting-periods" and method == "GET":
             return _with_db(db_file, start_response, _handle_accounting_periods)
         if path == "/api/accounting-periods/close" and method == "POST":
@@ -94,6 +111,7 @@ def create_app(
             return _handle_core_actions_ack(get_runtime(), start_response, environ)
         return _respond_json(start_response, 404, {"error": f"Unknown path: {path}"})
 
+    app.close = close_runtime  # type: ignore[attr-defined]
     return app
 
 
@@ -171,6 +189,58 @@ def _handle_history(db: BookkeepingDB, start_response, environ):
         sort_by=params.get("sort_by", "profit"),
     )
     return _respond_json(start_response, 200, payload)
+
+
+def _handle_reconciliation_ledger(db: BookkeepingDB, start_response, environ):
+    try:
+        params = _read_query_params(environ)
+        period_id = _parse_optional_int(params.get("period_id"))
+        combination_id = _parse_optional_int(params.get("combination_id"))
+        group_num = _parse_optional_int(params.get("group_num"))
+        payload = ReconciliationService(db).build_ledger_payload(
+            scope=params.get("scope", "realtime"),
+            period_id=period_id,
+            start_date=params.get("start_date"),
+            end_date=params.get("end_date"),
+            combination_id=combination_id,
+            group_num=group_num,
+            business_role=params.get("business_role", ""),
+            group_key=params.get("group_key", ""),
+            card_type=params.get("card_type", ""),
+            edited=params.get("edited", "all"),
+            issue_type=params.get("issue_type", ""),
+        )
+    except ValueError as exc:
+        return _respond_json(start_response, 400, {"error": f"Bad query: {exc}"})
+    return _respond_json(start_response, 200, payload)
+
+
+def _handle_reconciliation_export(db: BookkeepingDB, start_response, environ):
+    try:
+        params = _read_query_params(environ)
+        period_id = _parse_optional_int(params.get("period_id"))
+        combination_id = _parse_optional_int(params.get("combination_id"))
+        group_num = _parse_optional_int(params.get("group_num"))
+        scope = params.get("scope", "realtime")
+        export_mode = params.get("export_mode", "detail")
+        csv_text = ReconciliationService(db).export_ledger_csv(
+            scope=scope,
+            period_id=period_id,
+            start_date=params.get("start_date"),
+            end_date=params.get("end_date"),
+            combination_id=combination_id,
+            group_num=group_num,
+            business_role=params.get("business_role", ""),
+            group_key=params.get("group_key", ""),
+            card_type=params.get("card_type", ""),
+            edited=params.get("edited", "all"),
+            issue_type=params.get("issue_type", ""),
+            export_mode=export_mode,
+        )
+    except ValueError as exc:
+        return _respond_json(start_response, 400, {"error": f"Bad query: {exc}"})
+    filename = f"reconciliation-{export_mode}-{scope}-{date.today().isoformat()}.csv"
+    return _respond_csv(start_response, csv_text, filename=filename)
 
 
 def _handle_accounting_periods(db: BookkeepingDB, start_response, environ=None):
@@ -301,6 +371,54 @@ def _handle_adjustments(db: BookkeepingDB, start_response, environ):
             closing_delta=float(payload.get("closing_delta", 0)),
             note=str(payload["note"]),
             created_by=str(payload["created_by"]),
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        return _respond_json(start_response, 400, {"error": f"Bad payload: {exc}"})
+    return _respond_json(start_response, 200, {"adjustment_id": adjustment_id})
+
+
+def _handle_reconciliation_adjustments(db: BookkeepingDB, start_response, environ):
+    try:
+        payload = _read_json_body(environ)
+        group_key = str(payload["group_key"]).strip()
+        if not group_key:
+            raise ValueError("group_key cannot be empty")
+        group_row = db.get_group_by_key(group_key)
+        if group_row is None:
+            raise ValueError(f"group_key not found: {group_key}")
+        created_by = str(payload["created_by"]).strip()
+        note = str(payload["note"]).strip()
+        card_type = str(payload["card_type"]).strip().lower()
+        if not created_by:
+            raise ValueError("created_by cannot be empty")
+        if not note:
+            raise ValueError("note cannot be empty")
+        if not card_type:
+            raise ValueError("card_type cannot be empty")
+
+        period_id = _parse_optional_int(payload.get("period_id"))
+        if period_id is not None:
+            period_exists = any(int(row["id"]) == period_id for row in db.list_accounting_periods())
+            if not period_exists:
+                raise ValueError(f"period_id not found: {period_id}")
+
+        linked_transaction_id = _parse_optional_int(payload.get("linked_transaction_id"))
+        if linked_transaction_id is not None:
+            transaction = db.get_transaction_by_id(linked_transaction_id)
+            if transaction is None:
+                raise ValueError(f"linked_transaction_id not found: {linked_transaction_id}")
+
+        adjustment_id = db.add_finance_adjustment_entry(
+            period_id=period_id,
+            linked_transaction_id=linked_transaction_id,
+            group_key=group_key,
+            business_role=str(payload.get("business_role") or group_row.get("business_role") or "").strip() or None,
+            card_type=card_type,
+            usd_amount=float(payload.get("usd_amount", 0) or 0),
+            rate=None if payload.get("rate") in {None, ""} else float(payload["rate"]),
+            rmb_amount=float(payload["rmb_amount"]),
+            note=note,
+            created_by=created_by,
         )
     except (KeyError, TypeError, ValueError) as exc:
         return _respond_json(start_response, 400, {"error": f"Bad payload: {exc}"})
@@ -532,6 +650,19 @@ def _respond_html(start_response, html: str):
     return [body]
 
 
+def _respond_csv(start_response, text: str, *, filename: str):
+    body = text.encode("utf-8-sig")
+    start_response(
+        "200 OK",
+        [
+            ("Content-Type", "text/csv; charset=utf-8"),
+            ("Content-Disposition", f"attachment; filename=\"{filename}\""),
+            ("Content-Length", str(len(body))),
+        ],
+    )
+    return [body]
+
+
 def _is_authorized(environ, core_token: str | None) -> bool:
     if not core_token:
         return False
@@ -589,6 +720,12 @@ def _row_to_dict(row) -> dict:
     if hasattr(row, "keys"):
         return {key: _normalize_json_value(row[key]) for key in row.keys()}
     return {key: _normalize_json_value(value) for key, value in dict(row).items()}
+
+
+def _parse_optional_int(value) -> int | None:
+    if value in {None, ""}:
+        return None
+    return int(value)
 
 
 def _normalize_json_value(value):

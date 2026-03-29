@@ -463,6 +463,69 @@ class _BookkeepingStoreBase:
             ).fetchone()
         return float(row["total"] or 0)
 
+    def list_finance_adjustment_entries(
+        self,
+        *,
+        period_id: int | None = None,
+        start_at: str | None = None,
+        end_at: str | None = None,
+        include_unscoped_only: bool = False,
+    ) -> list[DBRow]:
+        conditions: list[str] = []
+        params: list[object] = []
+        if include_unscoped_only:
+            conditions.append("entry.period_id IS NULL")
+        elif period_id is not None:
+            conditions.append("entry.period_id = ?")
+            params.append(period_id)
+        if start_at is not None:
+            conditions.append("entry.created_at >= ?")
+            params.append(start_at)
+        if end_at is not None:
+            conditions.append("entry.created_at <= ?")
+            params.append(end_at)
+        where_clause = ""
+        if conditions:
+            where_clause = "WHERE " + " AND ".join(conditions)
+        return self.conn.execute(
+            f"""
+            SELECT
+              entry.*,
+              g.platform AS platform,
+              g.chat_id AS chat_id,
+              g.chat_name AS chat_name,
+              g.group_num AS group_num,
+              g.business_role AS mapped_business_role
+            FROM finance_adjustment_entries entry
+            LEFT JOIN groups g ON g.group_key = entry.group_key
+            {where_clause}
+            ORDER BY entry.created_at DESC, entry.id DESC
+            """,
+            params,
+        ).fetchall()
+
+    def list_finance_adjustment_entries_by_transaction_ids(self, transaction_ids: list[int]) -> list[DBRow]:
+        normalized_ids = sorted({int(item) for item in transaction_ids if int(item) > 0})
+        if not normalized_ids:
+            return []
+        placeholders = ",".join("?" for _ in normalized_ids)
+        return self.conn.execute(
+            f"""
+            SELECT
+              entry.*,
+              g.platform AS platform,
+              g.chat_id AS chat_id,
+              g.chat_name AS chat_name,
+              g.group_num AS group_num,
+              g.business_role AS mapped_business_role
+            FROM finance_adjustment_entries entry
+            LEFT JOIN groups g ON g.group_key = entry.group_key
+            WHERE entry.linked_transaction_id IN ({placeholders})
+            ORDER BY entry.created_at DESC, entry.id DESC
+            """,
+            normalized_ids,
+        ).fetchall()
+
     def get_group_by_key(self, group_key: str) -> DBRow | None:
         return self.conn.execute(
             "SELECT * FROM groups WHERE group_key = ?",
@@ -600,7 +663,8 @@ class _BookkeepingStoreBase:
               g.business_role AS business_role,
               g.group_num AS mapped_group_num,
               edit.edited_by AS edited_by,
-              edit.edited_at AS edited_at
+              edit.edited_at AS edited_at,
+              edit.note AS edit_note
             FROM transactions tx
             INNER JOIN accounting_periods period ON period.id = ?
             LEFT JOIN groups g ON g.group_key = tx.group_key
@@ -608,7 +672,8 @@ class _BookkeepingStoreBase:
               SELECT DISTINCT ON (transaction_id)
                 transaction_id,
                 edited_by,
-                edited_at
+                edited_at,
+                note
               FROM transaction_edit_logs
               ORDER BY transaction_id, edited_at DESC, id DESC
             ) edit ON edit.transaction_id = tx.id
@@ -629,14 +694,16 @@ class _BookkeepingStoreBase:
                   g.business_role AS business_role,
                   g.group_num AS mapped_group_num,
                   edit.edited_by AS edited_by,
-                  edit.edited_at AS edited_at
+                  edit.edited_at AS edited_at,
+                  edit.note AS edit_note
                 FROM transactions tx
                 LEFT JOIN groups g ON g.group_key = tx.group_key
                 LEFT JOIN (
                   SELECT DISTINCT ON (transaction_id)
                     transaction_id,
                     edited_by,
-                    edited_at
+                    edited_at,
+                    note
                   FROM transaction_edit_logs
                   ORDER BY transaction_id, edited_at DESC, id DESC
                 ) edit ON edit.transaction_id = tx.id
@@ -652,14 +719,16 @@ class _BookkeepingStoreBase:
               g.business_role AS business_role,
               g.group_num AS mapped_group_num,
               edit.edited_by AS edited_by,
-              edit.edited_at AS edited_at
+              edit.edited_at AS edited_at,
+              edit.note AS edit_note
             FROM transactions tx
             LEFT JOIN groups g ON g.group_key = tx.group_key
             LEFT JOIN (
               SELECT DISTINCT ON (transaction_id)
                 transaction_id,
                 edited_by,
-                edited_at
+                edited_at,
+                note
               FROM transaction_edit_logs
               ORDER BY transaction_id, edited_at DESC, id DESC
             ) edit ON edit.transaction_id = tx.id
@@ -669,6 +738,35 @@ class _BookkeepingStoreBase:
             ORDER BY tx.created_at DESC, tx.id DESC
             """,
             (start_after,),
+        ).fetchall()
+
+    def list_transactions_in_date_range(self, start_at: str, end_at: str) -> list[DBRow]:
+        return self.conn.execute(
+            """
+            SELECT
+              tx.*,
+              g.business_role AS business_role,
+              g.group_num AS mapped_group_num,
+              edit.edited_by AS edited_by,
+              edit.edited_at AS edited_at,
+              edit.note AS edit_note
+            FROM transactions tx
+            LEFT JOIN groups g ON g.group_key = tx.group_key
+            LEFT JOIN (
+              SELECT DISTINCT ON (transaction_id)
+                transaction_id,
+                edited_by,
+                edited_at,
+                note
+              FROM transaction_edit_logs
+              ORDER BY transaction_id, edited_at DESC, id DESC
+            ) edit ON edit.transaction_id = tx.id
+            WHERE tx.deleted = 0
+              AND tx.created_at >= ?
+              AND tx.created_at <= ?
+            ORDER BY tx.created_at DESC, tx.id DESC
+            """,
+            (start_at, end_at),
         ).fetchall()
 
     def mark_transactions_closed(
@@ -1081,6 +1179,20 @@ class BookkeepingDB(_BookkeepingStoreBase):
                 "created_by",
                 "created_at",
             },
+            "finance_adjustment_entries": {
+                "id",
+                "period_id",
+                "linked_transaction_id",
+                "group_key",
+                "business_role",
+                "card_type",
+                "usd_amount",
+                "rate",
+                "rmb_amount",
+                "note",
+                "created_by",
+                "created_at",
+            },
             "group_combinations": {"id", "name", "note", "created_by", "created_at", "updated_at"},
             "group_combination_items": {"combination_id", "group_num"},
             "transaction_edit_logs": {
@@ -1427,6 +1539,45 @@ class BookkeepingDB(_BookkeepingStoreBase):
                 income_delta,
                 expense_delta,
                 closing_delta,
+                note,
+                created_by,
+            ),
+        )
+        row = cur.fetchone()
+        self.conn.commit()
+        return int(row["id"])
+
+    def add_finance_adjustment_entry(
+        self,
+        *,
+        period_id: int | None,
+        linked_transaction_id: int | None,
+        group_key: str,
+        business_role: str | None,
+        card_type: str,
+        usd_amount: float,
+        rate: float | None,
+        rmb_amount: float,
+        note: str,
+        created_by: str,
+    ) -> int:
+        cur = self.conn.execute(
+            """
+            INSERT INTO finance_adjustment_entries (
+              period_id, linked_transaction_id, group_key, business_role, card_type,
+              usd_amount, rate, rmb_amount, note, created_by
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            RETURNING id
+            """,
+            (
+                period_id,
+                linked_transaction_id,
+                group_key,
+                business_role,
+                card_type,
+                usd_amount,
+                rate,
+                rmb_amount,
                 note,
                 created_by,
             ),

@@ -141,6 +141,21 @@ CREATE TABLE IF NOT EXISTS manual_adjustments (
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS finance_adjustment_entries (
+  id BIGSERIAL PRIMARY KEY,
+  period_id BIGINT,
+  linked_transaction_id BIGINT,
+  group_key TEXT NOT NULL,
+  business_role TEXT,
+  card_type TEXT NOT NULL,
+  usd_amount NUMERIC(18, 4) NOT NULL DEFAULT 0,
+  rate NUMERIC(18, 6),
+  rmb_amount NUMERIC(18, 4) NOT NULL,
+  note TEXT NOT NULL,
+  created_by TEXT NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS group_combinations (
   id BIGSERIAL PRIMARY KEY,
   name TEXT NOT NULL UNIQUE,
@@ -171,4 +186,6 @@ CREATE INDEX IF NOT EXISTS idx_tx_platform_group ON transactions(platform, group
 CREATE INDEX IF NOT EXISTS idx_tx_settled ON transactions(group_key, settled, deleted);
 CREATE INDEX IF NOT EXISTS idx_groups_num ON groups(group_num);
 CREATE INDEX IF NOT EXISTS idx_manual_adjustments_period ON manual_adjustments(period_id, group_key);
+CREATE INDEX IF NOT EXISTS idx_finance_adjustments_period ON finance_adjustment_entries(period_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_finance_adjustments_group ON finance_adjustment_entries(group_key, created_at);
 CREATE INDEX IF NOT EXISTS idx_ingested_events_platform ON ingested_events(platform, occurred_at);

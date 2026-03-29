@@ -51,6 +51,7 @@ python3 "/Users/lcc/SeeSee/wxbot/bookkeeping-platform/reporting_server.py" \
 
 - `GET /`：首页驾驶舱，只展示当前总余额、当日已实现利润、当日美元面额、未归属/待处理群数，以及最近识别的结构化交易流
 - `GET /workbench`：账期工作台，按 `period_id` 查看指定账期摘要、当前未扎账窗口、群快照、卡种统计，并承接关账/修正/组合治理
+- `GET /reconciliation`：对账中心，给财务按组合/组号查账、筛异常、录财务加账、导出逐笔明细或汇总 CSV；简明说明见 `docs/对账中心简明使用说明.md`
 - `GET /history`：跑账历史页，按日期区间查看账期列表与卡种排行
 
 分析接口：

@@ -424,7 +424,7 @@ class AnalyticsService:
                 "total_unit_count": self._sum_values(vendor_rows, "unit_count"),
                 "rows": vendor_rows,
             },
-            "profit": customer_total_display_rmb_amount + vendor_total_display_rmb_amount,
+            "profit": customer_total_display_rmb_amount - vendor_total_display_rmb_amount,
             "total_usd_amount": customer_total_usd_amount + vendor_total_usd_amount,
         }
 
@@ -707,10 +707,8 @@ class AnalyticsService:
 
     @staticmethod
     def _normalize_role_card_rmb_amount(raw_rmb_amount: float, business_role: str | None) -> float:
-        if business_role == "customer":
+        if business_role in {"customer", "vendor"}:
             return abs(float(raw_rmb_amount or 0))
-        if business_role == "vendor":
-            return float(raw_rmb_amount or 0)
         return float(raw_rmb_amount or 0)
 
     @staticmethod

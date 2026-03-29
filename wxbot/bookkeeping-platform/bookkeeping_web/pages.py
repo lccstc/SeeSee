@@ -188,7 +188,7 @@ _STYLE = """
   .entry-grid {
     display: grid;
     gap: 14px;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
   .entry-card {
     display: grid;
@@ -366,6 +366,10 @@ def render_dashboard_page() -> str:
     <a class="entry-card" href="/workbench">
       <strong>进入账期工作台</strong>
       <span>查看账期摘要、结构化交易明细、群快照和卡种统计，并承接关账与治理动作。</span>
+    </a>
+    <a class="entry-card" href="/reconciliation">
+      <strong>进入对账中心</strong>
+      <span>按逐笔台账检查汇率、RMB 加减、修改痕迹和财务补录，并一键导出给财务核对。</span>
     </a>
     <a class="entry-card" href="/role-mapping">
       <strong>进入角色映射页</strong>
@@ -1397,6 +1401,555 @@ loadRoleMapping();
     )
 
 
+def render_reconciliation_page() -> str:
+    body = """
+<section class="panel stack">
+  <div class="toolbar">
+    <div>
+      <h2>财务对账中心</h2>
+      <div class="muted" id="reconciliation-range">按当前口径加载逐笔台账</div>
+    </div>
+    <div class="toolbar-actions">
+      <a class="inline-link" id="reconciliation-export-detail-link" href="/api/reconciliation/export?scope=realtime&export_mode=detail">导出逐笔明细 CSV</a>
+      <a class="inline-link" id="reconciliation-export-summary-link" href="/api/reconciliation/export?scope=realtime&export_mode=summary">导出汇总 CSV</a>
+    </div>
+  </div>
+  <div class="cards">
+    <article class="card">
+      <div class="label">未对账笔数</div>
+      <div class="value" id="reconciliation-unreconciled">0</div>
+    </article>
+    <article class="card">
+      <div class="label">汇率公式异常</div>
+      <div class="value" id="reconciliation-rate-error">0</div>
+    </article>
+    <article class="card">
+      <div class="label">缺失汇率</div>
+      <div class="value" id="reconciliation-missing-rate">0</div>
+    </article>
+    <article class="card">
+      <div class="label">已修改未复核</div>
+      <div class="value" id="reconciliation-edited">0</div>
+    </article>
+  </div>
+</section>
+<section class="panel stack">
+  <div class="toolbar">
+    <div>
+      <h2>筛选口径</h2>
+      <div class="muted">支持实时、指定账期、日期区间三种口径；可先按组合或组号汇总，再下钻到具体群；导出会沿用当前筛选。</div>
+    </div>
+  </div>
+  <form id="reconciliation-filter-form">
+    <select name="scope" id="reconciliation-scope">
+      <option value="realtime">实时窗口</option>
+      <option value="period">指定账期</option>
+      <option value="range">日期区间</option>
+    </select>
+    <select name="period_id" id="reconciliation-period"></select>
+    <input type="date" name="start_date" id="reconciliation-start-date" />
+    <input type="date" name="end_date" id="reconciliation-end-date" />
+    <select name="business_role" id="reconciliation-business-role">
+      <option value="">全部角色</option>
+      <option value="customer">客户</option>
+      <option value="vendor">供应商</option>
+      <option value="internal">内部</option>
+      <option value="unassigned">未归属</option>
+    </select>
+    <select name="combination_id" id="reconciliation-combination">
+      <option value="">全部组合</option>
+    </select>
+    <select name="group_num" id="reconciliation-group-num">
+      <option value="">全部组号</option>
+    </select>
+    <select name="group_key" id="reconciliation-group-key">
+      <option value="">全部群</option>
+    </select>
+    <select name="card_type" id="reconciliation-card-type">
+      <option value="">全部卡种</option>
+    </select>
+    <select name="edited" id="reconciliation-edited-filter">
+      <option value="all">全部修改状态</option>
+      <option value="yes">只看已修改</option>
+      <option value="no">只看未修改</option>
+    </select>
+    <select name="issue_type" id="reconciliation-issue-type">
+      <option value="">全部异常</option>
+      <option value="pending_reconciliation">未对账</option>
+      <option value="rate_formula_error">汇率公式异常</option>
+      <option value="missing_rate">缺失汇率</option>
+      <option value="edited_unreviewed">已修改未复核</option>
+    </select>
+    <button type="submit">刷新台账</button>
+  </form>
+  <div class="muted" id="reconciliation-filter-status">默认先看最近一次结账之后的实时窗口，可按组合或组号汇总。</div>
+</section>
+<section class="panel stack">
+  <div class="toolbar">
+    <div>
+      <h2>逐笔财务调账</h2>
+      <div class="muted">用于补录 RMB 加减、额外费用或独立调账项；保存后会立刻进入逐笔台账和导出。</div>
+    </div>
+  </div>
+  <form id="reconciliation-adjustment-form">
+    <input type="hidden" name="linked_transaction_id" id="reconciliation-linked-transaction-id" />
+    <input type="hidden" name="period_id" id="reconciliation-adjustment-period-id" />
+    <select name="group_key" id="reconciliation-adjustment-group" required>
+      <option value="">请选择群</option>
+    </select>
+    <input name="business_role" id="reconciliation-adjustment-role" placeholder="角色，可留空按群映射" />
+    <input name="card_type" id="reconciliation-adjustment-card-type" placeholder="卡种，如 xb / rmb / fee" required />
+    <input name="usd_amount" id="reconciliation-adjustment-usd-amount" placeholder="刀数，可空" />
+    <input name="rate" id="reconciliation-adjustment-rate" placeholder="汇率，可空" />
+    <input name="rmb_amount" id="reconciliation-adjustment-rmb-amount" placeholder="人民币，正负都可" required />
+    <input name="created_by" id="reconciliation-adjustment-created-by" placeholder="创建人" required />
+    <textarea class="full" name="note" id="reconciliation-adjustment-note" placeholder="调账说明（必填，写清依据和备注）" required></textarea>
+    <button type="submit">保存逐笔调账</button>
+  </form>
+  <div class="muted" id="reconciliation-adjustment-status">可从下方逐笔台账点击“引用”快速带入一行，再补充说明后保存。</div>
+</section>
+<section class="panel stack">
+  <div class="toolbar">
+    <div>
+      <h2>逐笔台账</h2>
+      <div class="muted" id="reconciliation-ledger-summary">加载中</div>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table id="reconciliation-ledger-table">
+      <thead>
+        <tr><th>时间</th><th>来源</th><th>群</th><th>角色</th><th>卡种</th><th>刀数</th><th>汇率</th><th>应算人民币</th><th>人民币</th><th>异常</th><th>备注 / 修改痕迹</th><th>操作</th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</section>
+"""
+    script = """
+function money(value) {
+  return Number(value || 0).toFixed(2);
+}
+
+function compactNumber(value) {
+  if (value === null || value === undefined || value === '') {
+    return '';
+  }
+  return Number(value).toFixed(4).replace(/0+$/, '').replace(/\\.$/, '');
+}
+
+function roleText(role) {
+  if (role === 'customer') return '客户';
+  if (role === 'vendor') return '供应商';
+  if (role === 'internal') return '内部';
+  return '未归属';
+}
+
+function scopeText(scope) {
+  if (scope === 'period') return '指定账期';
+  if (scope === 'range') return '日期区间';
+  return '实时窗口';
+}
+
+function issueText(issue) {
+  if (issue === 'pending_reconciliation') return '未对账';
+  if (issue === 'rate_formula_error') return '汇率公式异常';
+  if (issue === 'missing_rate') return '缺失汇率';
+  if (issue === 'edited_unreviewed') return '已修改未复核';
+  return issue;
+}
+
+function localDate(offsetDays = 0) {
+  const now = new Date();
+  now.setDate(now.getDate() + offsetDays);
+  return now.toISOString().slice(0, 10);
+}
+
+function monthStart() {
+  const now = new Date();
+  now.setDate(1);
+  return now.toISOString().slice(0, 10);
+}
+
+function setLedgerStatus(text, isError = false) {
+  const node = document.querySelector('#reconciliation-filter-status');
+  node.className = isError ? 'error' : 'muted';
+  node.textContent = text;
+}
+
+function setAdjustmentStatus(text, isError = false) {
+  const node = document.querySelector('#reconciliation-adjustment-status');
+  node.className = isError ? 'error' : 'muted';
+  node.textContent = text;
+}
+
+function updateScopeControls() {
+  const scope = document.querySelector('#reconciliation-scope').value;
+  const periodNode = document.querySelector('#reconciliation-period');
+  const startNode = document.querySelector('#reconciliation-start-date');
+  const endNode = document.querySelector('#reconciliation-end-date');
+  const isPeriod = scope === 'period';
+  const isRange = scope === 'range';
+  periodNode.disabled = !isPeriod;
+  startNode.disabled = !isRange;
+  endNode.disabled = !isRange;
+}
+
+function populatePeriodOptions(periods, selectedPeriodId) {
+  const node = document.querySelector('#reconciliation-period');
+  node.innerHTML = `<option value="">请选择账期</option>${periods.map((period) => `
+    <option value="${period.id}">${period.id} · ${period.closed_at}</option>
+  `).join('')}`;
+  const fallbackValue = selectedPeriodId || node.dataset.pendingValue || '';
+  if (fallbackValue !== null && fallbackValue !== undefined && fallbackValue !== '') {
+    node.value = String(fallbackValue);
+  }
+  node.dataset.pendingValue = node.value || '';
+}
+
+function combinationLabel(row) {
+  const name = row.name || `组合 ${row.id}`;
+  const groupText = (row.group_numbers || []).join('+');
+  return groupText ? `${name} · ${groupText}` : name;
+}
+
+function populateCombinationOptions(combinations, selectedValue = '') {
+  const node = document.querySelector('#reconciliation-combination');
+  node.innerHTML = `<option value="">全部组合</option>${combinations.map((row) => `
+    <option value="${row.id}">${combinationLabel(row)}</option>
+  `).join('')}`;
+  const fallbackValue = selectedValue || node.dataset.pendingValue || '';
+  if (fallbackValue) {
+    node.value = String(fallbackValue);
+  }
+  node.dataset.pendingValue = node.value || '';
+}
+
+function populateGroupNumOptions(groupNums, selectedValue = '') {
+  const node = document.querySelector('#reconciliation-group-num');
+  node.innerHTML = `<option value="">全部组号</option>${groupNums.map((value) => `
+    <option value="${value}">组 ${value}</option>
+  `).join('')}`;
+  const fallbackValue = selectedValue || node.dataset.pendingValue || '';
+  if (fallbackValue) {
+    node.value = String(fallbackValue);
+  }
+  node.dataset.pendingValue = node.value || '';
+}
+
+function populateGroupOptions(node, groups, selectedValue = '') {
+  const placeholder = node.id === 'reconciliation-group-key'
+    ? ((document.querySelector('#reconciliation-combination').value || document.querySelector('#reconciliation-group-num').value)
+      ? '当前组合/组号下全部群'
+      : '全部群')
+    : '请选择群';
+  node.innerHTML = `<option value="">${placeholder}</option>${groups.map((row) => `
+    <option value="${row.group_key}">${row.chat_name || row.group_key}${row.group_num === null || row.group_num === undefined ? '' : ` · 组 ${row.group_num}`}</option>
+  `).join('')}`;
+  const fallbackValue = selectedValue || node.dataset.pendingValue || '';
+  if (fallbackValue) {
+    node.value = fallbackValue;
+  }
+  node.dataset.pendingValue = node.value || '';
+}
+
+function populateCardTypeOptions(cardTypes, selectedValue = '') {
+  const node = document.querySelector('#reconciliation-card-type');
+  node.innerHTML = `<option value="">全部卡种</option>${cardTypes.map((item) => `<option value="${item}">${item}</option>`).join('')}`;
+  const fallbackValue = selectedValue || node.dataset.pendingValue || '';
+  if (fallbackValue) {
+    node.value = fallbackValue;
+  }
+  node.dataset.pendingValue = node.value || '';
+}
+
+function issueCell(row) {
+  const items = row.issue_flags || [];
+  if (!items.length) {
+    return '<span class="muted">—</span>';
+  }
+  return items.map((item) => issueText(item)).join(' / ');
+}
+
+function noteCell(row) {
+  const lines = [];
+  if (row.source_table === 'finance_adjustment_entries' && row.note) {
+    lines.push(`调账：${row.note}`);
+  }
+  if (row.edit_note) {
+    lines.push(`修改：${row.edit_note}`);
+  }
+  if (row.edited_at || row.edited_by) {
+    lines.push(`编辑痕迹：${row.edited_at || '未知时间'}${row.edited_by ? ` · ${row.edited_by}` : ''}`);
+  }
+  return lines.length ? lines.join('<br>') : '<span class="muted">—</span>';
+}
+
+function fillAdjustmentForm(row) {
+  document.querySelector('#reconciliation-linked-transaction-id').value = row.row_type === 'transaction' ? String(row.row_id) : '';
+  document.querySelector('#reconciliation-adjustment-period-id').value = row.period_id || '';
+  document.querySelector('#reconciliation-adjustment-group').value = row.group_key || '';
+  document.querySelector('#reconciliation-adjustment-role').value = row.business_role || '';
+  document.querySelector('#reconciliation-adjustment-card-type').value = row.card_type || '';
+  document.querySelector('#reconciliation-adjustment-usd-amount').value = row.usd_amount === null || row.usd_amount === undefined ? '' : compactNumber(row.usd_amount);
+  document.querySelector('#reconciliation-adjustment-rate').value = row.rate === null || row.rate === undefined ? '' : compactNumber(row.rate);
+  document.querySelector('#reconciliation-adjustment-rmb-amount').value = row.rmb_value === null || row.rmb_value === undefined ? '' : compactNumber(row.rmb_value);
+  document.querySelector('#reconciliation-adjustment-note').value = '';
+  setAdjustmentStatus(`已引用 ${row.chat_name || row.group_key} / ${row.card_type}，请补充调账说明后保存。`);
+}
+
+function normalizeFilterParams(params) {
+  const normalized = new URLSearchParams(params);
+  const scope = normalized.get('scope') || 'realtime';
+  if (scope !== 'period') {
+    normalized.delete('period_id');
+  }
+  if (scope !== 'range') {
+    normalized.delete('start_date');
+    normalized.delete('end_date');
+  }
+  if (normalized.get('combination_id')) {
+    normalized.delete('group_num');
+  } else if (normalized.get('group_num')) {
+    normalized.delete('combination_id');
+  }
+  Array.from(normalized.entries()).forEach(([key, value]) => {
+    if (value === '') {
+      normalized.delete(key);
+    }
+  });
+  normalized.set('scope', scope);
+  return normalized;
+}
+
+function syncExportLinks(params) {
+  const detailParams = new URLSearchParams(params);
+  detailParams.set('export_mode', 'detail');
+  document.querySelector('#reconciliation-export-detail-link').href = `/api/reconciliation/export?${detailParams.toString()}`;
+  const summaryParams = new URLSearchParams(params);
+  summaryParams.set('export_mode', 'summary');
+  document.querySelector('#reconciliation-export-summary-link').href = `/api/reconciliation/export?${summaryParams.toString()}`;
+}
+
+function resolveGroupLabel(groups, groupKey) {
+  if (!groupKey) {
+    return '';
+  }
+  const row = (groups || []).find((item) => item.group_key === groupKey);
+  return row ? (row.chat_name || row.group_key) : groupKey;
+}
+
+function filterTrailText(data) {
+  const filters = data.filters || {};
+  const parts = [];
+  if (data.selected_combination) {
+    parts.push(`组合 ${combinationLabel(data.selected_combination)}`);
+  } else if (filters.group_num !== null && filters.group_num !== undefined && filters.group_num !== '') {
+    parts.push(`组 ${filters.group_num}`);
+  } else {
+    parts.push('全部群');
+  }
+  if (filters.group_key) {
+    parts.push(`群 ${resolveGroupLabel(data.available_groups || [], filters.group_key)}`);
+  }
+  return parts.join(' / ');
+}
+
+function scopeRangeText(data) {
+  const scope = data.scope || 'realtime';
+  if (scope === 'period') {
+    return `指定账期 ${data.selected_period_id || '未选择'}`;
+  }
+  if (scope === 'range') {
+    return `${(data.range || {}).start_date || ''} 至 ${(data.range || {}).end_date || ''}`;
+  }
+  return '最近一次结账之后的实时窗口';
+}
+
+function clearGroupDrilldown() {
+  const node = document.querySelector('#reconciliation-group-key');
+  node.value = '';
+  node.dataset.pendingValue = '';
+}
+
+function renderLedgerRows(rows) {
+  const tbody = document.querySelector('#reconciliation-ledger-table tbody');
+  tbody.innerHTML = rows.length
+    ? rows.map((row) => `
+      <tr>
+        <td>${row.created_at || ''}</td>
+        <td>${row.row_type === 'finance_adjustment' ? '财务调账' : '原始交易'}</td>
+        <td>${row.chat_name || row.group_key}</td>
+        <td>${roleText(row.business_role)}</td>
+        <td>${row.card_type}</td>
+        <td>${money(row.usd_amount)}</td>
+        <td>${row.rate === null || row.rate === undefined ? '—' : compactNumber(row.rate)}</td>
+        <td>${row.expected_rmb_value === null || row.expected_rmb_value === undefined ? '—' : money(row.expected_rmb_value)}</td>
+        <td>${money(row.rmb_value)}</td>
+        <td>${issueCell(row)}</td>
+        <td>${noteCell(row)}</td>
+        <td><button type="button" data-action="quote-row" data-row-id="${row.row_id}" data-row-type="${row.row_type}">引用</button></td>
+      </tr>
+    `).join('')
+    : '<tr><td colspan="12" class="muted">当前筛选下暂无逐笔台账</td></tr>';
+}
+
+let latestRows = [];
+let initialHydration = true;
+
+async function loadLedger(pushUrl = false) {
+  const form = document.querySelector('#reconciliation-filter-form');
+  const rawParams = new URLSearchParams(new FormData(form));
+  const scope = rawParams.get('scope') || 'realtime';
+  if (scope === 'period' && !rawParams.get('period_id') && initialHydration && query.get('period_id')) {
+    rawParams.set('period_id', query.get('period_id'));
+  }
+  if (!rawParams.get('combination_id') && initialHydration && query.get('combination_id')) {
+    rawParams.set('combination_id', query.get('combination_id'));
+  }
+  if (!rawParams.get('group_num') && initialHydration && query.get('group_num')) {
+    rawParams.set('group_num', query.get('group_num'));
+  }
+  if (!rawParams.get('group_key') && initialHydration && query.get('group_key')) {
+    rawParams.set('group_key', query.get('group_key'));
+  }
+  if (!rawParams.get('card_type') && initialHydration && query.get('card_type')) {
+    rawParams.set('card_type', query.get('card_type'));
+  }
+  const params = normalizeFilterParams(rawParams);
+  updateScopeControls();
+  syncExportLinks(params);
+  const response = await fetch(`/api/reconciliation/ledger?${params.toString()}`);
+  const data = await response.json();
+  if (!response.ok) {
+    setLedgerStatus(data.error || '加载逐笔台账失败。', true);
+    return;
+  }
+  if (pushUrl) {
+    history.replaceState({}, '', `/reconciliation?${params.toString()}`);
+  }
+  latestRows = data.rows || [];
+  populatePeriodOptions(data.periods || [], data.selected_period_id);
+  populateCombinationOptions(data.available_combinations || [], (data.filters || {}).combination_id || '');
+  populateGroupNumOptions(data.available_group_nums || [], (data.filters || {}).group_num || '');
+  populateGroupOptions(document.querySelector('#reconciliation-group-key'), data.available_groups || [], (data.filters || {}).group_key || '');
+  populateGroupOptions(document.querySelector('#reconciliation-adjustment-group'), data.available_groups || [], document.querySelector('#reconciliation-adjustment-group').value);
+  populateCardTypeOptions(data.available_card_types || [], (data.filters || {}).card_type || '');
+  document.querySelector('#reconciliation-unreconciled').textContent = String((data.summary || {}).unreconciled_count || 0);
+  document.querySelector('#reconciliation-rate-error').textContent = String((data.summary || {}).rate_formula_error_count || 0);
+  document.querySelector('#reconciliation-missing-rate').textContent = String((data.summary || {}).missing_rate_count || 0);
+  document.querySelector('#reconciliation-edited').textContent = String((data.summary || {}).edited_unreviewed_count || 0);
+  document.querySelector('#reconciliation-range').textContent = `当前口径：${scopeRangeText(data)} / ${filterTrailText(data)}`;
+  document.querySelector('#reconciliation-ledger-summary').textContent =
+    `当前 ${latestRows.length} 行，财务口径 ${Number((data.summary || {}).financial_row_count || 0)} 行。导出会沿用 ${filterTrailText(data)}。未对账=${Number((data.summary || {}).unreconciled_count || 0)}，汇率公式异常=${Number((data.summary || {}).rate_formula_error_count || 0)}。`;
+  document.querySelector('#reconciliation-adjustment-period-id').value =
+    scope === 'period' && data.selected_period_id ? String(data.selected_period_id) : '';
+  renderLedgerRows(latestRows);
+  document.querySelectorAll('[data-action="quote-row"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const rowId = Number(button.getAttribute('data-row-id'));
+      const rowType = button.getAttribute('data-row-type');
+      const row = latestRows.find((item) => Number(item.row_id) === rowId && item.row_type === rowType);
+      if (!row) {
+        setAdjustmentStatus('没有找到要引用的台账行，请刷新后再试。', true);
+        return;
+      }
+      fillAdjustmentForm(row);
+    });
+  });
+  setLedgerStatus(`已加载 ${scopeText(scope)} / ${filterTrailText(data)} 下的逐笔台账。`);
+  initialHydration = false;
+}
+
+document.querySelector('#reconciliation-scope').addEventListener('change', () => {
+  updateScopeControls();
+});
+
+document.querySelector('#reconciliation-combination').addEventListener('change', (event) => {
+  if (event.currentTarget.value) {
+    const groupNumNode = document.querySelector('#reconciliation-group-num');
+    groupNumNode.value = '';
+    groupNumNode.dataset.pendingValue = '';
+  }
+  clearGroupDrilldown();
+});
+
+document.querySelector('#reconciliation-group-num').addEventListener('change', (event) => {
+  if (event.currentTarget.value) {
+    const combinationNode = document.querySelector('#reconciliation-combination');
+    combinationNode.value = '';
+    combinationNode.dataset.pendingValue = '';
+  }
+  clearGroupDrilldown();
+});
+
+document.querySelector('#reconciliation-filter-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  await loadLedger(true);
+});
+
+document.querySelector('#reconciliation-adjustment-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const payload = Object.fromEntries(new FormData(form).entries());
+  if (!String(payload.group_key || '').trim()) {
+    setAdjustmentStatus('请选择要挂载的群。', true);
+    return;
+  }
+  if (!String(payload.card_type || '').trim()) {
+    setAdjustmentStatus('卡种不能为空。', true);
+    return;
+  }
+  if (!String(payload.created_by || '').trim()) {
+    setAdjustmentStatus('创建人不能为空。', true);
+    return;
+  }
+  if (!String(payload.note || '').trim()) {
+    setAdjustmentStatus('调账说明不能为空。', true);
+    return;
+  }
+  const response = await fetch('/api/reconciliation/adjustments', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const result = await response.json();
+  if (!response.ok) {
+    setAdjustmentStatus(result.error || '保存逐笔调账失败。', true);
+    return;
+  }
+  setAdjustmentStatus(`逐笔调账已保存，ID=${result.adjustment_id}`);
+  form.reset();
+  document.querySelector('#reconciliation-adjustment-period-id').value =
+    document.querySelector('#reconciliation-scope').value === 'period'
+      ? (document.querySelector('#reconciliation-period').value || '')
+      : '';
+  await loadLedger(false);
+});
+
+const query = new URLSearchParams(window.location.search);
+document.querySelector('#reconciliation-scope').value = query.get('scope') || 'realtime';
+document.querySelector('#reconciliation-start-date').value = query.get('start_date') || monthStart();
+document.querySelector('#reconciliation-end-date').value = query.get('end_date') || localDate();
+document.querySelector('#reconciliation-business-role').value = query.get('business_role') || '';
+document.querySelector('#reconciliation-edited-filter').value = query.get('edited') || 'all';
+document.querySelector('#reconciliation-issue-type').value = query.get('issue_type') || '';
+document.querySelector('#reconciliation-period').dataset.pendingValue = query.get('period_id') || '';
+document.querySelector('#reconciliation-combination').dataset.pendingValue = query.get('combination_id') || '';
+document.querySelector('#reconciliation-group-num').dataset.pendingValue = query.get('group_num') || '';
+document.querySelector('#reconciliation-group-key').dataset.pendingValue = query.get('group_key') || '';
+document.querySelector('#reconciliation-card-type').dataset.pendingValue = query.get('card_type') || '';
+updateScopeControls();
+loadLedger(false);
+"""
+    return _render_layout(
+        title="对账中心",
+        subtitle="把逐笔交易、财务补录和异常标记收敛到一个页面，先查出问题，再导出台账做 A/B 核对。",
+        active_path="/reconciliation",
+        body=body,
+        script=script,
+    )
+
+
 def render_history_page() -> str:
     body = """
 <section class="panel stack">
@@ -1602,12 +2155,14 @@ def _render_layout(*, title: str, subtitle: str, active_path: str, body: str, sc
 <nav>
   <a href="/" class="%s">首页驾驶舱</a>
   <a href="/workbench" class="%s">账期工作台</a>
+  <a href="/reconciliation" class="%s">对账中心</a>
   <a href="/role-mapping" class="%s">角色映射</a>
   <a href="/history" class="%s">跑账历史</a>
 </nav>
 """ % (
         "active" if active_path == "/" else "",
         "active" if active_path == "/workbench" else "",
+        "active" if active_path == "/reconciliation" else "",
         "active" if active_path == "/role-mapping" else "",
         "active" if active_path == "/history" else "",
     )
