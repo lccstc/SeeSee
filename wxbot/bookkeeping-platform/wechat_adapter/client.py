@@ -1,7 +1,10 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import os
+import re
+from collections import deque
 from pathlib import Path
+from typing import Callable
 
 from bookkeeping_core.contracts import NormalizedMessageEnvelope
 
@@ -19,7 +22,16 @@ def prepare_runtime(runtime_dir: str | Path) -> None:
 
 
 class WeChatPlatformAPI:
-    def __init__(self, listen_chats: list[str], language: str, runtime_dir: str, config=None, db=None, logger=None) -> None:
+    def __init__(
+        self,
+        listen_chats: list[str],
+        language: str,
+        runtime_dir: str,
+        config=None,
+        db=None,
+        logger=None,
+        identity_probe: Callable[[NormalizedMessageEnvelope], tuple[str, bool] | None] | None = None,
+    ) -> None:
         prepare_runtime(runtime_dir)
         from wxautox import WeChat
 
@@ -30,8 +42,49 @@ class WeChatPlatformAPI:
         self.config = config
         self.db = db
         self.logger = logger
+        self.identity_probe = identity_probe
         self._listeners_ready = False
         self._sender_cache: dict[tuple[str, str, str], dict[str, str]] = {}
+        self._recent_message_keys: deque[tuple[str, str, str]] = deque()
+        self._recent_message_key_set: set[tuple[str, str, str]] = set()
+        self._recent_message_key_limit = 5000
+        self._patch_session_list_name_normalizer()
+
+    def _patch_session_list_name_normalizer(self) -> None:
+        original = getattr(self.wx, "GetSessionList", None)
+        if not callable(original):
+            return
+        if getattr(self.wx, "_bookkeeping_session_list_patched", False):
+            return
+
+        def _patched_get_session_list(*args, **kwargs):
+            data = original(*args, **kwargs)
+            if not isinstance(data, dict):
+                return data
+            normalized: dict[str, int] = {}
+            for raw_name, count in data.items():
+                clean_name = WeChatPlatformAPI._normalize_chat_name(str(raw_name or ""))
+                if not clean_name:
+                    continue
+                try:
+                    normalized[clean_name] = normalized.get(clean_name, 0) + int(count)
+                except Exception:
+                    normalized[clean_name] = normalized.get(clean_name, 0)
+            return normalized
+
+        setattr(self.wx, "GetSessionList", _patched_get_session_list)
+        setattr(self.wx, "_bookkeeping_session_list_patched", True)
+
+    def _ensure_runtime_state(self) -> None:
+        # Tests may construct API instances via __new__ and skip __init__.
+        if not hasattr(self, "_recent_message_keys"):
+            self._recent_message_keys = deque()
+        if not hasattr(self, "_recent_message_key_set"):
+            self._recent_message_key_set = set()
+        if not hasattr(self, "_recent_message_key_limit"):
+            self._recent_message_key_limit = 5000
+        if not hasattr(self, "_sender_cache"):
+            self._sender_cache = {}
 
     def ensure_listeners(self) -> None:
         if self._listeners_ready:
@@ -68,7 +121,14 @@ class WeChatPlatformAPI:
         return True
 
     def poll_messages(self) -> list[NormalizedMessageEnvelope]:
+        self._ensure_runtime_state()
         self.ensure_listeners()
+        messages: list[NormalizedMessageEnvelope] = []
+        messages.extend(self._poll_listen_messages())
+        messages.extend(self._poll_global_messages())
+        return self._dedupe_messages(messages)
+
+    def _poll_listen_messages(self) -> list[NormalizedMessageEnvelope]:
         payload = self.wx.GetListenMessage()
         messages: list[NormalizedMessageEnvelope] = []
         if isinstance(payload, dict):
@@ -82,6 +142,7 @@ class WeChatPlatformAPI:
                             if self.logger is not None:
                                 self.logger.warning("Dropped invalid WeChat payload item", exc_info=True)
                             continue
+                        normalized = self._apply_chat_hint(normalized, chat_name_hint)
                         if normalized is not None and not self._handle_control_envelope(normalized):
                             messages.append(normalized)
         elif isinstance(payload, list):
@@ -95,6 +156,65 @@ class WeChatPlatformAPI:
                 if normalized is not None and normalized.chat_name in self.listen_chats and not self._handle_control_envelope(normalized):
                     messages.append(normalized)
         return messages
+
+    def _poll_global_messages(self) -> list[NormalizedMessageEnvelope]:
+        listened = set(self.listen_chats)
+        messages: list[NormalizedMessageEnvelope] = []
+        try:
+            payload = self.wx.GetAllNewMessage()
+        except Exception:
+            if self.logger is not None:
+                self.logger.warning("GetAllNewMessage failed", exc_info=True)
+            return messages
+
+        if isinstance(payload, dict):
+            for chat_ref, items in payload.items():
+                if not isinstance(items, list):
+                    continue
+                chat_name_hint = self._resolve_listened_chat_name(chat_ref)
+                for item in items:
+                    try:
+                        normalized = self._normalize_message(item, chat_name_hint=chat_name_hint)
+                    except Exception:
+                        if self.logger is not None:
+                            self.logger.warning("Dropped invalid WeChat payload item", exc_info=True)
+                        continue
+                    normalized = self._apply_chat_hint(normalized, chat_name_hint)
+                    if normalized is None:
+                        continue
+                    if normalized.chat_name in listened or chat_name_hint in listened:
+                        continue
+                    if not self._handle_control_envelope(normalized):
+                        messages.append(normalized)
+        elif isinstance(payload, list):
+            for item in payload:
+                try:
+                    normalized = self._normalize_message(item)
+                except Exception:
+                    if self.logger is not None:
+                        self.logger.warning("Dropped invalid WeChat payload item", exc_info=True)
+                    continue
+                if normalized is None:
+                    continue
+                if normalized.chat_name in listened:
+                    continue
+                if not self._handle_control_envelope(normalized):
+                    messages.append(normalized)
+        return messages
+
+    def _dedupe_messages(self, messages: list[NormalizedMessageEnvelope]) -> list[NormalizedMessageEnvelope]:
+        deduped: list[NormalizedMessageEnvelope] = []
+        for message in messages:
+            message_key = (message.platform, message.chat_id, message.message_id)
+            if message_key in self._recent_message_key_set:
+                continue
+            self._recent_message_keys.append(message_key)
+            self._recent_message_key_set.add(message_key)
+            deduped.append(message)
+            while len(self._recent_message_keys) > self._recent_message_key_limit:
+                expired = self._recent_message_keys.popleft()
+                self._recent_message_key_set.discard(expired)
+        return deduped
 
     def send_text(self, chat_id: str, text: str) -> bool:
         try:
@@ -124,6 +244,7 @@ class WeChatPlatformAPI:
         observed_id = message.sender_id or ""
         sender_name = message.sender_name or ""
         sender_id = observed_id
+        remote_is_master = False
         if self.db is not None:
             sender_id = self.db.resolve_identity(
                 platform=message.platform,
@@ -131,10 +252,20 @@ class WeChatPlatformAPI:
                 observed_id=observed_id,
                 observed_name=sender_name,
             )
+            remote_is_master = bool(self.db.is_admin(sender_id))
+        elif self.identity_probe is not None:
+            try:
+                probe_result = self.identity_probe(message)
+            except Exception:
+                if self.logger is not None:
+                    self.logger.warning("Remote identity probe failed", exc_info=True)
+                probe_result = None
+            if probe_result is not None:
+                sender_id, remote_is_master = probe_result
 
         master_users = set(getattr(self.config, "master_users", [])) if self.config is not None else set()
-        is_config_master = observed_id in master_users or sender_id in master_users or sender_name in master_users
-        is_master = bool(is_config_master or (self.db and self.db.is_admin(sender_id)))
+        is_config_master = observed_id in master_users or sender_id in master_users
+        is_master = bool(is_config_master or remote_is_master)
 
         if self.logger is not None:
             self.logger.info(
@@ -227,13 +358,37 @@ class WeChatPlatformAPI:
 
     @staticmethod
     def _resolve_listened_chat_name(chat_ref) -> str:
+        if isinstance(chat_ref, str) and chat_ref.strip():
+            return WeChatPlatformAPI._normalize_chat_name(chat_ref.strip())
         who = getattr(chat_ref, "who", "")
         if isinstance(who, str) and who.strip():
-            return who.strip()
+            return WeChatPlatformAPI._normalize_chat_name(who.strip())
         name = getattr(chat_ref, "Name", "")
         if isinstance(name, str) and name.strip():
-            return name.strip()
+            return WeChatPlatformAPI._normalize_chat_name(name.strip())
         return ""
+
+    @staticmethod
+    def _apply_chat_hint(
+        message: NormalizedMessageEnvelope | None,
+        chat_name_hint: str,
+    ) -> NormalizedMessageEnvelope | None:
+        if message is None:
+            return None
+        hint = WeChatPlatformAPI._normalize_chat_name(str(chat_name_hint or "").strip())
+        if not hint:
+            return message
+        message.chat_id = hint
+        message.chat_name = hint
+        return message
+
+    @staticmethod
+    def _normalize_chat_name(name: str) -> str:
+        text = str(name or "").strip()
+        if not text:
+            return text
+        text = re.sub(r"\s*[\(?]\d+[\)?]\s*$", "", text)
+        return text.strip()
 
     def _resolve_sender_identity(self, details: dict) -> tuple[str, str]:
         sender = str(details.get("sender") or "")
