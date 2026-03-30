@@ -1,6 +1,7 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import os
+import re
 from collections import deque
 from pathlib import Path
 from typing import Callable
@@ -47,6 +48,32 @@ class WeChatPlatformAPI:
         self._recent_message_keys: deque[tuple[str, str, str]] = deque()
         self._recent_message_key_set: set[tuple[str, str, str]] = set()
         self._recent_message_key_limit = 5000
+        self._patch_session_list_name_normalizer()
+
+    def _patch_session_list_name_normalizer(self) -> None:
+        original = getattr(self.wx, "GetSessionList", None)
+        if not callable(original):
+            return
+        if getattr(self.wx, "_bookkeeping_session_list_patched", False):
+            return
+
+        def _patched_get_session_list(*args, **kwargs):
+            data = original(*args, **kwargs)
+            if not isinstance(data, dict):
+                return data
+            normalized: dict[str, int] = {}
+            for raw_name, count in data.items():
+                clean_name = WeChatPlatformAPI._normalize_chat_name(str(raw_name or ""))
+                if not clean_name:
+                    continue
+                try:
+                    normalized[clean_name] = normalized.get(clean_name, 0) + int(count)
+                except Exception:
+                    normalized[clean_name] = normalized.get(clean_name, 0)
+            return normalized
+
+        setattr(self.wx, "GetSessionList", _patched_get_session_list)
+        setattr(self.wx, "_bookkeeping_session_list_patched", True)
 
     def _ensure_runtime_state(self) -> None:
         # Tests may construct API instances via __new__ and skip __init__.
@@ -115,6 +142,7 @@ class WeChatPlatformAPI:
                             if self.logger is not None:
                                 self.logger.warning("Dropped invalid WeChat payload item", exc_info=True)
                             continue
+                        normalized = self._apply_chat_hint(normalized, chat_name_hint)
                         if normalized is not None and not self._handle_control_envelope(normalized):
                             messages.append(normalized)
         elif isinstance(payload, list):
@@ -151,6 +179,7 @@ class WeChatPlatformAPI:
                         if self.logger is not None:
                             self.logger.warning("Dropped invalid WeChat payload item", exc_info=True)
                         continue
+                    normalized = self._apply_chat_hint(normalized, chat_name_hint)
                     if normalized is None:
                         continue
                     if normalized.chat_name in listened or chat_name_hint in listened:
@@ -329,13 +358,37 @@ class WeChatPlatformAPI:
 
     @staticmethod
     def _resolve_listened_chat_name(chat_ref) -> str:
+        if isinstance(chat_ref, str) and chat_ref.strip():
+            return WeChatPlatformAPI._normalize_chat_name(chat_ref.strip())
         who = getattr(chat_ref, "who", "")
         if isinstance(who, str) and who.strip():
-            return who.strip()
+            return WeChatPlatformAPI._normalize_chat_name(who.strip())
         name = getattr(chat_ref, "Name", "")
         if isinstance(name, str) and name.strip():
-            return name.strip()
+            return WeChatPlatformAPI._normalize_chat_name(name.strip())
         return ""
+
+    @staticmethod
+    def _apply_chat_hint(
+        message: NormalizedMessageEnvelope | None,
+        chat_name_hint: str,
+    ) -> NormalizedMessageEnvelope | None:
+        if message is None:
+            return None
+        hint = WeChatPlatformAPI._normalize_chat_name(str(chat_name_hint or "").strip())
+        if not hint:
+            return message
+        message.chat_id = hint
+        message.chat_name = hint
+        return message
+
+    @staticmethod
+    def _normalize_chat_name(name: str) -> str:
+        text = str(name or "").strip()
+        if not text:
+            return text
+        text = re.sub(r"\s*[\(?]\d+[\)?]\s*$", "", text)
+        return text.strip()
 
     def _resolve_sender_identity(self, details: dict) -> tuple[str, str]:
         sender = str(details.get("sender") or "")

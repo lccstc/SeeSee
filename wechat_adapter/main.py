@@ -1,11 +1,9 @@
 ﻿from __future__ import annotations
 
-from collections import deque
 import logging
 import os
 import sys
 import time
-import urllib.error
 
 from .client import WeChatPlatformAPI
 from .config import load_config, save_config
@@ -78,45 +76,12 @@ def main() -> int:
         save_config(config)
         logger.info("WeChat self identity: nickname=%s wxid=%s", getattr(platform_api, "self_name", ""), getattr(platform_api, "self_wxid", ""))
         logger.info("WeChat adapter started. Listening chats: %s", ", ".join(platform_api.listen_chats))
-
-        pending_messages: deque = deque()
-        last_network_error_log_at = 0.0
-
         while True:
             for message in platform_api.poll_messages():
-                pending_messages.append(message)
-
-            while pending_messages:
-                message = pending_messages[0]
-                try:
-                    actions = remote_core.send_envelope(message)
-                    results = _execute_actions(platform_api, actions)
-                    _acknowledge_results(remote_core, results, logger, source="reply")
-                    pending_messages.popleft()
-                except urllib.error.URLError as exc:
-                    now = time.time()
-                    if now - last_network_error_log_at >= 5:
-                        logger.warning(
-                            "core connection unstable, queued=%s, chat=%s, message_id=%s, err=%s",
-                            len(pending_messages),
-                            message.chat_id,
-                            message.message_id,
-                            exc,
-                        )
-                        last_network_error_log_at = now
-                    break
-                except Exception:
-                    logger.warning(
-                        "send_envelope failed: chat=%s message_id=%s",
-                        message.chat_id,
-                        message.message_id,
-                        exc_info=True,
-                    )
-                    pending_messages.popleft()
-            try:
-                _flush_outbound_actions(platform_api, remote_core, logger)
-            except Exception:
-                logger.warning("flush_outbound_actions failed", exc_info=True)
+                actions = remote_core.send_envelope(message)
+                results = _execute_actions(platform_api, actions)
+                _acknowledge_results(remote_core, results, logger, source="reply")
+            _flush_outbound_actions(platform_api, remote_core, logger)
             time.sleep(config.poll_interval_seconds)
     except KeyboardInterrupt:
         logger.info("WeChat adapter stopped by user")
@@ -131,3 +96,4 @@ if __name__ == "__main__":
     sys.stdout.flush()
     sys.stderr.flush()
     os._exit(code)
+
