@@ -4,6 +4,7 @@ import logging
 import os
 import sys
 import time
+from collections import deque
 
 from .client import WeChatPlatformAPI
 from .config import load_config, save_config
@@ -75,11 +76,31 @@ def main() -> int:
         save_config(config)
         logger.info("WeChat self identity: nickname=%s wxid=%s", getattr(platform_api, "self_name", ""), getattr(platform_api, "self_wxid", ""))
         logger.info("WeChat adapter started. Listening chats: %s", ", ".join(platform_api.listen_chats))
+        inbound_queue = deque()
+        inbound_queue_capacity = max(int(getattr(config, "inbound_queue_capacity", 2000)), 1)
+        inbound_batch_size = max(int(getattr(config, "inbound_batch_size", 200)), 1)
         while True:
-            for message in platform_api.poll_messages():
-                actions = remote_core.send_envelope(message)
+            polled_messages = platform_api.poll_messages()
+            if polled_messages:
+                inbound_queue.extend(polled_messages)
+                overflow = len(inbound_queue) - inbound_queue_capacity
+                if overflow > 0:
+                    for _ in range(overflow):
+                        inbound_queue.popleft()
+                    logger.warning("Inbound queue overflowed. Dropped oldest messages: %s", overflow)
+
+            processed = 0
+            while inbound_queue and processed < inbound_batch_size:
+                message = inbound_queue.popleft()
+                try:
+                    actions = remote_core.send_envelope(message)
+                except Exception:
+                    inbound_queue.appendleft(message)
+                    logger.warning("Failed to send message to remote core. Will retry next tick.", exc_info=True)
+                    break
                 results = _execute_actions(platform_api, actions)
                 _acknowledge_results(remote_core, results, logger, source="reply")
+                processed += 1
             _flush_outbound_actions(platform_api, remote_core, logger)
             time.sleep(config.poll_interval_seconds)
     except KeyboardInterrupt:

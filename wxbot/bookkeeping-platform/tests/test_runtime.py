@@ -394,6 +394,148 @@ class UnifiedRuntimeTests(PostgresTestCase):
         self.assertEqual(messages[0].text, "hello")
         api.send_text.assert_not_called()
 
+    def test_wechat_platform_api_poll_messages_merges_listen_and_global_and_filters_listened_chats(self) -> None:
+        from wechat_adapter.client import WeChatPlatformAPI
+
+        api = WeChatPlatformAPI.__new__(WeChatPlatformAPI)
+        api.listen_chats = ["监听群-A"]
+        api._listeners_ready = True
+        api.self_name = ""
+        api.self_wxid = ""
+        api._sender_cache = {}
+        api.wx = MagicMock()
+        api.wx.GetListenMessage.return_value = [
+            SimpleNamespace(
+                details={
+                    "id": "listen-1",
+                    "chat_name": "监听群-A",
+                    "chat_type": "group",
+                    "type": "other",
+                    "sender": "User One",
+                    "content": "from-listen",
+                }
+            )
+        ]
+        api.wx.GetAllNewMessage.return_value = {
+            "监听群-A": [
+                SimpleNamespace(
+                    details={
+                        "id": "global-skip-1",
+                        "chat_name": "监听群-A",
+                        "chat_type": "group",
+                        "type": "other",
+                        "sender": "User One",
+                        "content": "should-skip",
+                    }
+                )
+            ],
+            "普通群-B": [
+                SimpleNamespace(
+                    details={
+                        "id": "global-1",
+                        "chat_name": "普通群-B",
+                        "chat_type": "group",
+                        "type": "other",
+                        "sender": "User Two",
+                        "content": "from-global",
+                    }
+                )
+            ],
+        }
+        api.db = MagicMock()
+        api.db.resolve_identity.side_effect = ["canonical-user-1", "canonical-user-2"]
+        api.db.is_admin.return_value = False
+        api.db.is_whitelisted.return_value = False
+        api.config = WeChatConfig(
+            listen_chats=["监听群-A"],
+            master_users=[],
+            poll_interval_seconds=1.0,
+            log_level="INFO",
+            language="cn",
+            export_dir="/tmp/exports",
+            runtime_dir="/tmp/runtime",
+        )
+        api.logger = MagicMock()
+        api.send_text = MagicMock()
+
+        messages = api.poll_messages()
+
+        self.assertEqual([msg.message_id for msg in messages], ["listen-1", "global-1"])
+        self.assertEqual([msg.chat_name for msg in messages], ["监听群-A", "普通群-B"])
+        api.send_text.assert_not_called()
+
+    def test_wechat_platform_api_poll_messages_deduplicates_across_listen_and_global_payloads(self) -> None:
+        from wechat_adapter.client import WeChatPlatformAPI
+
+        api = WeChatPlatformAPI.__new__(WeChatPlatformAPI)
+        api.listen_chats = ["监听群-A-备注"]
+        api._listeners_ready = True
+        api.self_name = ""
+        api.self_wxid = ""
+        api._sender_cache = {}
+        api.wx = MagicMock()
+        api.wx.GetListenMessage.return_value = {
+            _FakeListenedChat("监听群-A-备注"): [
+                SimpleNamespace(
+                    details={
+                        "id": "dup-1",
+                        "chat_name": "监听群-A原名",
+                        "chat_type": "group",
+                        "type": "other",
+                        "sender": "User One",
+                        "content": "hello",
+                    }
+                )
+            ]
+        }
+        api.wx.GetAllNewMessage.return_value = {
+            "监听群-A原名": [
+                SimpleNamespace(
+                    details={
+                        "id": "dup-1",
+                        "chat_name": "监听群-A原名",
+                        "chat_type": "group",
+                        "type": "other",
+                        "sender": "User One",
+                        "content": "hello",
+                    }
+                )
+            ],
+            "普通群-C": [
+                SimpleNamespace(
+                    details={
+                        "id": "global-2",
+                        "chat_name": "普通群-C",
+                        "chat_type": "group",
+                        "type": "other",
+                        "sender": "User Two",
+                        "content": "world",
+                    }
+                )
+            ],
+        }
+        api.db = MagicMock()
+        api.db.resolve_identity.side_effect = ["canonical-user-1", "canonical-user-1", "canonical-user-2"]
+        api.db.is_admin.return_value = False
+        api.db.is_whitelisted.return_value = False
+        api.config = WeChatConfig(
+            listen_chats=["监听群-A-备注"],
+            master_users=[],
+            poll_interval_seconds=1.0,
+            log_level="INFO",
+            language="cn",
+            export_dir="/tmp/exports",
+            runtime_dir="/tmp/runtime",
+        )
+        api.logger = MagicMock()
+        api.send_text = MagicMock()
+
+        messages = api.poll_messages()
+
+        self.assertEqual([msg.message_id for msg in messages], ["dup-1", "global-2"])
+        self.assertEqual([msg.chat_name for msg in messages], ["监听群-A原名", "普通群-C"])
+        api.send_text.assert_not_called()
+
     def test_wechat_main_requires_remote_core_api_configuration(self) -> None:
         from wechat_adapter import main as wechat_main
 

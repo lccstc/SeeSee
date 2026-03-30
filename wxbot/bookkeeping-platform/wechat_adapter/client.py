@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import os
+from collections import deque
 from pathlib import Path
 
 from bookkeeping_core.contracts import NormalizedMessageEnvelope
@@ -32,6 +33,20 @@ class WeChatPlatformAPI:
         self.logger = logger
         self._listeners_ready = False
         self._sender_cache: dict[tuple[str, str, str], dict[str, str]] = {}
+        self._recent_message_keys: deque[tuple[str, str, str]] = deque()
+        self._recent_message_key_set: set[tuple[str, str, str]] = set()
+        self._recent_message_key_limit = 5000
+
+    def _ensure_runtime_state(self) -> None:
+        # Tests may construct API instances via __new__ and skip __init__.
+        if not hasattr(self, "_recent_message_keys"):
+            self._recent_message_keys = deque()
+        if not hasattr(self, "_recent_message_key_set"):
+            self._recent_message_key_set = set()
+        if not hasattr(self, "_recent_message_key_limit"):
+            self._recent_message_key_limit = 5000
+        if not hasattr(self, "_sender_cache"):
+            self._sender_cache = {}
 
     def ensure_listeners(self) -> None:
         if self._listeners_ready:
@@ -68,7 +83,14 @@ class WeChatPlatformAPI:
         return True
 
     def poll_messages(self) -> list[NormalizedMessageEnvelope]:
+        self._ensure_runtime_state()
         self.ensure_listeners()
+        messages: list[NormalizedMessageEnvelope] = []
+        messages.extend(self._poll_listen_messages())
+        messages.extend(self._poll_global_messages())
+        return self._dedupe_messages(messages)
+
+    def _poll_listen_messages(self) -> list[NormalizedMessageEnvelope]:
         payload = self.wx.GetListenMessage()
         messages: list[NormalizedMessageEnvelope] = []
         if isinstance(payload, dict):
@@ -95,6 +117,64 @@ class WeChatPlatformAPI:
                 if normalized is not None and normalized.chat_name in self.listen_chats and not self._handle_control_envelope(normalized):
                     messages.append(normalized)
         return messages
+
+    def _poll_global_messages(self) -> list[NormalizedMessageEnvelope]:
+        listened = set(self.listen_chats)
+        messages: list[NormalizedMessageEnvelope] = []
+        try:
+            payload = self.wx.GetAllNewMessage()
+        except Exception:
+            if self.logger is not None:
+                self.logger.warning("GetAllNewMessage failed", exc_info=True)
+            return messages
+
+        if isinstance(payload, dict):
+            for chat_ref, items in payload.items():
+                if not isinstance(items, list):
+                    continue
+                chat_name_hint = self._resolve_listened_chat_name(chat_ref)
+                for item in items:
+                    try:
+                        normalized = self._normalize_message(item, chat_name_hint=chat_name_hint)
+                    except Exception:
+                        if self.logger is not None:
+                            self.logger.warning("Dropped invalid WeChat payload item", exc_info=True)
+                        continue
+                    if normalized is None:
+                        continue
+                    if normalized.chat_name in listened or chat_name_hint in listened:
+                        continue
+                    if not self._handle_control_envelope(normalized):
+                        messages.append(normalized)
+        elif isinstance(payload, list):
+            for item in payload:
+                try:
+                    normalized = self._normalize_message(item)
+                except Exception:
+                    if self.logger is not None:
+                        self.logger.warning("Dropped invalid WeChat payload item", exc_info=True)
+                    continue
+                if normalized is None:
+                    continue
+                if normalized.chat_name in listened:
+                    continue
+                if not self._handle_control_envelope(normalized):
+                    messages.append(normalized)
+        return messages
+
+    def _dedupe_messages(self, messages: list[NormalizedMessageEnvelope]) -> list[NormalizedMessageEnvelope]:
+        deduped: list[NormalizedMessageEnvelope] = []
+        for message in messages:
+            message_key = (message.platform, message.chat_id, message.message_id)
+            if message_key in self._recent_message_key_set:
+                continue
+            self._recent_message_keys.append(message_key)
+            self._recent_message_key_set.add(message_key)
+            deduped.append(message)
+            while len(self._recent_message_keys) > self._recent_message_key_limit:
+                expired = self._recent_message_keys.popleft()
+                self._recent_message_key_set.discard(expired)
+        return deduped
 
     def send_text(self, chat_id: str, text: str) -> bool:
         try:
