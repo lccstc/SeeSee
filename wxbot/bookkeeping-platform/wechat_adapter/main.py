@@ -58,17 +58,18 @@ def main() -> int:
     try:
         if not config.core_api.enabled():
             raise RuntimeError("WeChat adapter now requires core_api.endpoint and core_api.token")
+        remote_core = WeChatCoreApiClient(
+            endpoint=config.core_api.endpoint,
+            token=config.core_api.token,
+            request_timeout_seconds=config.core_api.request_timeout_seconds,
+        )
         platform_api = WeChatPlatformAPI(
             listen_chats=config.listen_chats,
             language=config.language,
             runtime_dir=config.runtime_dir,
             config=config,
             logger=logger,
-        )
-        remote_core = WeChatCoreApiClient(
-            endpoint=config.core_api.endpoint,
-            token=config.core_api.token,
-            request_timeout_seconds=config.core_api.request_timeout_seconds,
+            identity_probe=remote_core.resolve_identity,
         )
         logger.info("WeChat adapter running in remote core mode: %s", config.core_api.endpoint)
         platform_api.ensure_listeners()

@@ -74,6 +74,31 @@ class WeChatCoreApiClient:
         updated = payload.get("updated", 0)
         return int(updated) if isinstance(updated, (int, float)) else 0
 
+    def resolve_identity(self, envelope: NormalizedMessageEnvelope) -> tuple[str, bool] | None:
+        probe = NormalizedMessageEnvelope(
+            platform=envelope.platform,
+            message_id=f"{envelope.message_id}::whoami",
+            chat_id=envelope.chat_id,
+            chat_name=envelope.chat_name or envelope.chat_id,
+            is_group=envelope.is_group,
+            sender_id=envelope.sender_id,
+            sender_name=envelope.sender_name,
+            sender_kind=envelope.sender_kind,
+            content_type="text",
+            text="/whoami",
+            from_self=envelope.from_self,
+            received_at=envelope.received_at,
+        )
+        actions = self.send_envelope(probe)
+        for action in actions:
+            if action.get("action_type") != "send_text":
+                continue
+            text = str(action.get("text") or "")
+            parsed = self._parse_whoami_text(text)
+            if parsed is not None:
+                return parsed
+        return None
+
     @staticmethod
     def _validate_action(action: Any) -> CoreAction:
         if not isinstance(action, dict):
@@ -109,3 +134,18 @@ class WeChatCoreApiClient:
                 result["id"] = action["id"]
             return result
         raise ValueError(f"Unknown core action: {action_type}")
+
+    @staticmethod
+    def _parse_whoami_text(text: str) -> tuple[str, bool] | None:
+        line_map: dict[str, str] = {}
+        for raw_line in text.splitlines():
+            line = raw_line.strip()
+            if "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            line_map[key.strip().lower()] = value.strip()
+        canonical_id = line_map.get("id", "")
+        if not canonical_id:
+            return None
+        is_master = line_map.get("is_master", "").lower() == "true"
+        return canonical_id, is_master

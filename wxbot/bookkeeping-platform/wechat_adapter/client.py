@@ -3,6 +3,7 @@
 import os
 from collections import deque
 from pathlib import Path
+from typing import Callable
 
 from bookkeeping_core.contracts import NormalizedMessageEnvelope
 
@@ -20,7 +21,16 @@ def prepare_runtime(runtime_dir: str | Path) -> None:
 
 
 class WeChatPlatformAPI:
-    def __init__(self, listen_chats: list[str], language: str, runtime_dir: str, config=None, db=None, logger=None) -> None:
+    def __init__(
+        self,
+        listen_chats: list[str],
+        language: str,
+        runtime_dir: str,
+        config=None,
+        db=None,
+        logger=None,
+        identity_probe: Callable[[NormalizedMessageEnvelope], tuple[str, bool] | None] | None = None,
+    ) -> None:
         prepare_runtime(runtime_dir)
         from wxautox import WeChat
 
@@ -31,6 +41,7 @@ class WeChatPlatformAPI:
         self.config = config
         self.db = db
         self.logger = logger
+        self.identity_probe = identity_probe
         self._listeners_ready = False
         self._sender_cache: dict[tuple[str, str, str], dict[str, str]] = {}
         self._recent_message_keys: deque[tuple[str, str, str]] = deque()
@@ -204,6 +215,7 @@ class WeChatPlatformAPI:
         observed_id = message.sender_id or ""
         sender_name = message.sender_name or ""
         sender_id = observed_id
+        remote_is_master = False
         if self.db is not None:
             sender_id = self.db.resolve_identity(
                 platform=message.platform,
@@ -211,10 +223,20 @@ class WeChatPlatformAPI:
                 observed_id=observed_id,
                 observed_name=sender_name,
             )
+            remote_is_master = bool(self.db.is_admin(sender_id))
+        elif self.identity_probe is not None:
+            try:
+                probe_result = self.identity_probe(message)
+            except Exception:
+                if self.logger is not None:
+                    self.logger.warning("Remote identity probe failed", exc_info=True)
+                probe_result = None
+            if probe_result is not None:
+                sender_id, remote_is_master = probe_result
 
         master_users = set(getattr(self.config, "master_users", [])) if self.config is not None else set()
-        is_config_master = observed_id in master_users or sender_id in master_users or sender_name in master_users
-        is_master = bool(is_config_master or (self.db and self.db.is_admin(sender_id)))
+        is_config_master = observed_id in master_users or sender_id in master_users
+        is_master = bool(is_config_master or remote_is_master)
 
         if self.logger is not None:
             self.logger.info(
