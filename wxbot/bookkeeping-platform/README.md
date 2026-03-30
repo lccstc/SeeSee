@@ -98,16 +98,25 @@ python3 -m unittest tests.test_ingestion_alignment tests.test_periods tests.test
 先编辑 `C:\wxbot\bookkeeping-platform\config.wechat.json`：
 
 - `listen_chats`: 需要监听的微信群名称
-- `master_users`: 管理员微信显示名或备注名
+- `master_users`: 管理员微信号（推荐使用 `wxid`）或规范化后的用户 ID
 - `core_api.endpoint`: 远端总账中心地址，填写主机根地址，例如 `https://your-ngrok-host.ngrok-free.dev`
 - `core_api.token`: 远端总账中心 Bearer Token
 - `core_api.request_timeout_seconds`: 远端请求超时秒数
+- `poll_interval_seconds`: 轮询间隔（秒），默认 `1.0`
+- `inbound_queue_capacity`: 入站消息队列容量，默认 `2000`
+- `inbound_batch_size`: 每轮最多处理消息条数，默认 `200`
 
 说明：
 
 - WeChat 适配器现在只支持 remote core mode
 - 不再需要 `db_path`
 - 正式事实源只有远端总账 PostgreSQL
+- 当前消息拉取为“混合模式”：每轮同时读取 `GetListenMessage`（监听）和 `GetAllNewMessage`（全局）
+- 全局模式会自动过滤 `listen_chats` 已监听的群，避免重复处理
+- 监听与全局两路消息会按 `(platform, chat_id, message_id)` 去重后再入处理队列
+- 入站队列支持容量保护与分批消费：突发流量时丢弃最旧消息，远端暂时失败会把当前消息放回队首下轮重试
+- 全局模式受微信未读角标机制限制，仅对未免打扰会话有效；关键群建议继续放在 `listen_chats`
+- 管理命令鉴权优先使用远端身份探测（`/whoami`），本地 `master_users` 作为兜底白名单
 
 启动：
 
