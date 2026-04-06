@@ -20,6 +20,7 @@ __pycache__/
 .ruff_cache/
 .venv/
 venv/
+env/
 
 *.db
 *.db-shm
@@ -39,3 +40,13 @@ wxbot/bookkeeping-platform/data/
 wxbot/whatsapp-bookkeeping/auth/
 wxbot/whatsapp-bookkeeping/config.json
 wxbot/whatsapp-bookkeeping/data/
+
+# Windows WeChat runtime local secrets/state
+config.wechat.json
+config.*.local.json
+runtime/
+exports/
+data/
+wechat_cache/
+tmp/
+temp/

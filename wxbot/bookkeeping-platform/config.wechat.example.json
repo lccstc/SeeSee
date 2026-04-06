@@ -1,0 +1,18 @@
+﻿{
+  "listen_chats": [
+    "G-EXAMPLE-CHAT"
+  ],
+  "master_users": [
+    "wxid_example_admin"
+  ],
+  "poll_interval_seconds": 1.0,
+  "log_level": "INFO",
+  "language": "cn",
+  "export_dir": "C:\\SeeSee\\wxbot\\bookkeeping-platform\\exports",
+  "runtime_dir": "C:\\SeeSee\\wxbot\\bookkeeping-platform\\runtime",
+  "core_api": {
+    "endpoint": "http://127.0.0.1:8765",
+    "token": "REPLACE_WITH_REAL_TOKEN",
+    "request_timeout_seconds": 25.0
+  }
+}
