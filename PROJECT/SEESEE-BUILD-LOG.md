@@ -102,6 +102,49 @@ bridge 现状补记：
 - 本机同时存在 `opencode acp` 进程，监听在 127.0.0.1:4096，说明本地 ACP 侧服务本身是活的。
 - 说明这次 cron / pairing 故障与 bridge 健康检查不是同一问题面，不能混为一谈。
 
+### 差额追踪最小闭环侦察结论
+本轮没有直接动代码，先把“差额追踪”压缩成最小闭环。
+
+当前已具备的底座：
+- `incoming_messages`：原始消息证据
+- `message_parse_results`：最小解析结果
+- `transactions`：最终入账结果
+- `message-inspector`：单条消息的联合查看
+- `reconciliation ledger`：已有交易级 `issue_flags`（如待对账、汇率公式异常、缺失汇率）
+
+当前真正缺的不是又一套新账，而是：
+- 当 reconciliation 里出现异常交易时，不能直接一跳看到“这笔账是从哪条消息来的、当时怎么解析的、最后记成了什么、哪里开始不对”。
+
+因此当前决定的最小闭环是：
+1. 先不做复杂页面
+2. 先不做自动裁决
+3. 先新增一个只读的 `difference trace` / `差额追踪` 接口
+4. 入口先以 `transaction_id` 为主，因为 reconciliation 当前天然就是按交易行工作
+
+这条只读 trace 最小应返回：
+- transaction 摘要
+- 对应原始 message
+- 对应 parse result
+- 当前 reconciliation issue flags
+- 如果交易被人工改过，带出最近一次 edit 信息
+- 一组最小 trace 状态：`captured -> parsed -> posted -> edited? -> flagged?`
+
+第一阶段只覆盖这类问题：
+- 有 `transaction_id` 的异常交易
+- 能通过 `platform + chat_id + message_id` 回到源消息的交易
+- 典型场景包括：记错汇率、记错金额、人工改坏、该对账未对账
+
+第一阶段暂不覆盖：
+- 没有 message_id 的历史脏数据
+- 多条消息共同形成一笔业务的复杂链路
+- 账期级汇总差额的自动归因
+- 大页面和复杂可视化
+
+建议的下一刀实现顺序：
+1. 先做只读 `difference trace` 接口
+2. 复用现有 `message-inspector` 与 reconciliation 数据，不重复造表
+3. 再给 reconciliation 行补一个 trace 入口
+
 ### 新窗口接手说明
 如果换新窗口，先读：
 1. `PROJECT/SEESEE-PRD-lite.md`
