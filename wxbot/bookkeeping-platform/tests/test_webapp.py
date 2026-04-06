@@ -114,7 +114,9 @@ class WebAppTests(PostgresTestCase):
 
         response = {"status": 500, "headers": {}, "body": b""}
 
-        def start_response(status: str, response_headers: list[tuple[str, str]]) -> None:
+        def start_response(
+            status: str, response_headers: list[tuple[str, str]]
+        ) -> None:
             response["status"] = int(status.split(" ", 1)[0])
             response["headers"] = {key: value for key, value in response_headers}
 
@@ -126,7 +128,9 @@ class WebAppTests(PostgresTestCase):
             json.loads(response["body"].decode("utf-8")),
         )
 
-    def _request_text(self, method: str, path: str, *, query: dict[str, str | int] | None = None) -> tuple[int, str]:
+    def _request_text(
+        self, method: str, path: str, *, query: dict[str, str | int] | None = None
+    ) -> tuple[int, str]:
         environ = {}
         setup_testing_defaults(environ)
         environ["REQUEST_METHOD"] = method
@@ -195,6 +199,124 @@ class WebAppTests(PostgresTestCase):
         self.assertEqual(status, 401)
         self.assertEqual(payload["error"], "Unauthorized")
 
+    def test_incoming_messages_requires_auth(self) -> None:
+        status, payload = self._request("GET", "/api/incoming-messages")
+        self.assertEqual(status, 401)
+        self.assertEqual(payload["error"], "Unauthorized")
+
+    def test_incoming_messages_returns_empty_list(self) -> None:
+        status, payload = self._request(
+            "GET",
+            "/api/incoming-messages",
+            headers={"Authorization": "Bearer core-secret"},
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["messages"], [])
+        self.assertEqual(payload["total"], 0)
+        self.assertEqual(payload["limit"], 50)
+        self.assertEqual(payload["offset"], 0)
+
+    def test_incoming_messages_returns_stored_messages(self) -> None:
+        self.db.record_incoming_message(
+            platform="whatsapp",
+            group_key="whatsapp:chat-123",
+            chat_id="chat-123",
+            chat_name="Test Chat",
+            message_id="msg-incoming-test",
+            is_group=False,
+            sender_id="user-456",
+            sender_name="Test User",
+            sender_kind="user",
+            content_type="text",
+            text="hello world",
+            from_self=False,
+            received_at="2026-04-07T10:00:00",
+            raw_payload={"test": True},
+        )
+        status, payload = self._request(
+            "GET",
+            "/api/incoming-messages",
+            headers={"Authorization": "Bearer core-secret"},
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(len(payload["messages"]), 1)
+        self.assertEqual(payload["total"], 1)
+        self.assertEqual(payload["messages"][0]["platform"], "whatsapp")
+        self.assertEqual(payload["messages"][0]["text"], "hello world")
+
+    def test_incoming_messages_filters_by_platform(self) -> None:
+        self.db.record_incoming_message(
+            platform="whatsapp",
+            group_key="whatsapp:chat-1",
+            chat_id="chat-1",
+            chat_name="Chat 1",
+            message_id="msg-wa-1",
+            is_group=False,
+            sender_id="user-1",
+            sender_name="User 1",
+            sender_kind="user",
+            content_type="text",
+            text="wa message",
+            from_self=False,
+            received_at="2026-04-07T10:00:00",
+            raw_payload={},
+        )
+        self.db.record_incoming_message(
+            platform="wechat",
+            group_key="wechat:chat-2",
+            chat_id="chat-2",
+            chat_name="Chat 2",
+            message_id="msg-wx-1",
+            is_group=False,
+            sender_id="user-2",
+            sender_name="User 2",
+            sender_kind="user",
+            content_type="text",
+            text="wechat message",
+            from_self=False,
+            received_at="2026-04-07T11:00:00",
+            raw_payload={},
+        )
+        status, payload = self._request(
+            "GET",
+            "/api/incoming-messages",
+            headers={"Authorization": "Bearer core-secret"},
+            query_string="platform=whatsapp",
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(len(payload["messages"]), 1)
+        self.assertEqual(payload["messages"][0]["platform"], "whatsapp")
+
+    def test_incoming_messages_pagination(self) -> None:
+        for i in range(5):
+            self.db.record_incoming_message(
+                platform="test",
+                group_key=f"test:chat-{i}",
+                chat_id=f"chat-{i}",
+                chat_name=f"Chat {i}",
+                message_id=f"msg-{i}",
+                is_group=False,
+                sender_id=f"user-{i}",
+                sender_name=f"User {i}",
+                sender_kind="user",
+                content_type="text",
+                text=f"message {i}",
+                from_self=False,
+                received_at="2026-04-07T10:00:00",
+                raw_payload={},
+            )
+        status, payload = self._request(
+            "GET",
+            "/api/incoming-messages",
+            headers={"Authorization": "Bearer core-secret"},
+            query_string="limit=2&offset=1",
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(len(payload["messages"]), 2)
+        self.assertEqual(payload["total"], 5)
+        self.assertEqual(payload["limit"], 2)
+        self.assertEqual(payload["offset"], 1)
+
     def test_runtime_endpoint_rejects_non_boolean_is_group(self) -> None:
         status, payload = self._request(
             "POST",
@@ -221,7 +343,9 @@ class WebAppTests(PostgresTestCase):
             self.assertEqual(status, 200)
             self.assertIn("<main", html)
 
-        status, workbench = self._request("GET", "/api/workbench", query_string=f"period_id={self.period_id}")
+        status, workbench = self._request(
+            "GET", "/api/workbench", query_string=f"period_id={self.period_id}"
+        )
         self.assertEqual(status, 200)
         self.assertIn("summary", workbench)
         self.assertIn("transactions", workbench)
@@ -235,7 +359,9 @@ class WebAppTests(PostgresTestCase):
         self.assertIn("card_rankings", history)
 
     def test_workbench_api_supports_realtime_period_selector(self) -> None:
-        status, payload = self._request("GET", "/api/workbench", query_string="period_id=realtime")
+        status, payload = self._request(
+            "GET", "/api/workbench", query_string="period_id=realtime"
+        )
         self.assertEqual(status, 200)
         self.assertIsNone(payload["selected_period"])
         self.assertIn("live_window", payload)
@@ -326,9 +452,13 @@ class WebAppTests(PostgresTestCase):
         self.assertEqual(float(transaction["rmb_value"]), -250.0)
         self.assertEqual(transaction["parse_version"], "web-edit")
 
-        status, workbench = self._request("GET", "/api/workbench", query_string="period_id=realtime")
+        status, workbench = self._request(
+            "GET", "/api/workbench", query_string="period_id=realtime"
+        )
         self.assertEqual(status, 200)
-        realtime_row = next(row for row in workbench["transactions"] if int(row["id"]) == transaction_id)
+        realtime_row = next(
+            row for row in workbench["transactions"] if int(row["id"]) == transaction_id
+        )
         self.assertTrue(realtime_row["is_edited"])
         self.assertEqual(realtime_row["edited_by"], "finance-web")
         self.assertEqual(realtime_row["sender_name"], "Live-Web-Edited")
@@ -365,7 +495,9 @@ class WebAppTests(PostgresTestCase):
         self.assertGreater(payload["period_id"], self.period_id)
         self.assertEqual(payload["queued_action_count"], 1)
 
-        status, workbench = self._request("GET", "/api/workbench", query_string="period_id=realtime")
+        status, workbench = self._request(
+            "GET", "/api/workbench", query_string="period_id=realtime"
+        )
         self.assertEqual(status, 200)
         self.assertEqual(workbench["transactions"], [])
         queued = self.db.claim_outbound_actions()
@@ -373,7 +505,9 @@ class WebAppTests(PostgresTestCase):
         self.assertEqual(str(queued[0]["chat_id"]), "g-100")
         self.assertIn("Closing Balance", str(queued[0]["text"]))
 
-    def test_group_broadcast_endpoint_queues_send_text_actions_for_target_group_number(self) -> None:
+    def test_group_broadcast_endpoint_queues_send_text_actions_for_target_group_number(
+        self,
+    ) -> None:
         self.db.set_group(
             platform="wechat",
             group_key="wechat:g-201",
@@ -427,12 +561,18 @@ class WebAppTests(PostgresTestCase):
         self.assertEqual(status, 200)
         self.assertGreater(payload["adjustment_id"], 0)
 
-        status, workbench = self._request("GET", "/api/workbench", query_string=f"period_id={self.period_id}")
+        status, workbench = self._request(
+            "GET", "/api/workbench", query_string=f"period_id={self.period_id}"
+        )
         self.assertEqual(status, 200)
         self.assertEqual(round(workbench["group_rows"][0]["expense"], 2), 25.00)
-        self.assertEqual(round(workbench["group_rows"][0]["closing_balance"], 2), 275.00)
+        self.assertEqual(
+            round(workbench["group_rows"][0]["closing_balance"], 2), 275.00
+        )
 
-    def test_reconciliation_adjustment_endpoint_persists_entry_and_shows_in_period_scope(self) -> None:
+    def test_reconciliation_adjustment_endpoint_persists_entry_and_shows_in_period_scope(
+        self,
+    ) -> None:
         status, payload = self._request(
             "POST",
             "/api/reconciliation/adjustments",
@@ -457,7 +597,9 @@ class WebAppTests(PostgresTestCase):
             query_string=f"scope=period&period_id={self.period_id}",
         )
         self.assertEqual(status, 200)
-        adjustment_row = next(row for row in ledger["rows"] if row["row_type"] == "finance_adjustment")
+        adjustment_row = next(
+            row for row in ledger["rows"] if row["row_type"] == "finance_adjustment"
+        )
         self.assertEqual(adjustment_row["card_type"], "fee")
         self.assertEqual(round(adjustment_row["rmb_value"], 2), 18.0)
         self.assertEqual(adjustment_row["note"], "补录手续费")
@@ -519,7 +661,9 @@ class WebAppTests(PostgresTestCase):
         self.assertIn("row_type,row_id,period_id,period_status", csv_text)
         self.assertIn("finance_adjustment_entries", csv_text)
 
-    def test_reconciliation_ledger_supports_combination_group_num_and_summary_export(self) -> None:
+    def test_reconciliation_ledger_supports_combination_group_num_and_summary_export(
+        self,
+    ) -> None:
         self.db.set_group(
             platform="wechat",
             group_key="wechat:g-200",
@@ -574,7 +718,9 @@ class WebAppTests(PostgresTestCase):
         )
         self.assertEqual(status, 200)
         self.assertTrue(drilled["rows"])
-        self.assertEqual({row["group_key"] for row in drilled["rows"]}, {"wechat:g-100"})
+        self.assertEqual(
+            {row["group_key"] for row in drilled["rows"]}, {"wechat:g-100"}
+        )
 
         status, headers, body = self._request_raw(
             "GET",
@@ -591,7 +737,10 @@ class WebAppTests(PostgresTestCase):
         self.assertEqual(headers["Content-Type"], "text/csv; charset=utf-8")
         rows = list(csv.DictReader(io.StringIO(body.decode("utf-8-sig"))))
         self.assertEqual(
-            {(row["business_role"], row["card_type"], row["row_count"]) for row in rows},
+            {
+                (row["business_role"], row["card_type"], row["row_count"])
+                for row in rows
+            },
             {
                 ("customer", "rmb", "1"),
                 ("vendor", "it", "1"),

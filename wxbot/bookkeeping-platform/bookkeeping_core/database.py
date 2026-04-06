@@ -73,7 +73,9 @@ class _BookkeepingStoreBase:
         settled_at: str | None = None,
         ngn_rate_override: float | None = None,
     ) -> int:
-        ngn_rate = ngn_rate_override if ngn_rate_override is not None else self.get_ngn_rate()
+        ngn_rate = (
+            ngn_rate_override if ngn_rate_override is not None else self.get_ngn_rate()
+        )
         cur = self.conn.execute(
             """
             INSERT INTO transactions (
@@ -166,7 +168,9 @@ class _BookkeepingStoreBase:
         self.conn.commit()
         return bool(cur.rowcount)
 
-    def get_incoming_message(self, *, platform: str, chat_id: str, message_id: str) -> DBRow | None:
+    def get_incoming_message(
+        self, *, platform: str, chat_id: str, message_id: str
+    ) -> DBRow | None:
         return self.conn.execute(
             """
             SELECT *
@@ -176,8 +180,53 @@ class _BookkeepingStoreBase:
             (platform, chat_id, message_id),
         ).fetchone()
 
+    def query_incoming_messages(
+        self,
+        *,
+        platform: str | None = None,
+        chat_id: str | None = None,
+        message_id: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> tuple[list[DBRow], int]:
+        where_parts = []
+        params: list = []
+        if platform is not None:
+            where_parts.append("platform = ?")
+            params.append(platform)
+        if chat_id is not None:
+            where_parts.append("chat_id = ?")
+            params.append(chat_id)
+        if message_id is not None:
+            where_parts.append("message_id = ?")
+            params.append(message_id)
+        where_clause = " AND ".join(where_parts) if where_parts else "1=1"
+
+        count_row = self.conn.execute(
+            f"SELECT COUNT(*) AS cnt FROM incoming_messages WHERE {where_clause}",
+            params,
+        ).fetchone()
+        total = int(count_row["cnt"])
+
+        params.extend([limit, offset])
+        rows = self.conn.execute(
+            f"""
+            SELECT id, platform, chat_id, chat_name, message_id, sender_id, sender_name,
+                   sender_kind, content_type, text, from_self, received_at, raw_json,
+                   created_at
+            FROM incoming_messages
+            WHERE {where_clause}
+            ORDER BY created_at DESC, id DESC
+            LIMIT ? OFFSET ?
+            """,
+            params,
+        ).fetchall()
+        return list(rows), total
+
     def count_incoming_messages(self) -> int:
-        row = self.conn.execute("SELECT COUNT(*) AS cnt FROM incoming_messages").fetchone()
+        row = self.conn.execute(
+            "SELECT COUNT(*) AS cnt FROM incoming_messages"
+        ).fetchone()
         return int(row["cnt"])
 
     def undo_last(self, group_key: str) -> DBRow | None:
@@ -191,7 +240,9 @@ class _BookkeepingStoreBase:
         ).fetchone()
         if row is None:
             return None
-        self.conn.execute("UPDATE transactions SET deleted = 1 WHERE id = ?", (row["id"],))
+        self.conn.execute(
+            "UPDATE transactions SET deleted = 1 WHERE id = ?", (row["id"],)
+        )
         self.conn.commit()
         return row
 
@@ -207,7 +258,13 @@ class _BookkeepingStoreBase:
         return {
             "total": float(total_row["total"]),
             "count": int(total_row["count"]),
-            "by_category": {row["category"]: {"count": int(row["count"]), "total_rmb": float(row["total_rmb"])} for row in cat_rows},
+            "by_category": {
+                row["category"]: {
+                    "count": int(row["count"]),
+                    "total_rmb": float(row["total_rmb"]),
+                }
+                for row in cat_rows
+            },
         }
 
     def get_history(self, group_key: str, limit: int = 20) -> list[DBRow]:
@@ -216,7 +273,9 @@ class _BookkeepingStoreBase:
             (group_key, limit),
         ).fetchall()
 
-    def get_history_by_category(self, group_key: str, category: str, limit: int = 50) -> list[DBRow]:
+    def get_history_by_category(
+        self, group_key: str, category: str, limit: int = 50
+    ) -> list[DBRow]:
         return self.conn.execute(
             "SELECT * FROM transactions WHERE group_key = ? AND deleted = 0 AND category = ? ORDER BY id DESC LIMIT ?",
             (group_key, category, limit),
@@ -249,7 +308,10 @@ class _BookkeepingStoreBase:
         ).fetchall()
 
     def clear_group(self, group_key: str) -> int:
-        cur = self.conn.execute("UPDATE transactions SET deleted = 1 WHERE group_key = ? AND deleted = 0", (group_key,))
+        cur = self.conn.execute(
+            "UPDATE transactions SET deleted = 1 WHERE group_key = ? AND deleted = 0",
+            (group_key,),
+        )
         self.conn.commit()
         return cur.rowcount
 
@@ -278,10 +340,15 @@ class _BookkeepingStoreBase:
                     "count": int(row["count"]),
                     "total_amount": float(row["total_amount"] or 0),
                     "total_rmb": total_rmb,
-                    "total_ngn": float(row["total_ngn"]) if row["total_ngn"] is not None else None,
+                    "total_ngn": float(row["total_ngn"])
+                    if row["total_ngn"] is not None
+                    else None,
                 }
             )
-        return [{"category": key, "rate_groups": value} for key, value in category_map.items()]
+        return [
+            {"category": key, "rate_groups": value}
+            for key, value in category_map.items()
+        ]
 
     def get_unsettled_transactions(self, group_key: str) -> list[DBRow]:
         return self.conn.execute(
@@ -294,7 +361,15 @@ class _BookkeepingStoreBase:
             "SELECT DISTINCT platform, group_key, chat_id, chat_name FROM transactions WHERE deleted = 0 AND settled = 0 ORDER BY group_key"
         ).fetchall()
 
-    def set_group(self, *, platform: str, group_key: str, chat_id: str, chat_name: str, group_num: int) -> bool:
+    def set_group(
+        self,
+        *,
+        platform: str,
+        group_key: str,
+        chat_id: str,
+        chat_name: str,
+        group_num: int,
+    ) -> bool:
         if group_num < 0 or group_num > 9:
             return False
         self.conn.execute(
@@ -314,19 +389,28 @@ class _BookkeepingStoreBase:
         return True
 
     def get_group_num(self, group_key: str) -> int | None:
-        row = self.conn.execute("SELECT group_num FROM groups WHERE group_key = ?", (group_key,)).fetchone()
+        row = self.conn.execute(
+            "SELECT group_num FROM groups WHERE group_key = ?", (group_key,)
+        ).fetchone()
         return int(row["group_num"]) if row and row["group_num"] is not None else None
 
     def is_group_active(self, group_key: str) -> bool:
-        row = self.conn.execute("SELECT 1 FROM groups WHERE group_key = ? AND group_num IS NOT NULL", (group_key,)).fetchone()
+        row = self.conn.execute(
+            "SELECT 1 FROM groups WHERE group_key = ? AND group_num IS NOT NULL",
+            (group_key,),
+        ).fetchone()
         return row is not None
 
     def get_groups_by_num(self, group_num: int) -> list[DBRow]:
-        return self.conn.execute("SELECT * FROM groups WHERE group_num = ? ORDER BY chat_name", (group_num,)).fetchall()
+        return self.conn.execute(
+            "SELECT * FROM groups WHERE group_num = ? ORDER BY chat_name", (group_num,)
+        ).fetchall()
 
     def get_group_number_stats(self) -> dict[int, int]:
         stats = {index: 0 for index in range(10)}
-        rows = self.conn.execute("SELECT group_num, COUNT(*) AS cnt FROM groups WHERE group_num IS NOT NULL GROUP BY group_num").fetchall()
+        rows = self.conn.execute(
+            "SELECT group_num, COUNT(*) AS cnt FROM groups WHERE group_num IS NOT NULL GROUP BY group_num"
+        ).fetchall()
         for row in rows:
             stats[int(row["group_num"])] = int(row["cnt"])
         return stats
@@ -352,14 +436,20 @@ class _BookkeepingStoreBase:
         return self.get_all_groups()
 
     def get_group_count(self) -> int:
-        row = self.conn.execute("SELECT COUNT(DISTINCT group_key) AS cnt FROM transactions WHERE deleted = 0").fetchone()
+        row = self.conn.execute(
+            "SELECT COUNT(DISTINCT group_key) AS cnt FROM transactions WHERE deleted = 0"
+        ).fetchone()
         return int(row["cnt"])
 
     def get_total_transaction_count(self) -> int:
-        row = self.conn.execute("SELECT COUNT(*) AS cnt FROM transactions WHERE deleted = 0").fetchone()
+        row = self.conn.execute(
+            "SELECT COUNT(*) AS cnt FROM transactions WHERE deleted = 0"
+        ).fetchone()
         return int(row["cnt"])
 
-    def add_to_whitelist(self, user_key: str, added_by: str, note: str | None = None) -> None:
+    def add_to_whitelist(
+        self, user_key: str, added_by: str, note: str | None = None
+    ) -> None:
         self.conn.execute(
             """
             INSERT INTO whitelist (user_key, added_by, note)
@@ -376,7 +466,9 @@ class _BookkeepingStoreBase:
         return cur.rowcount > 0
 
     def is_whitelisted(self, user_key: str) -> bool:
-        row = self.conn.execute("SELECT 1 FROM whitelist WHERE user_key = ?", (user_key,)).fetchone()
+        row = self.conn.execute(
+            "SELECT 1 FROM whitelist WHERE user_key = ?", (user_key,)
+        ).fetchone()
         return row is not None
 
     def get_whitelist(self) -> list[DBRow]:
@@ -399,19 +491,29 @@ class _BookkeepingStoreBase:
         return cur.rowcount > 0
 
     def is_admin(self, user_key: str) -> bool:
-        row = self.conn.execute("SELECT 1 FROM admins WHERE user_key = ?", (user_key,)).fetchone()
+        row = self.conn.execute(
+            "SELECT 1 FROM admins WHERE user_key = ?", (user_key,)
+        ).fetchone()
         return row is not None
 
     def get_admins(self) -> list[DBRow]:
         return self.conn.execute("SELECT * FROM admins ORDER BY added_at").fetchall()
 
-    def bind_identity(self, *, platform: str, chat_id: str, observed_id: str, observed_name: str, canonical_id: str) -> None:
+    def bind_identity(
+        self,
+        *,
+        platform: str,
+        chat_id: str,
+        observed_id: str,
+        observed_name: str,
+        canonical_id: str,
+    ) -> None:
         keys = []
         for value in (observed_id, observed_name):
-            value = str(value or '').strip()
+            value = str(value or "").strip()
             if value and value not in keys:
                 keys.append(value)
-        scopes = [str(chat_id or '').strip(), '*']
+        scopes = [str(chat_id or "").strip(), "*"]
         scopes = [scope for scope in scopes if scope]
         for scope in scopes:
             for key in keys:
@@ -428,11 +530,13 @@ class _BookkeepingStoreBase:
                 )
         self.conn.commit()
 
-    def resolve_identity(self, *, platform: str, chat_id: str, observed_id: str, observed_name: str) -> str:
-        scopes = [str(chat_id or '').strip(), '*']
+    def resolve_identity(
+        self, *, platform: str, chat_id: str, observed_id: str, observed_name: str
+    ) -> str:
+        scopes = [str(chat_id or "").strip(), "*"]
         scopes = [scope for scope in scopes if scope]
         for key in (observed_id, observed_name):
-            key = str(key or '').strip()
+            key = str(key or "").strip()
             if not key:
                 continue
             for scope in scopes:
@@ -442,31 +546,71 @@ class _BookkeepingStoreBase:
                 ).fetchone()
                 if row is not None and row["canonical_id"]:
                     return str(row["canonical_id"])
-        return str(observed_id or observed_name or '')
+        return str(observed_id or observed_name or "")
 
     def set_ngn_rate(self, rate: str) -> None:
-        self.conn.execute("UPDATE settings SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE key = 'ngn_rate'", (rate,))
+        self.conn.execute(
+            "UPDATE settings SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE key = 'ngn_rate'",
+            (rate,),
+        )
         self.conn.commit()
 
     def get_ngn_rate(self) -> float | None:
-        row = self.conn.execute("SELECT value FROM settings WHERE key = 'ngn_rate'").fetchone()
+        row = self.conn.execute(
+            "SELECT value FROM settings WHERE key = 'ngn_rate'"
+        ).fetchone()
         if row is None or not row["value"]:
             return None
         return float(row["value"])
 
     def export_group_csv(self, group_key: str, export_dir: str | Path) -> Path | None:
-        rows = self.conn.execute("SELECT * FROM transactions WHERE group_key = ? AND deleted = 0 ORDER BY id ASC", (group_key,)).fetchall()
+        rows = self.conn.execute(
+            "SELECT * FROM transactions WHERE group_key = ? AND deleted = 0 ORDER BY id ASC",
+            (group_key,),
+        ).fetchall()
         if not rows:
             return None
         export_dir = Path(export_dir)
         export_dir.mkdir(parents=True, exist_ok=True)
-        safe_name = "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in group_key)
+        safe_name = "".join(
+            ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in group_key
+        )
         path = export_dir / f"{safe_name}.csv"
         with path.open("w", newline="", encoding="utf-8-sig") as handle:
             writer = csv.writer(handle)
-            writer.writerow(["id", "platform", "group_key", "chat_name", "sender_name", "sign", "amount", "category", "rate", "rmb_value", "raw", "created_at"])
+            writer.writerow(
+                [
+                    "id",
+                    "platform",
+                    "group_key",
+                    "chat_name",
+                    "sender_name",
+                    "sign",
+                    "amount",
+                    "category",
+                    "rate",
+                    "rmb_value",
+                    "raw",
+                    "created_at",
+                ]
+            )
             for row in rows:
-                writer.writerow([row["id"], row["platform"], row["group_key"], row["chat_name"], row["sender_name"], "+" if row["input_sign"] > 0 else "-", row["amount"], row["category"], row["rate"] or "", row["rmb_value"], row["raw"], row["created_at"]])
+                writer.writerow(
+                    [
+                        row["id"],
+                        row["platform"],
+                        row["group_key"],
+                        row["chat_name"],
+                        row["sender_name"],
+                        "+" if row["input_sign"] > 0 else "-",
+                        row["amount"],
+                        row["category"],
+                        row["rate"] or "",
+                        row["rmb_value"],
+                        row["raw"],
+                        row["created_at"],
+                    ]
+                )
         return path
 
     def add_manual_adjustment(
@@ -508,7 +652,9 @@ class _BookkeepingStoreBase:
             (period_id,),
         ).fetchall()
 
-    def get_manual_adjustment_total(self, group_key: str, up_to_period_id: int | None = None) -> float:
+    def get_manual_adjustment_total(
+        self, group_key: str, up_to_period_id: int | None = None
+    ) -> float:
         if up_to_period_id is None:
             row = self.conn.execute(
                 "SELECT COALESCE(SUM(closing_delta), 0) AS total FROM manual_adjustments WHERE group_key = ?",
@@ -566,8 +712,12 @@ class _BookkeepingStoreBase:
             params,
         ).fetchall()
 
-    def list_finance_adjustment_entries_by_transaction_ids(self, transaction_ids: list[int]) -> list[DBRow]:
-        normalized_ids = sorted({int(item) for item in transaction_ids if int(item) > 0})
+    def list_finance_adjustment_entries_by_transaction_ids(
+        self, transaction_ids: list[int]
+    ) -> list[DBRow]:
+        normalized_ids = sorted(
+            {int(item) for item in transaction_ids if int(item) > 0}
+        )
         if not normalized_ids:
             return []
         placeholders = ",".join("?" for _ in normalized_ids)
@@ -623,7 +773,15 @@ class _BookkeepingStoreBase:
             ) VALUES (?, ?, ?, ?, ?, ?, ?)
             RETURNING id
             """,
-            (start_at, end_at, closed_at, closed_by, note, has_adjustment, snapshot_version),
+            (
+                start_at,
+                end_at,
+                closed_at,
+                closed_by,
+                note,
+                has_adjustment,
+                snapshot_version,
+            ),
         )
         row = cur.fetchone()
         if row is not None:
@@ -709,7 +867,9 @@ class _BookkeepingStoreBase:
         ).fetchone()
         return float(row["total"] or 0)
 
-    def list_group_transactions_between(self, group_key: str, start_at: str, end_at: str) -> list[DBRow]:
+    def list_group_transactions_between(
+        self, group_key: str, start_at: str, end_at: str
+    ) -> list[DBRow]:
         return self.conn.execute(
             """
             SELECT *
@@ -753,7 +913,9 @@ class _BookkeepingStoreBase:
             (period_id,),
         ).fetchall()
 
-    def list_current_window_transactions(self, start_after: str | None = None) -> list[DBRow]:
+    def list_current_window_transactions(
+        self, start_after: str | None = None
+    ) -> list[DBRow]:
         if start_after is None:
             return self.conn.execute(
                 """
@@ -808,7 +970,9 @@ class _BookkeepingStoreBase:
             (start_after,),
         ).fetchall()
 
-    def list_transactions_in_date_range(self, start_at: str, end_at: str) -> list[DBRow]:
+    def list_transactions_in_date_range(
+        self, start_at: str, end_at: str
+    ) -> list[DBRow]:
         return self.conn.execute(
             """
             SELECT
@@ -878,7 +1042,9 @@ class _BookkeepingStoreBase:
         ).fetchall()
 
     def replace_period_card_stats(self, period_id: int, rows: list[dict]) -> None:
-        self.conn.execute("DELETE FROM period_card_stats WHERE period_id = ?", (period_id,))
+        self.conn.execute(
+            "DELETE FROM period_card_stats WHERE period_id = ?", (period_id,)
+        )
         for row in rows:
             self.conn.execute(
                 """
@@ -912,7 +1078,9 @@ class _BookkeepingStoreBase:
             (period_id,),
         ).fetchall()
 
-    def save_group_combination(self, *, name: str, group_numbers: list[int], note: str, created_by: str) -> int:
+    def save_group_combination(
+        self, *, name: str, group_numbers: list[int], note: str, created_by: str
+    ) -> int:
         cur = self.conn.execute(
             """
             INSERT INTO group_combinations (name, note, created_by, updated_at)
@@ -926,9 +1094,14 @@ class _BookkeepingStoreBase:
         if cur.lastrowid:
             combination_id = int(cur.lastrowid)
         else:
-            row = self.conn.execute("SELECT id FROM group_combinations WHERE name = ?", (name,)).fetchone()
+            row = self.conn.execute(
+                "SELECT id FROM group_combinations WHERE name = ?", (name,)
+            ).fetchone()
             combination_id = int(row["id"])
-        self.conn.execute("DELETE FROM group_combination_items WHERE combination_id = ?", (combination_id,))
+        self.conn.execute(
+            "DELETE FROM group_combination_items WHERE combination_id = ?",
+            (combination_id,),
+        )
         for group_num in sorted(set(group_numbers)):
             self.conn.execute(
                 "INSERT INTO group_combination_items (combination_id, group_num) VALUES (?, ?)",
@@ -955,7 +1128,21 @@ class _BookkeepingStoreBase:
             """
         ).fetchall()
 
-    def create_reminder(self, *, platform: str, chat_id: str, sender_id: str, message: str, amount: float, category: str, rate: float | None, rmb_value: float, ngn_value: float | None, duration_minutes: int, remind_at: str) -> int:
+    def create_reminder(
+        self,
+        *,
+        platform: str,
+        chat_id: str,
+        sender_id: str,
+        message: str,
+        amount: float,
+        category: str,
+        rate: float | None,
+        rmb_value: float,
+        ngn_value: float | None,
+        duration_minutes: int,
+        remind_at: str,
+    ) -> int:
         cur = self.conn.execute(
             """
             INSERT INTO reminders (
@@ -963,13 +1150,28 @@ class _BookkeepingStoreBase:
               rmb_value, ngn_value, duration_minutes, remind_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (platform, chat_id, sender_id, message, amount, category, rate, rmb_value, ngn_value, duration_minutes, remind_at),
+            (
+                platform,
+                chat_id,
+                sender_id,
+                message,
+                amount,
+                category,
+                rate,
+                rmb_value,
+                ngn_value,
+                duration_minutes,
+                remind_at,
+            ),
         )
         self.conn.commit()
         return int(cur.lastrowid)
 
     def get_due_reminders(self, now_text: str) -> list[ReminderPayload]:
-        rows = self.conn.execute("SELECT * FROM reminders WHERE sent = 0 AND remind_at <= ? ORDER BY id ASC", (now_text,)).fetchall()
+        rows = self.conn.execute(
+            "SELECT * FROM reminders WHERE sent = 0 AND remind_at <= ? ORDER BY id ASC",
+            (now_text,),
+        ).fetchall()
         return [self._reminder_from_row(row) for row in rows]
 
     def mark_reminder_sent(self, reminder_id: int) -> None:
@@ -1056,7 +1258,9 @@ class BookkeepingDB(_BookkeepingStoreBase):
         try:
             import psycopg
         except ImportError as exc:
-            raise RuntimeError("PostgreSQL backend requires psycopg to be installed") from exc
+            raise RuntimeError(
+                "PostgreSQL backend requires psycopg to be installed"
+            ) from exc
 
         dsn = require_postgres_dsn(db_path, context="Bookkeeping database")
         self.db_path = dsn
@@ -1150,7 +1354,9 @@ class BookkeepingDB(_BookkeepingStoreBase):
             )
         # Keep future period snapshots/card stats tied to a real period row.
         # Use NOT VALID so existing legacy rows do not block startup migration.
-        if not self._constraint_exists("period_group_snapshots", "fk_period_group_snapshots_period_id"):
+        if not self._constraint_exists(
+            "period_group_snapshots", "fk_period_group_snapshots_period_id"
+        ):
             self.conn.execute(
                 """
                 ALTER TABLE period_group_snapshots
@@ -1159,7 +1365,9 @@ class BookkeepingDB(_BookkeepingStoreBase):
                 NOT VALID
                 """
             )
-        if not self._constraint_exists("period_card_stats", "fk_period_card_stats_period_id"):
+        if not self._constraint_exists(
+            "period_card_stats", "fk_period_card_stats_period_id"
+        ):
             self.conn.execute(
                 """
                 ALTER TABLE period_card_stats
@@ -1332,7 +1540,14 @@ class BookkeepingDB(_BookkeepingStoreBase):
                 "created_by",
                 "created_at",
             },
-            "group_combinations": {"id", "name", "note", "created_by", "created_at", "updated_at"},
+            "group_combinations": {
+                "id",
+                "name",
+                "note",
+                "created_by",
+                "created_at",
+                "updated_at",
+            },
             "group_combination_items": {"combination_id", "group_num"},
             "transaction_edit_logs": {
                 "id",
@@ -1400,7 +1615,9 @@ class BookkeepingDB(_BookkeepingStoreBase):
                 continue
             missing_columns = sorted(expected_columns - actual_columns)
             if missing_columns:
-                mismatches.append(f"missing columns in {table_name}: {', '.join(missing_columns)}")
+                mismatches.append(
+                    f"missing columns in {table_name}: {', '.join(missing_columns)}"
+                )
         if mismatches:
             raise RuntimeError(
                 "PostgreSQL schema mismatch. Apply the current postgres_schema.sql before starting the runtime: "
@@ -1434,7 +1651,9 @@ class BookkeepingDB(_BookkeepingStoreBase):
         settled_at: str | None = None,
         ngn_rate_override: float | None = None,
     ) -> int:
-        ngn_rate = ngn_rate_override if ngn_rate_override is not None else self.get_ngn_rate()
+        ngn_rate = (
+            ngn_rate_override if ngn_rate_override is not None else self.get_ngn_rate()
+        )
         cur = self.conn.execute(
             """
             INSERT INTO transactions (
@@ -1520,7 +1739,15 @@ class BookkeepingDB(_BookkeepingStoreBase):
                 parse_version = 'web-edit'
             WHERE id = ?
             """,
-            (sender_name, amount, category, rate, rmb_value, usd_amount, transaction_id),
+            (
+                sender_name,
+                amount,
+                category,
+                rate,
+                rmb_value,
+                usd_amount,
+                transaction_id,
+            ),
         )
         if commit:
             self.conn.commit()
@@ -1550,7 +1777,9 @@ class BookkeepingDB(_BookkeepingStoreBase):
             self.conn.commit()
         return int(row["id"])
 
-    def enqueue_outbound_actions(self, actions: list[dict], *, commit: bool = True) -> int:
+    def enqueue_outbound_actions(
+        self, actions: list[dict], *, commit: bool = True
+    ) -> int:
         inserted = 0
         for action in actions:
             action_type = str(action.get("action_type") or "").strip()
@@ -1626,7 +1855,9 @@ class BookkeepingDB(_BookkeepingStoreBase):
             self.conn.rollback()
             return []
 
-    def acknowledge_outbound_actions(self, results: list[dict], *, commit: bool = True) -> int:
+    def acknowledge_outbound_actions(
+        self, results: list[dict], *, commit: bool = True
+    ) -> int:
         updated = 0
         for item in results:
             try:
@@ -1661,7 +1892,9 @@ class BookkeepingDB(_BookkeepingStoreBase):
             self.conn.commit()
         return updated
 
-    def add_to_whitelist(self, user_key: str, added_by: str, note: str | None = None) -> None:
+    def add_to_whitelist(
+        self, user_key: str, added_by: str, note: str | None = None
+    ) -> None:
         self.conn.execute(
             """
             INSERT INTO whitelist (user_key, added_by, note)
@@ -1780,7 +2013,19 @@ class BookkeepingDB(_BookkeepingStoreBase):
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             RETURNING id
             """,
-            (platform, chat_id, sender_id, message, amount, category, rate, rmb_value, ngn_value, duration_minutes, remind_at),
+            (
+                platform,
+                chat_id,
+                sender_id,
+                message,
+                amount,
+                category,
+                rate,
+                rmb_value,
+                ngn_value,
+                duration_minutes,
+                remind_at,
+            ),
         )
         row = cur.fetchone()
         self.conn.commit()

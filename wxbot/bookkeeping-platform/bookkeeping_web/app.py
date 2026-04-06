@@ -74,33 +74,53 @@ def create_app(
         if path == "/api/role-mapping" and method == "GET":
             return _with_db(db_file, start_response, _handle_role_mapping, environ)
         if path == "/api/role-mapping/group-num" and method == "POST":
-            return _with_db(db_file, start_response, _handle_role_mapping_group_num, environ)
+            return _with_db(
+                db_file, start_response, _handle_role_mapping_group_num, environ
+            )
         if path == "/api/history" and method == "GET":
             return _with_db(db_file, start_response, _handle_history, environ)
         if path == "/api/reconciliation/ledger" and method == "GET":
-            return _with_db(db_file, start_response, _handle_reconciliation_ledger, environ)
+            return _with_db(
+                db_file, start_response, _handle_reconciliation_ledger, environ
+            )
         if path == "/api/reconciliation/export" and method == "GET":
-            return _with_db(db_file, start_response, _handle_reconciliation_export, environ)
+            return _with_db(
+                db_file, start_response, _handle_reconciliation_export, environ
+            )
         if path == "/api/reconciliation/adjustments" and method == "POST":
-            return _with_db(db_file, start_response, _handle_reconciliation_adjustments, environ)
+            return _with_db(
+                db_file, start_response, _handle_reconciliation_adjustments, environ
+            )
         if path == "/api/accounting-periods" and method == "GET":
             return _with_db(db_file, start_response, _handle_accounting_periods)
         if path == "/api/accounting-periods/close" and method == "POST":
-            return _with_db(db_file, start_response, _handle_accounting_period_close, environ)
+            return _with_db(
+                db_file, start_response, _handle_accounting_period_close, environ
+            )
         if path == "/api/accounting-periods/settle-all" and method == "POST":
-            return _handle_accounting_period_settle_all(get_runtime(), start_response, environ)
+            return _handle_accounting_period_settle_all(
+                get_runtime(), start_response, environ
+            )
         if path == "/api/group-broadcasts" and method == "POST":
             return _handle_group_broadcast(get_runtime(), start_response, environ)
         if path == "/api/adjustments" and method == "POST":
             return _with_db(db_file, start_response, _handle_adjustments, environ)
         if path == "/api/transactions/update" and method == "POST":
-            return _with_db(db_file, start_response, _handle_transaction_update, environ)
+            return _with_db(
+                db_file, start_response, _handle_transaction_update, environ
+            )
         if path == "/api/group-combinations":
-            return _with_db(db_file, start_response, _handle_group_combinations, environ)
+            return _with_db(
+                db_file, start_response, _handle_group_combinations, environ
+            )
         if path == "/api/core/messages" and method == "POST":
             if not _is_authorized(environ, core_token):
                 return _respond_json(start_response, 401, {"error": "Unauthorized"})
             return _handle_core_messages(get_runtime(), start_response, environ)
+        if path == "/api/incoming-messages" and method == "GET":
+            if not _is_authorized(environ, core_token):
+                return _respond_json(start_response, 401, {"error": "Unauthorized"})
+            return _with_db(db_file, start_response, _handle_incoming_messages, environ)
         if path == "/api/core/actions" and method == "POST":
             if not _is_authorized(environ, core_token):
                 return _respond_json(start_response, 401, {"error": "Unauthorized"})
@@ -145,7 +165,9 @@ def _handle_workbench(db: BookkeepingDB, start_response, environ):
             period_id = int(raw_period_id) if raw_period_id else None
     except ValueError as exc:
         return _respond_json(start_response, 400, {"error": f"Bad query: {exc}"})
-    payload = AnalyticsService(db).build_period_workbench(period_id=period_id, use_live_period=use_live_period)
+    payload = AnalyticsService(db).build_period_workbench(
+        period_id=period_id, use_live_period=use_live_period
+    )
     return _respond_json(start_response, 200, payload)
 
 
@@ -164,7 +186,9 @@ def _handle_role_mapping_group_num(db: BookkeepingDB, start_response, environ):
 
     group_row = db.get_group_by_key(group_key)
     if group_row is None:
-        return _respond_json(start_response, 404, {"error": f"group not found: {group_key}"})
+        return _respond_json(
+            start_response, 404, {"error": f"group not found: {group_key}"}
+        )
 
     ok = db.set_group(
         platform=str(group_row["platform"] or ""),
@@ -174,13 +198,19 @@ def _handle_role_mapping_group_num(db: BookkeepingDB, start_response, environ):
         group_num=group_num,
     )
     if not ok:
-        return _respond_json(start_response, 400, {"error": "group_num must be between 0 and 9"})
-    return _respond_json(start_response, 200, {"group_key": group_key, "group_num": group_num})
+        return _respond_json(
+            start_response, 400, {"error": "group_num must be between 0 and 9"}
+        )
+    return _respond_json(
+        start_response, 200, {"group_key": group_key, "group_num": group_num}
+    )
 
 
 def _handle_history(db: BookkeepingDB, start_response, environ):
     params = _read_query_params(environ)
-    start_date_value = params.get("start_date") or date.today().replace(day=1).isoformat()
+    start_date_value = (
+        params.get("start_date") or date.today().replace(day=1).isoformat()
+    )
     end_date_value = params.get("end_date") or date.today().isoformat()
     payload = AnalyticsService(db).build_history_analysis(
         start_date=start_date_value,
@@ -269,7 +299,9 @@ def _handle_accounting_period_close(db: BookkeepingDB, start_response, environ):
     return _respond_json(start_response, 200, {"period_id": period_id})
 
 
-def _handle_accounting_period_settle_all(runtime: UnifiedBookkeepingRuntime, start_response, environ):
+def _handle_accounting_period_settle_all(
+    runtime: UnifiedBookkeepingRuntime, start_response, environ
+):
     try:
         _reset_runtime_db_session(runtime)
         payload = _read_json_body(environ)
@@ -290,7 +322,9 @@ def _handle_accounting_period_settle_all(runtime: UnifiedBookkeepingRuntime, sta
                     "message": "当前没有可结账的实时交易",
                 },
             )
-        queued_action_count = runtime.service.db.enqueue_outbound_actions(result.get("receipt_actions", []))
+        queued_action_count = runtime.service.db.enqueue_outbound_actions(
+            result.get("receipt_actions", [])
+        )
     except (KeyError, TypeError, ValueError) as exc:
         return _respond_json(start_response, 400, {"error": f"Bad payload: {exc}"})
     return _respond_json(
@@ -305,7 +339,9 @@ def _handle_accounting_period_settle_all(runtime: UnifiedBookkeepingRuntime, sta
     )
 
 
-def _handle_group_broadcast(runtime: UnifiedBookkeepingRuntime, start_response, environ):
+def _handle_group_broadcast(
+    runtime: UnifiedBookkeepingRuntime, start_response, environ
+):
     try:
         _reset_runtime_db_session(runtime)
         payload = _read_json_body(environ)
@@ -322,7 +358,9 @@ def _handle_group_broadcast(runtime: UnifiedBookkeepingRuntime, start_response, 
         _resolve_runtime_manager_id(runtime)
         groups = runtime.service.db.get_groups_by_num(group_num)
         if not groups:
-            return _respond_json(start_response, 400, {"error": f"Group {group_num} has no groups"})
+            return _respond_json(
+                start_response, 400, {"error": f"Group {group_num} has no groups"}
+            )
 
         actions = [
             {
@@ -334,7 +372,11 @@ def _handle_group_broadcast(runtime: UnifiedBookkeepingRuntime, start_response, 
             if str(group["chat_id"] or "").strip()
         ]
         if not actions:
-            return _respond_json(start_response, 400, {"error": f"Group {group_num} has no deliverable chats"})
+            return _respond_json(
+                start_response,
+                400,
+                {"error": f"Group {group_num} has no deliverable chats"},
+            )
 
         queued_action_count = runtime.service.db.enqueue_outbound_actions(actions)
     except (KeyError, TypeError, ValueError) as exc:
@@ -356,7 +398,9 @@ def _handle_adjustments(db: BookkeepingDB, start_response, environ):
         period_id = int(payload["period_id"])
         if period_id <= 0:
             raise ValueError("period_id must be a positive settlement period id")
-        period_exists = any(int(row["id"]) == period_id for row in db.list_accounting_periods())
+        period_exists = any(
+            int(row["id"]) == period_id for row in db.list_accounting_periods()
+        )
         if not period_exists:
             raise ValueError(f"period_id not found: {period_id}")
         group_key = str(payload["group_key"])
@@ -398,21 +442,30 @@ def _handle_reconciliation_adjustments(db: BookkeepingDB, start_response, enviro
 
         period_id = _parse_optional_int(payload.get("period_id"))
         if period_id is not None:
-            period_exists = any(int(row["id"]) == period_id for row in db.list_accounting_periods())
+            period_exists = any(
+                int(row["id"]) == period_id for row in db.list_accounting_periods()
+            )
             if not period_exists:
                 raise ValueError(f"period_id not found: {period_id}")
 
-        linked_transaction_id = _parse_optional_int(payload.get("linked_transaction_id"))
+        linked_transaction_id = _parse_optional_int(
+            payload.get("linked_transaction_id")
+        )
         if linked_transaction_id is not None:
             transaction = db.get_transaction_by_id(linked_transaction_id)
             if transaction is None:
-                raise ValueError(f"linked_transaction_id not found: {linked_transaction_id}")
+                raise ValueError(
+                    f"linked_transaction_id not found: {linked_transaction_id}"
+                )
 
         adjustment_id = db.add_finance_adjustment_entry(
             period_id=period_id,
             linked_transaction_id=linked_transaction_id,
             group_key=group_key,
-            business_role=str(payload.get("business_role") or group_row.get("business_role") or "").strip() or None,
+            business_role=str(
+                payload.get("business_role") or group_row.get("business_role") or ""
+            ).strip()
+            or None,
             card_type=card_type,
             usd_amount=float(payload.get("usd_amount", 0) or 0),
             rate=None if payload.get("rate") in {None, ""} else float(payload["rate"]),
@@ -489,8 +542,12 @@ def _handle_transaction_update(db: BookkeepingDB, start_response, environ):
                 transaction_id=transaction_id,
                 edited_by=edited_by,
                 note=str(payload.get("note") or ""),
-                before_json=json.dumps(before_payload, ensure_ascii=False, sort_keys=True),
-                after_json=json.dumps(after_payload, ensure_ascii=False, sort_keys=True),
+                before_json=json.dumps(
+                    before_payload, ensure_ascii=False, sort_keys=True
+                ),
+                after_json=json.dumps(
+                    after_payload, ensure_ascii=False, sort_keys=True
+                ),
                 commit=False,
             )
             db.conn.commit()
@@ -534,7 +591,9 @@ def _handle_core_messages(runtime: UnifiedBookkeepingRuntime, start_response, en
         if not isinstance(payload, dict):
             raise ValueError("payload must be a JSON object")
         _validate_runtime_message_payload(payload)
-        actions = [core_action_to_dict(action) for action in runtime.process_envelope(payload)]
+        actions = [
+            core_action_to_dict(action) for action in runtime.process_envelope(payload)
+        ]
     except (TypeError, ValueError, KeyError) as exc:
         logger.warning(
             "Rejected core runtime payload: %s | payload=%s",
@@ -545,10 +604,68 @@ def _handle_core_messages(runtime: UnifiedBookkeepingRuntime, start_response, en
     return _respond_json(start_response, 200, {"actions": actions})
 
 
+def _handle_incoming_messages(db: BookkeepingDB, start_response, environ):
+    params = _read_query_params(environ)
+    try:
+        limit = int(params.get("limit", "50")) if params.get("limit") else 50
+        offset = int(params.get("offset", "0")) if params.get("offset") else 0
+        platform = params.get("platform") or None
+        chat_id = params.get("chat_id") or None
+        message_id = params.get("message_id") or None
+        if limit < 1 or limit > 500:
+            return _respond_json(start_response, 400, {"error": "limit must be 1-500"})
+        if offset < 0:
+            return _respond_json(start_response, 400, {"error": "offset must be >= 0"})
+    except ValueError as exc:
+        return _respond_json(start_response, 400, {"error": f"Bad query: {exc}"})
+    rows, total = db.query_incoming_messages(
+        platform=platform,
+        chat_id=chat_id,
+        message_id=message_id,
+        limit=limit,
+        offset=offset,
+    )
+    messages = [_serialize_incoming_message_row(row) for row in rows]
+    return _respond_json(
+        start_response,
+        200,
+        {
+            "messages": messages,
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+        },
+    )
+
+
+def _serialize_incoming_message_row(row) -> dict[str, object]:
+    return {
+        "id": int(row["id"]),
+        "platform": str(row["platform"] or ""),
+        "chat_id": str(row["chat_id"] or ""),
+        "chat_name": str(row["chat_name"] or ""),
+        "message_id": str(row["message_id"] or ""),
+        "sender_id": str(row["sender_id"] or ""),
+        "sender_name": str(row["sender_name"] or ""),
+        "sender_kind": str(row["sender_kind"] or ""),
+        "content_type": str(row["content_type"] or ""),
+        "text": str(row["text"] or ""),
+        "from_self": bool(row["from_self"]),
+        "received_at": str(row["received_at"] or ""),
+        "raw_json": str(row["raw_json"] or ""),
+        "created_at": str(row["created_at"] or ""),
+    }
+
+
 def _handle_core_actions(runtime: UnifiedBookkeepingRuntime, start_response):
     _reset_runtime_db_session(runtime)
-    db_actions = [_serialize_outbound_action_row(action) for action in runtime.service.db.claim_outbound_actions()]
-    runtime_actions = [core_action_to_dict(action) for action in runtime.drain_outbound_actions()]
+    db_actions = [
+        _serialize_outbound_action_row(action)
+        for action in runtime.service.db.claim_outbound_actions()
+    ]
+    runtime_actions = [
+        core_action_to_dict(action) for action in runtime.drain_outbound_actions()
+    ]
     actions = db_actions + runtime_actions
     return _respond_json(
         start_response,
@@ -558,7 +675,9 @@ def _handle_core_actions(runtime: UnifiedBookkeepingRuntime, start_response):
     )
 
 
-def _handle_core_actions_ack(runtime: UnifiedBookkeepingRuntime, start_response, environ):
+def _handle_core_actions_ack(
+    runtime: UnifiedBookkeepingRuntime, start_response, environ
+):
     try:
         _reset_runtime_db_session(runtime)
         payload = _read_json_body(environ)
@@ -585,7 +704,9 @@ def _reset_runtime_db_session(runtime: UnifiedBookkeepingRuntime) -> None:
 
 def _resolve_runtime_manager_id(runtime: UnifiedBookkeepingRuntime) -> str:
     commands = runtime.service.commands
-    bootstrap_ids = sorted(str(user).strip() for user in commands.bootstrap_masters if str(user).strip())
+    bootstrap_ids = sorted(
+        str(user).strip() for user in commands.bootstrap_masters if str(user).strip()
+    )
     if bootstrap_ids:
         return bootstrap_ids[0]
     for row in runtime.service.db.get_admins():
@@ -617,7 +738,9 @@ def _serialize_outbound_action_row(row) -> dict[str, object]:
 def _read_query_params(environ) -> dict[str, str]:
     return {
         key: values[-1]
-        for key, values in parse_qs(str(environ.get("QUERY_STRING") or ""), keep_blank_values=True).items()
+        for key, values in parse_qs(
+            str(environ.get("QUERY_STRING") or ""), keep_blank_values=True
+        ).items()
     }
 
 
@@ -656,7 +779,7 @@ def _respond_csv(start_response, text: str, *, filename: str):
         "200 OK",
         [
             ("Content-Type", "text/csv; charset=utf-8"),
-            ("Content-Disposition", f"attachment; filename=\"{filename}\""),
+            ("Content-Disposition", f'attachment; filename="{filename}"'),
             ("Content-Length", str(len(body))),
         ],
     )
