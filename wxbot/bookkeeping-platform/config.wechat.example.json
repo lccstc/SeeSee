@@ -1,8 +1,10 @@
 {
   "listen_chats": [
-    "filehelper"
+    "G-EXAMPLE-CHAT"
   ],
-  "master_users": [],
+  "master_users": [
+    "wxid_example_admin"
+  ],
   "poll_interval_seconds": 1.0,
   "log_level": "INFO",
   "language": "cn",
@@ -11,6 +13,6 @@
   "core_api": {
     "endpoint": "http://127.0.0.1:8765",
     "token": "REPLACE_WITH_CORE_TOKEN",
-    "request_timeout_seconds": 5.0
+    "request_timeout_seconds": 25.0
   }
 }

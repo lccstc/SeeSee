@@ -3,6 +3,8 @@
 from collections import deque
 import logging
 import os
+import socket
+import ssl
 import sys
 import time
 import urllib.error
@@ -10,6 +12,18 @@ import urllib.error
 from .client import WeChatPlatformAPI
 from .config import load_config, save_config
 from .core_api import WeChatCoreApiClient
+
+
+def _is_transient_network_error(exc: BaseException) -> bool:
+    return isinstance(
+        exc,
+        (
+            urllib.error.URLError,
+            TimeoutError,
+            socket.timeout,
+            ssl.SSLError,
+        ),
+    )
 
 
 def _execute_actions(platform_api: WeChatPlatformAPI, actions) -> list[dict[str, object]]:
@@ -81,6 +95,7 @@ def main() -> int:
 
         pending_messages: deque = deque()
         last_network_error_log_at = 0.0
+        last_outbound_network_error_log_at = 0.0
 
         while True:
             for message in platform_api.poll_messages():
@@ -93,19 +108,19 @@ def main() -> int:
                     results = _execute_actions(platform_api, actions)
                     _acknowledge_results(remote_core, results, logger, source="reply")
                     pending_messages.popleft()
-                except urllib.error.URLError as exc:
-                    now = time.time()
-                    if now - last_network_error_log_at >= 5:
-                        logger.warning(
-                            "core connection unstable, queued=%s, chat=%s, message_id=%s, err=%s",
-                            len(pending_messages),
-                            message.chat_id,
-                            message.message_id,
-                            exc,
-                        )
-                        last_network_error_log_at = now
-                    break
-                except Exception:
+                except Exception as exc:
+                    if _is_transient_network_error(exc):
+                        now = time.time()
+                        if now - last_network_error_log_at >= 5:
+                            logger.warning(
+                                "core connection unstable, queued=%s, chat=%s, message_id=%s, err=%s",
+                                len(pending_messages),
+                                message.chat_id,
+                                message.message_id,
+                                exc,
+                            )
+                            last_network_error_log_at = now
+                        break
                     logger.warning(
                         "send_envelope failed: chat=%s message_id=%s",
                         message.chat_id,
@@ -115,8 +130,18 @@ def main() -> int:
                     pending_messages.popleft()
             try:
                 _flush_outbound_actions(platform_api, remote_core, logger)
-            except Exception:
-                logger.warning("flush_outbound_actions failed", exc_info=True)
+            except Exception as exc:
+                if _is_transient_network_error(exc):
+                    now = time.time()
+                    if now - last_outbound_network_error_log_at >= 5:
+                        logger.warning(
+                            "outbound poll unstable: queued=%s, err=%s",
+                            len(pending_messages),
+                            exc,
+                        )
+                        last_outbound_network_error_log_at = now
+                else:
+                    logger.warning("flush_outbound_actions failed", exc_info=True)
             time.sleep(config.poll_interval_seconds)
     except KeyboardInterrupt:
         logger.info("WeChat adapter stopped by user")
