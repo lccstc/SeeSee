@@ -223,6 +223,79 @@ class _BookkeepingStoreBase:
         ).fetchall()
         return list(rows), total
 
+    def get_incoming_messages_with_transactions(
+        self,
+        *,
+        platform: str | None = None,
+        chat_id: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> tuple[list[dict], int]:
+        where_parts = []
+        params: list = []
+        if platform is not None:
+            where_parts.append("im.platform = ?")
+            params.append(platform)
+        if chat_id is not None:
+            where_parts.append("im.chat_id = ?")
+            params.append(chat_id)
+        where_clause = " AND ".join(where_parts) if where_parts else "1=1"
+
+        count_row = self.conn.execute(
+            f"SELECT COUNT(*) AS cnt FROM incoming_messages im WHERE {where_clause}",
+            params,
+        ).fetchone()
+        total = int(count_row["cnt"])
+
+        params.extend([limit, offset])
+        rows = self.conn.execute(
+            f"""
+            SELECT im.id, im.platform, im.chat_id, im.chat_name, im.message_id,
+                   im.sender_id, im.sender_name, im.sender_kind, im.content_type,
+                   im.text, im.from_self, im.received_at, im.created_at,
+                   t.id AS tx_id, t.amount AS tx_amount, t.category AS tx_category,
+                   t.input_sign AS tx_input_sign, t.created_at AS tx_created_at
+            FROM incoming_messages im
+            LEFT JOIN transactions t ON t.platform = im.platform
+                                   AND t.chat_id = im.chat_id
+                                   AND t.message_id = im.message_id
+                                   AND t.deleted = 0
+            WHERE {where_clause}
+            ORDER BY im.created_at DESC, im.id DESC
+            LIMIT ? OFFSET ?
+            """,
+            params,
+        ).fetchall()
+        results = []
+        for row in rows:
+            msg = {
+                "id": int(row["id"]),
+                "platform": str(row["platform"] or ""),
+                "chat_id": str(row["chat_id"] or ""),
+                "chat_name": str(row["chat_name"] or ""),
+                "message_id": str(row["message_id"] or ""),
+                "sender_id": str(row["sender_id"] or ""),
+                "sender_name": str(row["sender_name"] or ""),
+                "sender_kind": str(row["sender_kind"] or ""),
+                "content_type": str(row["content_type"] or ""),
+                "text": str(row["text"] or ""),
+                "from_self": bool(row["from_self"]),
+                "received_at": str(row["received_at"] or ""),
+                "created_at": str(row["created_at"] or ""),
+            }
+            if row["tx_id"] is not None:
+                msg["transaction"] = {
+                    "id": int(row["tx_id"]),
+                    "amount": str(row["tx_amount"] or ""),
+                    "category": str(row["tx_category"] or ""),
+                    "input_sign": int(row["tx_input_sign"]),
+                    "created_at": str(row["tx_created_at"] or ""),
+                }
+            else:
+                msg["transaction"] = None
+            results.append(msg)
+        return results, total
+
     def count_incoming_messages(self) -> int:
         row = self.conn.execute(
             "SELECT COUNT(*) AS cnt FROM incoming_messages"

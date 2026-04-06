@@ -121,6 +121,15 @@ def create_app(
             if not _is_authorized(environ, core_token):
                 return _respond_json(start_response, 401, {"error": "Unauthorized"})
             return _with_db(db_file, start_response, _handle_incoming_messages, environ)
+        if path == "/api/incoming-messages/with-transactions" and method == "GET":
+            if not _is_authorized(environ, core_token):
+                return _respond_json(start_response, 401, {"error": "Unauthorized"})
+            return _with_db(
+                db_file,
+                start_response,
+                _handle_incoming_messages_with_transactions,
+                environ,
+            )
         if path == "/api/core/actions" and method == "POST":
             if not _is_authorized(environ, core_token):
                 return _respond_json(start_response, 401, {"error": "Unauthorized"})
@@ -655,6 +664,39 @@ def _serialize_incoming_message_row(row) -> dict[str, object]:
         "raw_json": str(row["raw_json"] or ""),
         "created_at": str(row["created_at"] or ""),
     }
+
+
+def _handle_incoming_messages_with_transactions(
+    db: BookkeepingDB, start_response, environ
+):
+    params = _read_query_params(environ)
+    try:
+        limit = int(params.get("limit", "50")) if params.get("limit") else 50
+        offset = int(params.get("offset", "0")) if params.get("offset") else 0
+        platform = params.get("platform") or None
+        chat_id = params.get("chat_id") or None
+        if limit < 1 or limit > 500:
+            return _respond_json(start_response, 400, {"error": "limit must be 1-500"})
+        if offset < 0:
+            return _respond_json(start_response, 400, {"error": "offset must be >= 0"})
+    except ValueError as exc:
+        return _respond_json(start_response, 400, {"error": f"Bad query: {exc}"})
+    messages, total = db.get_incoming_messages_with_transactions(
+        platform=platform,
+        chat_id=chat_id,
+        limit=limit,
+        offset=offset,
+    )
+    return _respond_json(
+        start_response,
+        200,
+        {
+            "messages": messages,
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+        },
+    )
 
 
 def _handle_core_actions(runtime: UnifiedBookkeepingRuntime, start_response):

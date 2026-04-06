@@ -317,6 +317,89 @@ class WebAppTests(PostgresTestCase):
         self.assertEqual(payload["limit"], 2)
         self.assertEqual(payload["offset"], 1)
 
+    def test_incoming_messages_with_transactions_requires_auth(self) -> None:
+        status, payload = self._request(
+            "GET", "/api/incoming-messages/with-transactions"
+        )
+        self.assertEqual(status, 401)
+        self.assertEqual(payload["error"], "Unauthorized")
+
+    def test_incoming_messages_with_transactions_returns_null_when_no_transaction(
+        self,
+    ) -> None:
+        self.db.record_incoming_message(
+            platform="whatsapp",
+            group_key="whatsapp:chat-wtx-1",
+            chat_id="chat-wtx-1",
+            chat_name="Test Chat",
+            message_id="msg-wtx-no-tx",
+            is_group=False,
+            sender_id="user-1",
+            sender_name="User 1",
+            sender_kind="user",
+            content_type="text",
+            text="hello",
+            from_self=False,
+            received_at="2026-04-07T10:00:00",
+            raw_payload={},
+        )
+        status, payload = self._request(
+            "GET",
+            "/api/incoming-messages/with-transactions",
+            headers={"Authorization": "Bearer core-secret"},
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(len(payload["messages"]), 1)
+        self.assertIsNone(payload["messages"][0]["transaction"])
+
+    def test_incoming_messages_with_transactions_returns_linked_transaction(
+        self,
+    ) -> None:
+        self.db.record_incoming_message(
+            platform="whatsapp",
+            group_key="whatsapp:chat-wtx-2",
+            chat_id="chat-wtx-2",
+            chat_name="Test Chat 2",
+            message_id="msg-wtx-with-tx",
+            is_group=False,
+            sender_id="user-2",
+            sender_name="User 2",
+            sender_kind="user",
+            content_type="text",
+            text="+100rmb",
+            from_self=False,
+            received_at="2026-04-07T10:00:00",
+            raw_payload={},
+        )
+        tx_id = self.db.add_transaction(
+            platform="whatsapp",
+            group_key="whatsapp:chat-wtx-2",
+            group_num=1,
+            chat_id="chat-wtx-2",
+            chat_name="Test Chat 2",
+            sender_id="user-2",
+            sender_name="User 2",
+            message_id="msg-wtx-with-tx",
+            input_sign=1,
+            amount=100,
+            category="rmb",
+            rate=None,
+            rmb_value=100,
+            raw="+100rmb",
+        )
+        status, payload = self._request(
+            "GET",
+            "/api/incoming-messages/with-transactions",
+            headers={"Authorization": "Bearer core-secret"},
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(len(payload["messages"]), 1)
+        tx = payload["messages"][0]["transaction"]
+        self.assertIsNotNone(tx)
+        self.assertEqual(tx["id"], tx_id)
+        self.assertEqual(tx["category"], "rmb")
+        self.assertEqual(tx["input_sign"], 1)
+
     def test_runtime_endpoint_rejects_non_boolean_is_group(self) -> None:
         status, payload = self._request(
             "POST",
