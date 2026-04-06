@@ -181,6 +181,26 @@ CREATE TABLE IF NOT EXISTS ingested_events (
   ingested_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS incoming_messages (
+  id BIGSERIAL PRIMARY KEY,
+  platform TEXT NOT NULL,
+  group_key TEXT NOT NULL,
+  chat_id TEXT NOT NULL,
+  chat_name TEXT NOT NULL,
+  message_id TEXT NOT NULL,
+  is_group INTEGER NOT NULL DEFAULT 0,
+  sender_id TEXT NOT NULL,
+  sender_name TEXT NOT NULL,
+  sender_kind TEXT NOT NULL DEFAULT 'user',
+  content_type TEXT NOT NULL DEFAULT 'text',
+  text TEXT,
+  from_self INTEGER NOT NULL DEFAULT 0,
+  received_at TIMESTAMP,
+  raw_json TEXT NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (platform, chat_id, message_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_tx_group_key ON transactions(group_key, deleted);
 CREATE INDEX IF NOT EXISTS idx_tx_platform_group ON transactions(platform, group_key, deleted);
 CREATE INDEX IF NOT EXISTS idx_tx_settled ON transactions(group_key, settled, deleted);
@@ -189,3 +209,5 @@ CREATE INDEX IF NOT EXISTS idx_manual_adjustments_period ON manual_adjustments(p
 CREATE INDEX IF NOT EXISTS idx_finance_adjustments_period ON finance_adjustment_entries(period_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_finance_adjustments_group ON finance_adjustment_entries(group_key, created_at);
 CREATE INDEX IF NOT EXISTS idx_ingested_events_platform ON ingested_events(platform, occurred_at);
+CREATE INDEX IF NOT EXISTS idx_incoming_messages_group_created ON incoming_messages(group_key, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_incoming_messages_chat_received ON incoming_messages(platform, chat_id, received_at DESC);

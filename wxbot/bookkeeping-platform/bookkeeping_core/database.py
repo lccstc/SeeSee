@@ -1,6 +1,7 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import csv
+import json
 from pathlib import Path
 from typing import Any
 
@@ -117,6 +118,67 @@ class _BookkeepingStoreBase:
         )
         self.conn.commit()
         return int(cur.lastrowid)
+
+    def record_incoming_message(
+        self,
+        *,
+        platform: str,
+        group_key: str,
+        chat_id: str,
+        chat_name: str,
+        message_id: str,
+        is_group: bool,
+        sender_id: str,
+        sender_name: str,
+        sender_kind: str,
+        content_type: str,
+        text: str | None,
+        from_self: bool,
+        received_at: str | None,
+        raw_payload: dict[str, Any],
+    ) -> bool:
+        cur = self.conn.execute(
+            """
+            INSERT INTO incoming_messages (
+              platform, group_key, chat_id, chat_name, message_id,
+              is_group, sender_id, sender_name, sender_kind, content_type,
+              text, from_self, received_at, raw_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(platform, chat_id, message_id) DO NOTHING
+            """,
+            (
+                platform,
+                group_key,
+                chat_id,
+                chat_name,
+                message_id,
+                1 if is_group else 0,
+                sender_id,
+                sender_name,
+                sender_kind,
+                content_type,
+                text,
+                1 if from_self else 0,
+                received_at,
+                json.dumps(raw_payload, ensure_ascii=False, sort_keys=True),
+            ),
+        )
+        self.conn.commit()
+        return bool(cur.rowcount)
+
+    def get_incoming_message(self, *, platform: str, chat_id: str, message_id: str) -> DBRow | None:
+        return self.conn.execute(
+            """
+            SELECT *
+            FROM incoming_messages
+            WHERE platform = ? AND chat_id = ? AND message_id = ?
+            """,
+            (platform, chat_id, message_id),
+        ).fetchone()
+
+    def count_incoming_messages(self) -> int:
+        row = self.conn.execute("SELECT COUNT(*) AS cnt FROM incoming_messages").fetchone()
+        return int(row["cnt"])
 
     def undo_last(self, group_key: str) -> DBRow | None:
         row = self.conn.execute(
@@ -1044,6 +1106,41 @@ class BookkeepingDB(_BookkeepingStoreBase):
             )
             """
         )
+        self.conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS incoming_messages (
+              id BIGSERIAL PRIMARY KEY,
+              platform TEXT NOT NULL,
+              group_key TEXT NOT NULL,
+              chat_id TEXT NOT NULL,
+              chat_name TEXT NOT NULL,
+              message_id TEXT NOT NULL,
+              is_group INTEGER NOT NULL DEFAULT 0,
+              sender_id TEXT NOT NULL,
+              sender_name TEXT NOT NULL,
+              sender_kind TEXT NOT NULL DEFAULT 'user',
+              content_type TEXT NOT NULL DEFAULT 'text',
+              text TEXT,
+              from_self INTEGER NOT NULL DEFAULT 0,
+              received_at TIMESTAMP,
+              raw_json TEXT NOT NULL,
+              created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              UNIQUE (platform, chat_id, message_id)
+            )
+            """
+        )
+        self.conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_incoming_messages_group_created
+            ON incoming_messages(group_key, created_at DESC)
+            """
+        )
+        self.conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_incoming_messages_chat_received
+            ON incoming_messages(platform, chat_id, received_at DESC)
+            """
+        )
         if not self._table_has_column("outbound_actions", "claimed_at"):
             self.conn.execute(
                 """
@@ -1266,6 +1363,24 @@ class BookkeepingDB(_BookkeepingStoreBase):
                 "schema_version",
                 "occurred_at",
                 "ingested_at",
+            },
+            "incoming_messages": {
+                "id",
+                "platform",
+                "group_key",
+                "chat_id",
+                "chat_name",
+                "message_id",
+                "is_group",
+                "sender_id",
+                "sender_name",
+                "sender_kind",
+                "content_type",
+                "text",
+                "from_self",
+                "received_at",
+                "raw_json",
+                "created_at",
             },
         }
         mismatches: list[str] = []
