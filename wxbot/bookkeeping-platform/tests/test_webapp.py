@@ -400,6 +400,84 @@ class WebAppTests(PostgresTestCase):
         self.assertEqual(tx["category"], "rmb")
         self.assertEqual(tx["input_sign"], 1)
 
+    def test_parse_results_requires_auth(self) -> None:
+        status, payload = self._request("GET", "/api/parse-results")
+
+        self.assertEqual(status, 401)
+        self.assertEqual(payload["error"], "Unauthorized")
+
+    def test_parse_results_returns_empty_list(self) -> None:
+        status, payload = self._request(
+            "GET",
+            "/api/parse-results",
+            headers={"Authorization": "Bearer core-secret"},
+        )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["results"], [])
+        self.assertEqual(payload["total"], 0)
+
+    def test_parse_results_returns_stored_results(self) -> None:
+        self.db.record_parse_result(
+            platform="whatsapp",
+            chat_id="chat-1",
+            message_id="msg-1",
+            classification="transaction_like",
+            parse_status="parsed",
+            raw_text="+100rmb",
+        )
+        self.db.record_parse_result(
+            platform="whatsapp",
+            chat_id="chat-1",
+            message_id="msg-2",
+            classification="normal_chat",
+            parse_status="ignored",
+            raw_text="hello",
+        )
+
+        status, payload = self._request(
+            "GET",
+            "/api/parse-results",
+            headers={"Authorization": "Bearer core-secret"},
+        )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["total"], 2)
+        self.assertEqual(payload["results"][0]["message_id"], "msg-2")
+        self.assertEqual(payload["results"][0]["classification"], "normal_chat")
+        self.assertEqual(payload["results"][1]["message_id"], "msg-1")
+        self.assertEqual(payload["results"][1]["parse_status"], "parsed")
+
+    def test_parse_results_filters_by_classification(self) -> None:
+        self.db.record_parse_result(
+            platform="whatsapp",
+            chat_id="chat-1",
+            message_id="msg-1",
+            classification="transaction_like",
+            parse_status="parsed",
+            raw_text="+100rmb",
+        )
+        self.db.record_parse_result(
+            platform="whatsapp",
+            chat_id="chat-1",
+            message_id="msg-2",
+            classification="command",
+            parse_status="ignored",
+            raw_text="/bal",
+        )
+
+        status, payload = self._request(
+            "GET",
+            "/api/parse-results",
+            headers={"Authorization": "Bearer core-secret"},
+            query_string="classification=command",
+        )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["total"], 1)
+        self.assertEqual(len(payload["results"]), 1)
+        self.assertEqual(payload["results"][0]["message_id"], "msg-2")
+
     def test_runtime_endpoint_rejects_non_boolean_is_group(self) -> None:
         status, payload = self._request(
             "POST",

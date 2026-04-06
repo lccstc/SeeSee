@@ -138,6 +138,10 @@ def create_app(
             if not _is_authorized(environ, core_token):
                 return _respond_json(start_response, 401, {"error": "Unauthorized"})
             return _handle_core_actions_ack(get_runtime(), start_response, environ)
+        if path == "/api/parse-results" and method == "GET":
+            if not _is_authorized(environ, core_token):
+                return _respond_json(start_response, 401, {"error": "Unauthorized"})
+            return _with_db(db_file, start_response, _handle_parse_results, environ)
         return _respond_json(start_response, 404, {"error": f"Unknown path: {path}"})
 
     app.close = close_runtime  # type: ignore[attr-defined]
@@ -730,6 +734,54 @@ def _handle_core_actions_ack(
     except (TypeError, ValueError, KeyError) as exc:
         return _respond_json(start_response, 400, {"error": f"Bad payload: {exc}"})
     return _respond_json(start_response, 200, {"updated": updated})
+
+
+def _handle_parse_results(db: BookkeepingDB, start_response, environ):
+    params = _read_query_params(environ)
+    try:
+        limit = int(params.get("limit", "50")) if params.get("limit") else 50
+        offset = int(params.get("offset", "0")) if params.get("offset") else 0
+        platform = params.get("platform") or None
+        chat_id = params.get("chat_id") or None
+        classification = params.get("classification") or None
+        parse_status = params.get("parse_status") or None
+        if limit < 1 or limit > 500:
+            return _respond_json(start_response, 400, {"error": "limit must be 1-500"})
+        if offset < 0:
+            return _respond_json(start_response, 400, {"error": "offset must be >= 0"})
+    except ValueError as exc:
+        return _respond_json(start_response, 400, {"error": f"Bad query: {exc}"})
+    rows, total = db.query_parse_results(
+        platform=platform,
+        chat_id=chat_id,
+        classification=classification,
+        parse_status=parse_status,
+        limit=limit,
+        offset=offset,
+    )
+    results = [
+        {
+            "id": int(row["id"]),
+            "platform": str(row["platform"] or ""),
+            "chat_id": str(row["chat_id"] or ""),
+            "message_id": str(row["message_id"] or ""),
+            "classification": str(row["classification"] or ""),
+            "parse_status": str(row["parse_status"] or ""),
+            "raw_text": str(row["raw_text"] or "") if row["raw_text"] else None,
+            "created_at": str(row["created_at"] or ""),
+        }
+        for row in rows
+    ]
+    return _respond_json(
+        start_response,
+        200,
+        {
+            "results": results,
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+        },
+    )
 
 
 def _read_json_body(environ) -> dict:

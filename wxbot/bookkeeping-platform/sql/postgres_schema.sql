@@ -211,3 +211,17 @@ CREATE INDEX IF NOT EXISTS idx_finance_adjustments_group ON finance_adjustment_e
 CREATE INDEX IF NOT EXISTS idx_ingested_events_platform ON ingested_events(platform, occurred_at);
 CREATE INDEX IF NOT EXISTS idx_incoming_messages_group_created ON incoming_messages(group_key, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_incoming_messages_chat_received ON incoming_messages(platform, chat_id, received_at DESC);
+
+CREATE TABLE IF NOT EXISTS message_parse_results (
+  id BIGSERIAL PRIMARY KEY,
+  platform TEXT NOT NULL,
+  chat_id TEXT NOT NULL,
+  message_id TEXT NOT NULL,
+  classification TEXT NOT NULL,
+  parse_status TEXT NOT NULL,
+  raw_text TEXT,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (platform, chat_id, message_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_message_parse_results_created ON message_parse_results(created_at DESC);

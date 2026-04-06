@@ -1251,8 +1251,76 @@ class _BookkeepingStoreBase:
         self.conn.execute("UPDATE reminders SET sent = 1 WHERE id = ?", (reminder_id,))
         self.conn.commit()
 
-    def close(self) -> None:
-        self.conn.close()
+    def record_parse_result(
+        self,
+        *,
+        platform: str,
+        chat_id: str,
+        message_id: str,
+        classification: str,
+        parse_status: str,
+        raw_text: str | None = None,
+    ) -> int:
+        cur = self.conn.execute(
+            """
+            INSERT INTO message_parse_results (
+              platform, chat_id, message_id, classification, parse_status, raw_text
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(platform, chat_id, message_id) DO UPDATE SET
+              classification = excluded.classification,
+              parse_status = excluded.parse_status,
+              raw_text = excluded.raw_text
+            """,
+            (platform, chat_id, message_id, classification, parse_status, raw_text),
+        )
+        self.conn.commit()
+        return int(cur.lastrowid) if cur.lastrowid else 0
+
+    def query_parse_results(
+        self,
+        *,
+        platform: str | None = None,
+        chat_id: str | None = None,
+        classification: str | None = None,
+        parse_status: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> tuple[list[DBRow], int]:
+        where_parts = []
+        params: list = []
+        if platform is not None:
+            where_parts.append("platform = ?")
+            params.append(platform)
+        if chat_id is not None:
+            where_parts.append("chat_id = ?")
+            params.append(chat_id)
+        if classification is not None:
+            where_parts.append("classification = ?")
+            params.append(classification)
+        if parse_status is not None:
+            where_parts.append("parse_status = ?")
+            params.append(parse_status)
+        where_clause = " AND ".join(where_parts) if where_parts else "1=1"
+
+        count_row = self.conn.execute(
+            f"SELECT COUNT(*) AS cnt FROM message_parse_results WHERE {where_clause}",
+            params,
+        ).fetchone()
+        total = int(count_row["cnt"])
+
+        params.extend([limit, offset])
+        rows = self.conn.execute(
+            f"""
+            SELECT id, platform, chat_id, message_id, classification,
+                   parse_status, raw_text, created_at
+            FROM message_parse_results
+            WHERE {where_clause}
+            ORDER BY created_at DESC
+            LIMIT ? OFFSET ?
+            """,
+            params,
+        ).fetchall()
+        return list(rows), total
 
     @staticmethod
     def _reminder_from_row(row: DBRow) -> ReminderPayload:
@@ -1341,6 +1409,9 @@ class BookkeepingDB(_BookkeepingStoreBase):
         self.conn = _PostgresConnectionCompat(self._raw_conn)
         self._init_schema()
 
+    def close(self) -> None:
+        self._raw_conn.close()
+
     def _init_schema(self) -> None:
         self._ensure_support_tables()
         self._verify_schema()
@@ -1416,6 +1487,27 @@ class BookkeepingDB(_BookkeepingStoreBase):
             """
             CREATE INDEX IF NOT EXISTS idx_incoming_messages_chat_received
             ON incoming_messages(platform, chat_id, received_at DESC)
+            """
+        )
+        self.conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS message_parse_results (
+              id BIGSERIAL PRIMARY KEY,
+              platform TEXT NOT NULL,
+              chat_id TEXT NOT NULL,
+              message_id TEXT NOT NULL,
+              classification TEXT NOT NULL,
+              parse_status TEXT NOT NULL,
+              raw_text TEXT,
+              created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              UNIQUE (platform, chat_id, message_id)
+            )
+            """
+        )
+        self.conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_message_parse_results_created
+            ON message_parse_results(created_at DESC)
             """
         )
         if not self._table_has_column("outbound_actions", "claimed_at"):
