@@ -142,6 +142,10 @@ def create_app(
             if not _is_authorized(environ, core_token):
                 return _respond_json(start_response, 401, {"error": "Unauthorized"})
             return _with_db(db_file, start_response, _handle_parse_results, environ)
+        if path == "/api/message-inspector" and method == "GET":
+            if not _is_authorized(environ, core_token):
+                return _respond_json(start_response, 401, {"error": "Unauthorized"})
+            return _with_db(db_file, start_response, _handle_message_inspector, environ)
         return _respond_json(start_response, 404, {"error": f"Unknown path: {path}"})
 
     app.close = close_runtime  # type: ignore[attr-defined]
@@ -782,6 +786,25 @@ def _handle_parse_results(db: BookkeepingDB, start_response, environ):
             "offset": offset,
         },
     )
+
+
+def _handle_message_inspector(db: BookkeepingDB, start_response, environ):
+    params = _read_query_params(environ)
+    platform = params.get("platform")
+    chat_id = params.get("chat_id")
+    message_id = params.get("message_id")
+    if not platform or not chat_id or not message_id:
+        return _respond_json(
+            start_response,
+            400,
+            {"error": "platform, chat_id, message_id are required"},
+        )
+    result = db.get_message_triple(
+        platform=platform, chat_id=chat_id, message_id=message_id
+    )
+    if result is None:
+        return _respond_json(start_response, 404, {"error": "message not found"})
+    return _respond_json(start_response, 200, result)
 
 
 def _read_json_body(environ) -> dict:

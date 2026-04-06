@@ -916,6 +916,111 @@ class WebAppTests(PostgresTestCase):
         self.assertIsInstance(payload["items"][0]["closed_at"], str)
         self.assertEqual(payload["items"][0]["closed_at"], "2026-03-20 09:30:00")
 
+    def test_message_inspector_returns_combined_view(self) -> None:
+        self.db.record_incoming_message(
+            platform="wechat",
+            group_key="wechat:g-100",
+            chat_id="g-100",
+            chat_name="客户群-Web",
+            message_id="msg-inspect-1",
+            is_group=True,
+            sender_id="u-inspect",
+            sender_name="Inspect",
+            sender_kind="user",
+            content_type="text",
+            text="+50rmb",
+            from_self=False,
+            received_at="2026-03-20 11:00:00",
+            raw_payload={},
+        )
+        self.db.record_parse_result(
+            platform="wechat",
+            chat_id="g-100",
+            message_id="msg-inspect-1",
+            classification="transaction_like",
+            parse_status="parsed",
+            raw_text="+50rmb",
+        )
+        self.db.add_transaction(
+            platform="wechat",
+            group_key="wechat:g-100",
+            group_num=5,
+            chat_id="g-100",
+            chat_name="客户群-Web",
+            sender_id="u-inspect",
+            sender_name="Inspect",
+            message_id="msg-inspect-1",
+            input_sign=1,
+            amount=50,
+            category="rmb",
+            rate=None,
+            rmb_value=50,
+            raw="+50rmb",
+            created_at="2026-03-20 11:00:00",
+        )
+        status, payload = self._request(
+            "GET",
+            "/api/message-inspector",
+            headers={"Authorization": "Bearer core-secret"},
+            query_string="platform=wechat&chat_id=g-100&message_id=msg-inspect-1",
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["message"]["message_id"], "msg-inspect-1")
+        self.assertEqual(payload["parse_result"]["classification"], "transaction_like")
+        self.assertIsNotNone(payload["transaction"])
+        self.assertGreater(payload["transaction"]["id"], 0)
+        self.assertIn("50", payload["transaction"]["amount"])
+
+    def test_message_inspector_returns_null_for_missing_parse_and_transaction(
+        self,
+    ) -> None:
+        self.db.record_incoming_message(
+            platform="whatsapp",
+            group_key="whatsapp:chat-inspect",
+            chat_id="chat-inspect",
+            chat_name="Inspect Chat",
+            message_id="msg-inspect-no-tx",
+            is_group=False,
+            sender_id="user-inspect",
+            sender_name="Inspect User",
+            sender_kind="user",
+            content_type="text",
+            text="hello",
+            from_self=False,
+            received_at="2026-04-07T10:00:00",
+            raw_payload={},
+        )
+        status, payload = self._request(
+            "GET",
+            "/api/message-inspector",
+            headers={"Authorization": "Bearer core-secret"},
+            query_string="platform=whatsapp&chat_id=chat-inspect&message_id=msg-inspect-no-tx",
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["message"]["message_id"], "msg-inspect-no-tx")
+        self.assertIsNone(payload["parse_result"])
+        self.assertIsNone(payload["transaction"])
+
+    def test_message_inspector_requires_all_params(self) -> None:
+        for missing in ("platform", "chat_id", "message_id"):
+            query = "platform=wechat&chat_id=g-100&message_id=msg-1"
+            query = query.replace(f"{missing}=", f"X{missing}=")
+            status, payload = self._request(
+                "GET",
+                "/api/message-inspector",
+                headers={"Authorization": "Bearer core-secret"},
+                query_string=query,
+            )
+            self.assertEqual(status, 400)
+
+    def test_message_inspector_requires_auth(self) -> None:
+        status, payload = self._request(
+            "GET",
+            "/api/message-inspector",
+            query_string="platform=wechat&chat_id=g-100&message_id=msg-1",
+        )
+        self.assertEqual(status, 401)
+
 
 if __name__ == "__main__":
     unittest.main()

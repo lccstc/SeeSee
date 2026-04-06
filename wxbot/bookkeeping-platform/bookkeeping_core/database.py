@@ -1322,6 +1322,69 @@ class _BookkeepingStoreBase:
         ).fetchall()
         return list(rows), total
 
+    def get_message_triple(
+        self, *, platform: str, chat_id: str, message_id: str
+    ) -> dict | None:
+        row = self.conn.execute(
+            """
+            SELECT im.id, im.platform, im.chat_id, im.chat_name, im.message_id,
+                   im.sender_id, im.sender_name, im.sender_kind, im.content_type,
+                   im.text, im.from_self, im.received_at, im.created_at,
+                   pr.classification AS pr_classification, pr.parse_status AS pr_parse_status,
+                   pr.raw_text AS pr_raw_text,
+                   t.id AS tx_id, t.amount AS tx_amount, t.category AS tx_category,
+                   t.input_sign AS tx_input_sign, t.rmb_value AS tx_rmb_value,
+                   t.created_at AS tx_created_at
+            FROM incoming_messages im
+            LEFT JOIN message_parse_results pr ON pr.platform = im.platform
+                                           AND pr.chat_id = im.chat_id
+                                           AND pr.message_id = im.message_id
+            LEFT JOIN transactions t ON t.platform = im.platform
+                                      AND t.chat_id = im.chat_id
+                                      AND t.message_id = im.message_id
+                                      AND t.deleted = 0
+            WHERE im.platform = ? AND im.chat_id = ? AND im.message_id = ?
+            """,
+            (platform, chat_id, message_id),
+        ).fetchone()
+        if row is None:
+            return None
+        result = {
+            "message": {
+                "id": int(row["id"]),
+                "platform": str(row["platform"] or ""),
+                "chat_id": str(row["chat_id"] or ""),
+                "chat_name": str(row["chat_name"] or ""),
+                "message_id": str(row["message_id"] or ""),
+                "sender_id": str(row["sender_id"] or ""),
+                "sender_name": str(row["sender_name"] or ""),
+                "sender_kind": str(row["sender_kind"] or ""),
+                "content_type": str(row["content_type"] or ""),
+                "text": str(row["text"] or ""),
+                "from_self": bool(row["from_self"]),
+                "received_at": str(row["received_at"] or ""),
+                "created_at": str(row["created_at"] or ""),
+            },
+            "parse_result": None,
+            "transaction": None,
+        }
+        if row["pr_classification"] is not None:
+            result["parse_result"] = {
+                "classification": str(row["pr_classification"]),
+                "parse_status": str(row["pr_parse_status"]),
+                "raw_text": str(row["pr_raw_text"] or ""),
+            }
+        if row["tx_id"] is not None:
+            result["transaction"] = {
+                "id": int(row["tx_id"]),
+                "amount": str(row["tx_amount"] or ""),
+                "category": str(row["tx_category"] or ""),
+                "input_sign": int(row["tx_input_sign"]),
+                "rmb_value": str(row["tx_rmb_value"] or ""),
+                "created_at": str(row["tx_created_at"] or ""),
+            }
+        return result
+
     @staticmethod
     def _reminder_from_row(row: DBRow) -> ReminderPayload:
         return ReminderPayload(
