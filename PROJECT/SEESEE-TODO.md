@@ -20,6 +20,12 @@
 - [x] 第三轮真实编码任务完成并验收
 - [ ] 明确哪些任务适合本地 31B，哪些不适合
 
+## 运行协作链路
+- [x] 查明 cron / pairing / gateway 不稳定的最小根因
+- [x] 修复本机设备 scope 漂移导致的 repair pairing
+- [x] 确认 gateway 正常、`cron status/list` 恢复可用
+- [ ] 把“长任务低频回看”的 cron 标准用法整理成固定操作约束
+
 ## 当前下一刀
 - [x] 为 parse results 增加原始消息 / 交易结果联合查看能力
 - [ ] 设计差额追踪的最小闭环

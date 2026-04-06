@@ -74,6 +74,34 @@
 ### 当前下一步
 准备进入“差额追踪”的最小闭环设计，先定义最小问题面和最小验证路径，不急着做复杂页面。
 
+### OpenClaw cron / pairing 排障已完成
+本轮先没有继续加 SeeSee 新功能，而是先处理长任务回看链路不稳的问题。
+
+本轮确认结果：
+- 网关本身是正常的，`openclaw status` 与 `openclaw gateway status` 都显示服务在线，RPC probe 正常。
+- 问题主因不是 gateway 挂掉，也不是 bind / remote 路由配置错误，而是本机设备权限发生了 scope 漂移。
+- 具体表现是：当前设备已配对，但只剩 `operator.read`，当执行 `cron` / `nodes status` 这类需要更高权限的动作时，网关触发了 `repair pairing`，并返回 `pairing required`。
+- 网关日志已明确记录：`scope-upgrade`，从 `operator.read` 升级到 `operator.admin / operator.write / operator.approvals / operator.pairing / operator.talk.secrets`。
+
+本轮最小修复：
+- 直接批准本机最新的 repair pairing 请求：`openclaw devices approve --latest`
+
+修复后验证结果：
+- `openclaw nodes status` 恢复正常
+- `openclaw cron status` 恢复正常
+- `openclaw cron list` 恢复正常
+- gateway 日志可见 cron job 已成功创建并进入执行链路
+
+本轮额外发现：
+- `sessionTarget: current` 的 cron job，如果在当前对话回合仍占用时强制 `run`，会因为当前 session 正忙而超时。这不属于 cron 崩溃，而是使用方式问题。
+- `sessionTarget: isolated` 的 cron job 本身可以进入执行链路，但若用 `delivery.mode=announce`，需要明确可投递目标，否则会因缺少目标而报投递错误。
+- 因此后续“长任务低频回看”应优先采用：当前会话绑定的定时唤醒，不要在同一活跃 turn 内强制执行；若走 isolated job，则必须明确 delivery 目标。
+
+bridge 现状补记：
+- 127.0.0.1:8765 当前在监听，但它实际是 `reporting_server.py`（总账中心页面），不是 `acp-bridge` 的 `/health` / `/agents` 接口。
+- 本机同时存在 `opencode acp` 进程，监听在 127.0.0.1:4096，说明本地 ACP 侧服务本身是活的。
+- 说明这次 cron / pairing 故障与 bridge 健康检查不是同一问题面，不能混为一谈。
+
 ### 新窗口接手说明
 如果换新窗口，先读：
 1. `PROJECT/SEESEE-PRD-lite.md`
