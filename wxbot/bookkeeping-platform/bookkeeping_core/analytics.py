@@ -87,6 +87,7 @@ class AnalyticsService:
             group_rows = [self._serialize_snapshot(row) for row in snapshot_rows]
             group_rows = self._apply_workbench_adjustments(selected_period_id, group_rows)
             card_stats = self._card_rows([self._serialize_card_stat(row) for row in card_rows])
+            group_rows = self._attach_group_usd_amounts(group_rows, card_stats)
             summary = self._summarize_period(group_rows, card_stats)
             role_card_breakdown = self._build_role_card_breakdown(card_stats)
         else:
@@ -221,6 +222,7 @@ class AnalyticsService:
             "expense": float(row["expense"] or 0),
             "closing_balance": float(row["closing_balance"] or 0),
             "transaction_count": int(row["transaction_count"] or 0),
+            "total_usd_amount": 0.0,
             "anomaly_flags_json": str(row["anomaly_flags_json"] or "[]"),
         }
 
@@ -378,7 +380,7 @@ class AnalyticsService:
             bucket["usd_amount"] += self._row_card_usd_amount(row)
             bucket["rmb_amount"] += self._row_raw_rmb_amount(row)
             bucket["display_rmb_amount"] += self._row_display_rmb_amount(row)
-            bucket["unit_count"] += float(self._read_optional_value(row, "unit_count") or 0)
+            bucket["unit_count"] += self._row_signed_unit_count(row)
             bucket["row_count"] += 1
             period_id = self._read_optional_value(row, "period_id")
             if period_id is not None:
@@ -450,7 +452,7 @@ class AnalyticsService:
             )
             bucket["usd_amount"] += self._row_card_usd_amount(row)
             bucket["rmb_amount"] += self._row_display_rmb_amount(row)
-            bucket["unit_count"] += float(self._read_optional_value(row, "unit_count") or 0)
+            bucket["unit_count"] += self._row_signed_unit_count(row)
             bucket["row_count"] += 1
             period_id = self._read_optional_value(row, "period_id")
             if period_id is not None:
@@ -619,6 +621,7 @@ class AnalyticsService:
                     "expense": 0.0,
                     "closing_balance": 0.0,
                     "transaction_count": 0,
+                    "total_usd_amount": 0.0,
                     "anomaly_flags_json": "[]",
                 },
             )
@@ -629,10 +632,32 @@ class AnalyticsService:
                 bucket["expense"] += abs(rmb_value)
             bucket["closing_balance"] = float(bucket["income"]) - float(bucket["expense"])
             bucket["transaction_count"] += 1
+        for row in self._card_rows(financial_transactions):
+            group_key = str(self._read_optional_value(row, "group_key") or "")
+            if not group_key or group_key not in buckets:
+                continue
+            buckets[group_key]["total_usd_amount"] += self._row_card_usd_amount(row)
         return sorted(
             buckets.values(),
             key=lambda item: (str(item["platform"]), str(item["chat_name"])),
         )
+
+    @staticmethod
+    def _attach_group_usd_amounts(group_rows: list[dict], card_rows: list[dict]) -> list[dict]:
+        if not group_rows:
+            return group_rows
+        group_totals: dict[str, float] = {}
+        for row in card_rows:
+            group_key = str(row.get("group_key") or "")
+            if not group_key:
+                continue
+            group_totals[group_key] = float(group_totals.get(group_key, 0.0)) + float(row.get("usd_amount") or 0.0)
+        updated_rows: list[dict] = []
+        for row in group_rows:
+            updated = dict(row)
+            updated["total_usd_amount"] = float(group_totals.get(str(row.get("group_key") or ""), 0.0))
+            updated_rows.append(updated)
+        return updated_rows
 
     def _build_live_card_stats(self, transactions: list[dict]) -> list[dict]:
         buckets: dict[tuple[str, str], dict] = {}
@@ -662,7 +687,7 @@ class AnalyticsService:
             bucket["usd_amount"] += self._row_card_usd_amount(row)
             bucket["rmb_amount"] += self._row_raw_rmb_amount(row)
             bucket["display_rmb_amount"] += self._row_display_rmb_amount(row)
-            bucket["unit_count"] += float(self._read_optional_value(row, "unit_count") or 0)
+            bucket["unit_count"] += self._row_signed_unit_count(row)
         return sorted(
             buckets.values(),
             key=lambda item: (str(item["business_role"]), -float(item["usd_amount"]), str(item["card_type"])),
@@ -714,10 +739,14 @@ class AnalyticsService:
     @staticmethod
     def _row_display_rmb_amount(row) -> float:
         business_role = AnalyticsService._row_business_role(row)
-        return AnalyticsService._normalize_role_card_rmb_amount(
+        normalized = AnalyticsService._normalize_role_card_rmb_amount(
             AnalyticsService._row_raw_rmb_amount(row),
             business_role,
         )
+        # Live transaction rows carry input_sign and should net correction pairs (+X then -X).
+        if AnalyticsService._read_optional_value(row, "input_sign") in {None, ""}:
+            return normalized
+        return abs(float(normalized or 0)) * AnalyticsService._input_direction(row)
 
     @staticmethod
     def _row_raw_rmb_amount(row) -> float:
@@ -729,13 +758,38 @@ class AnalyticsService:
     @staticmethod
     def _row_card_usd_amount(row) -> float:
         display_usd_amount = AnalyticsService._read_optional_value(row, "display_usd_amount")
+        direction = AnalyticsService._input_direction(row)
         if display_usd_amount is not None:
-            return float(display_usd_amount or 0)
+            return abs(float(display_usd_amount or 0)) * direction
         usd_amount = AnalyticsService._read_optional_value(row, "usd_amount")
         if usd_amount not in {None, ""}:
-            return float(usd_amount or 0)
+            raw = float(usd_amount or 0)
+            # Pre-aggregated rows (e.g. period_card_stats) do not carry input_sign and should keep stored sign.
+            if AnalyticsService._read_optional_value(row, "input_sign") in {None, ""}:
+                return raw
+            return abs(raw) * direction
         amount = AnalyticsService._read_optional_value(row, "amount")
-        return float(amount or 0)
+        return abs(float(amount or 0)) * direction
+
+    @staticmethod
+    def _row_signed_unit_count(row) -> float:
+        unit_count = AnalyticsService._read_optional_value(row, "unit_count")
+        if unit_count in {None, ""}:
+            return 0.0
+        direction = AnalyticsService._input_direction(row)
+        if AnalyticsService._read_optional_value(row, "input_sign") in {None, ""}:
+            return float(unit_count or 0)
+        return abs(float(unit_count or 0)) * direction
+
+    @staticmethod
+    def _input_direction(row) -> float:
+        input_sign = AnalyticsService._read_optional_value(row, "input_sign")
+        if input_sign is None:
+            return 1.0
+        try:
+            return -1.0 if float(input_sign) < 0 else 1.0
+        except (TypeError, ValueError):
+            return 1.0
 
     @staticmethod
     def _sum_values(rows: list[dict], key: str) -> float:
