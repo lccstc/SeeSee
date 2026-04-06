@@ -537,6 +537,12 @@ class _BookkeepingStoreBase:
             "SELECT * FROM accounting_periods ORDER BY id ASC"
         ).fetchall()
 
+    def get_accounting_period(self, period_id: int) -> DBRow | None:
+        return self.conn.execute(
+            "SELECT * FROM accounting_periods WHERE id = ?",
+            (period_id,),
+        ).fetchone()
+
     def insert_accounting_period(
         self,
         *,
@@ -1045,6 +1051,26 @@ class BookkeepingDB(_BookkeepingStoreBase):
                 ADD COLUMN claimed_at TIMESTAMP
                 """
             )
+        # Keep future period snapshots/card stats tied to a real period row.
+        # Use NOT VALID so existing legacy rows do not block startup migration.
+        if not self._constraint_exists("period_group_snapshots", "fk_period_group_snapshots_period_id"):
+            self.conn.execute(
+                """
+                ALTER TABLE period_group_snapshots
+                ADD CONSTRAINT fk_period_group_snapshots_period_id
+                FOREIGN KEY (period_id) REFERENCES accounting_periods(id)
+                NOT VALID
+                """
+            )
+        if not self._constraint_exists("period_card_stats", "fk_period_card_stats_period_id"):
+            self.conn.execute(
+                """
+                ALTER TABLE period_card_stats
+                ADD CONSTRAINT fk_period_card_stats_period_id
+                FOREIGN KEY (period_id) REFERENCES accounting_periods(id)
+                NOT VALID
+                """
+            )
         self.conn.commit()
 
     def _table_has_column(self, table_name: str, column_name: str) -> bool:
@@ -1058,6 +1084,22 @@ class BookkeepingDB(_BookkeepingStoreBase):
             LIMIT 1
             """,
             (table_name, column_name),
+        ).fetchone()
+        return row is not None
+
+    def _constraint_exists(self, table_name: str, constraint_name: str) -> bool:
+        row = self.conn.execute(
+            """
+            SELECT 1
+            FROM pg_constraint c
+            INNER JOIN pg_class t ON t.oid = c.conrelid
+            INNER JOIN pg_namespace n ON n.oid = t.relnamespace
+            WHERE n.nspname = CURRENT_SCHEMA()
+              AND t.relname = ?
+              AND c.conname = ?
+            LIMIT 1
+            """,
+            (table_name, constraint_name),
         ).fetchone()
         return row is not None
 
@@ -1424,36 +1466,50 @@ class BookkeepingDB(_BookkeepingStoreBase):
         # Refresh the PostgreSQL snapshot before polling the outbound queue so
         # actions written by other request-scoped connections become visible.
         self.conn.rollback()
-        rows = self.conn.execute(
-            """
-            SELECT *
-            FROM outbound_actions
-            WHERE status = 'pending'
-               OR (
-                    status = 'claimed'
-                AND claimed_at IS NOT NULL
-                AND claimed_at <= CURRENT_TIMESTAMP - INTERVAL '30 seconds'
-               )
-            ORDER BY created_at ASC, id ASC
-            LIMIT ?
-            """,
-            (limit,),
-        ).fetchall()
-        if not rows:
+        try:
+            # Keep outbound polling responsive even when DB is under lock pressure.
+            self.conn.execute("SET LOCAL lock_timeout = '1000ms'")
+            self.conn.execute("SET LOCAL statement_timeout = '4000ms'")
+        except Exception:
+            # Non-Postgres drivers may not support these settings.
+            pass
+
+        try:
+            rows = self.conn.execute(
+                """
+                SELECT *
+                FROM outbound_actions
+                WHERE status = 'pending'
+                   OR (
+                        status = 'claimed'
+                    AND claimed_at IS NOT NULL
+                    AND claimed_at <= CURRENT_TIMESTAMP - INTERVAL '30 seconds'
+                   )
+                ORDER BY created_at ASC, id ASC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+            if not rows:
+                return []
+            ids = [int(row["id"]) for row in rows]
+            placeholders = ",".join("?" for _ in ids)
+            self.conn.execute(
+                f"""
+                UPDATE outbound_actions
+                SET status = 'claimed',
+                    claimed_at = CURRENT_TIMESTAMP
+                WHERE id IN ({placeholders})
+                """,
+                ids,
+            )
+            self.conn.commit()
+            return rows
+        except Exception:
+            # Outbound polling should fail open (empty queue) rather than block
+            # core message ingestion and trigger adapter timeouts.
+            self.conn.rollback()
             return []
-        ids = [int(row["id"]) for row in rows]
-        placeholders = ",".join("?" for _ in ids)
-        self.conn.execute(
-            f"""
-            UPDATE outbound_actions
-            SET status = 'claimed',
-                claimed_at = CURRENT_TIMESTAMP
-            WHERE id IN ({placeholders})
-            """,
-            ids,
-        )
-        self.conn.commit()
-        return rows
 
     def acknowledge_outbound_actions(self, results: list[dict], *, commit: bool = True) -> int:
         updated = 0

@@ -671,6 +671,89 @@ class WorkbenchAnalyticsTests(PostgresTestCase):
             db.close()
 
 
+class KnifeNettingAnalyticsTests(PostgresTestCase):
+    def test_live_card_stats_net_out_correction_pairs_by_input_sign(self) -> None:
+        db = BookkeepingDB(self.make_dsn("analytics-knife-netting-live"))
+        try:
+            db.set_group(
+                platform="whatsapp",
+                group_key="whatsapp:g-knife-netting",
+                chat_id="g-knife-netting",
+                chat_name="刀数对冲群",
+                group_num=2,
+            )
+            db.conn.execute(
+                "UPDATE groups SET business_role = ? WHERE group_key = ?",
+                ("vendor", "whatsapp:g-knife-netting"),
+            )
+            db.conn.commit()
+
+            # Correction flow: +300 -> -300 -> +300(new rate), should net to 300 in knife stats.
+            _make_tx(
+                db,
+                platform="whatsapp",
+                group_key="whatsapp:g-knife-netting",
+                chat_id="g-knife-netting",
+                chat_name="刀数对冲群",
+                sender_id="u-knife",
+                sender_name="Knife",
+                input_sign=1,
+                amount=300,
+                category="it",
+                rate=5.57,
+                rmb_value=-1671,
+                raw="+300it5.57",
+                created_at="2026-03-25 09:00:00",
+                usd_amount=300,
+                unit_count=300,
+            )
+            _make_tx(
+                db,
+                platform="whatsapp",
+                group_key="whatsapp:g-knife-netting",
+                chat_id="g-knife-netting",
+                chat_name="刀数对冲群",
+                sender_id="u-knife",
+                sender_name="Knife",
+                input_sign=-1,
+                amount=300,
+                category="it",
+                rate=5.57,
+                rmb_value=1671,
+                raw="-300it5.57",
+                created_at="2026-03-25 09:01:00",
+                usd_amount=300,
+                unit_count=300,
+            )
+            _make_tx(
+                db,
+                platform="whatsapp",
+                group_key="whatsapp:g-knife-netting",
+                chat_id="g-knife-netting",
+                chat_name="刀数对冲群",
+                sender_id="u-knife",
+                sender_name="Knife",
+                input_sign=1,
+                amount=300,
+                category="it",
+                rate=5.63,
+                rmb_value=-1689,
+                raw="+300it5.63",
+                created_at="2026-03-25 09:02:00",
+                usd_amount=300,
+                unit_count=300,
+            )
+
+            payload = AnalyticsService(db).build_period_workbench(period_id=None)
+            vendor = payload["role_card_breakdown"]["vendor"]
+
+            self.assertEqual(round(float(vendor["total_usd_amount"]), 2), 300.00)
+            self.assertEqual(round(float(vendor["total_unit_count"]), 2), 300.00)
+            self.assertEqual(round(float(vendor["total_display_rmb_amount"]), 2), 1689.00)
+        finally:
+            db.close()
+
+
 class HistoryAnalyticsTests(PostgresTestCase):
     def setUp(self) -> None:
         super().setUp()

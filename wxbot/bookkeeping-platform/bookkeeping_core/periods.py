@@ -1,9 +1,16 @@
 from __future__ import annotations
 
+import logging
+import os
+import shutil
+import subprocess
 from datetime import datetime, timedelta
+from pathlib import Path
 
 from .database import BookkeepingDB
 from .role_mapping import resolve_business_role
+
+logger = logging.getLogger(__name__)
 
 
 class AccountingPeriodService:
@@ -151,10 +158,68 @@ class AccountingPeriodService:
             self.db.replace_period_card_stats(period_id, card_stats_rows)
             self.db.mark_transactions_closed(transaction_ids_to_close, settled_at=end_at, commit=False)
             self.db.conn.commit()
+            if self.db.get_accounting_period(period_id) is None:
+                raise RuntimeError(f"accounting period {period_id} missing after commit")
+            self._backup_postgres_after_period_close(period_id=period_id)
             return period_id
         except Exception:
             self.db.conn.rollback()
             raise
+
+    def _backup_postgres_after_period_close(self, *, period_id: int) -> None:
+        if str(os.environ.get("BOOKKEEPING_AUTO_BACKUP_ON_CLOSE", "1")).strip().lower() in {"0", "false", "no", "off"}:
+            return
+
+        dsn = str(getattr(self.db, "db_path", "") or "").strip()
+        if not dsn.startswith(("postgresql://", "postgres://")):
+            return
+
+        backup_root = Path(
+            str(
+                os.environ.get(
+                    "BOOKKEEPING_BACKUP_DIR",
+                    str(Path.home() / "SeeSee" / "backups" / "postgres"),
+                )
+            ).strip()
+        )
+        backup_root.mkdir(parents=True, exist_ok=True)
+
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        backup_path = backup_root / f"bookkeeping-period-{period_id}-{timestamp}.dump"
+
+        pg_dump_bin = str(os.environ.get("BOOKKEEPING_PG_DUMP_BIN", "") or "").strip()
+        if not pg_dump_bin:
+            pg_dump_bin = "/opt/homebrew/bin/pg_dump" if Path("/opt/homebrew/bin/pg_dump").exists() else "pg_dump"
+        if not Path(pg_dump_bin).exists() and shutil.which(pg_dump_bin) is None:
+            logger.warning("Auto backup skipped after period close: pg_dump not found")
+            return
+
+        try:
+            subprocess.run(
+                [pg_dump_bin, "--format=custom", "--dbname", dsn, "--file", str(backup_path)],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            self._cleanup_old_backups(backup_root)
+            logger.info("PostgreSQL auto backup created after period close: %s", backup_path)
+        except Exception as exc:
+            logger.warning("PostgreSQL auto backup failed after period close (period_id=%s): %s", period_id, exc)
+
+    @staticmethod
+    def _cleanup_old_backups(backup_root: Path) -> None:
+        keep_days_raw = str(os.environ.get("BOOKKEEPING_BACKUP_KEEP_DAYS", "14")).strip()
+        try:
+            keep_days = max(1, int(keep_days_raw))
+        except ValueError:
+            keep_days = 14
+        cutoff = datetime.now().timestamp() - (keep_days * 86400)
+        for file_path in backup_root.glob("bookkeeping-period-*.dump"):
+            try:
+                if file_path.is_file() and file_path.stat().st_mtime < cutoff:
+                    file_path.unlink()
+            except OSError:
+                continue
 
     @staticmethod
     def _build_card_stats(
@@ -187,14 +252,17 @@ class AccountingPeriodService:
                     "sample_raw": str(tx["raw"]),
                 },
             )
-            bucket["usd_amount"] += (
+            signed_direction = -1.0 if int(tx["input_sign"] or 0) < 0 else 1.0
+            usd_amount = (
                 float(tx["usd_amount"])
                 if tx["usd_amount"] is not None
                 else (0.0 if card_type == "rmb" else float(tx["amount"] or 0))
             )
+            # Use the explicit +/- operation direction so correction pairs (+X then -X) offset in knife stats.
+            bucket["usd_amount"] += abs(usd_amount) * signed_direction
             bucket["rmb_amount"] += float(tx["rmb_value"])
             if tx["unit_count"] is not None:
-                bucket["unit_count"] += float(tx["unit_count"])
+                bucket["unit_count"] += abs(float(tx["unit_count"])) * signed_direction
         return [
             {
                 "period_id": period_id,

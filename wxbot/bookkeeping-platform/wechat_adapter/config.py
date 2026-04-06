@@ -29,8 +29,6 @@ class WeChatConfig:
     export_dir: str
     runtime_dir: str
     core_api: CoreApiConfig = field(default_factory=CoreApiConfig)
-    inbound_queue_capacity: int = 2000
-    inbound_batch_size: int = 200
 
 
 def _clean_chat_names(items) -> list[str]:
@@ -62,8 +60,6 @@ def load_config() -> WeChatConfig:
         "language": "cn",
         "export_dir": str(BASE_DIR / "exports"),
         "runtime_dir": str(BASE_DIR / "runtime"),
-        "inbound_queue_capacity": 2000,
-        "inbound_batch_size": 200,
         "core_api": {
             "endpoint": "",
             "token": "",
@@ -76,8 +72,6 @@ def load_config() -> WeChatConfig:
     defaults.pop("db_path", None)
     defaults["listen_chats"] = _clean_chat_names(defaults.get("listen_chats")) or ["文件传输助手"]
     defaults["master_users"] = [str(item).strip() for item in defaults.get("master_users", []) if str(item).strip()]
-    defaults["inbound_queue_capacity"] = max(int(defaults.get("inbound_queue_capacity") or 2000), 1)
-    defaults["inbound_batch_size"] = max(int(defaults.get("inbound_batch_size") or 200), 1)
     core_api_raw = defaults.get("core_api") or {}
     defaults["core_api"] = CoreApiConfig(
         endpoint=str(core_api_raw.get("endpoint") or "").strip(),

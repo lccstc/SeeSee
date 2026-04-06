@@ -216,6 +216,14 @@ _STYLE = """
   .table-note {
     margin-top: 8px;
   }
+  .diff-highlight {
+    color: #b42318;
+    font-weight: 600;
+  }
+  .diff-safe {
+    color: #067647;
+    font-weight: 600;
+  }
   .full {
     grid-column: 1 / -1;
   }
@@ -320,7 +328,7 @@ def render_dashboard_page() -> str:
       <div class="table-wrap">
         <table id="dashboard-current-customer-table">
           <thead>
-            <tr><th>卡种</th><th>刀数</th><th>金额</th></tr>
+            <tr><th>卡种</th><th>刀数</th><th>金额</th><th>差额</th><th>利润</th></tr>
           </thead>
           <tbody></tbody>
         </table>
@@ -424,16 +432,66 @@ function roleCardSummaryText(block) {
   return `合计 ${money(block.total_usd_amount)} 刀 / ${money(block.total_display_rmb_amount ?? block.total_rmb_amount)} 元`;
 }
 
-function renderRoleCardTable(tableId, rows, emptyText) {
+function signedMoney(value) {
+  const number = Number(value || 0);
+  return `${number > 0 ? '+' : ''}${money(number)}`;
+}
+
+function diffClass(value) {
+  return Number(value || 0) === 0 ? 'diff-safe' : 'diff-highlight';
+}
+
+function buildCardRowMap(rows) {
+  const map = {};
+  for (const row of (rows || [])) {
+    const cardType = String(row.card_type || '').trim();
+    if (!cardType) continue;
+    map[cardType] = {
+      card_type: cardType,
+      usd_amount: Number(row.usd_amount ?? 0),
+      rmb_amount: Number(row.rmb_amount ?? 0),
+      display_rmb_amount: Number(row.display_rmb_amount ?? row.rmb_amount ?? 0),
+    };
+  }
+  return map;
+}
+
+function alignRoleCardRows(customerRows, vendorRows) {
+  const customerMap = buildCardRowMap(customerRows);
+  const vendorMap = buildCardRowMap(vendorRows);
+  const allCardTypes = Array.from(new Set([
+    ...Object.keys(customerMap),
+    ...Object.keys(vendorMap),
+  ])).sort((a, b) => a.localeCompare(b, 'en', { sensitivity: 'base' }));
+
+  const zeroRowFor = (cardType) => ({
+    card_type: cardType,
+    usd_amount: 0,
+    rmb_amount: 0,
+    display_rmb_amount: 0,
+  });
+
+  return {
+    customerRows: allCardTypes.map((cardType) => customerMap[cardType] || zeroRowFor(cardType)),
+    vendorRows: allCardTypes.map((cardType) => vendorMap[cardType] || zeroRowFor(cardType)),
+  };
+}
+
+function renderRoleCardTable(tableId, rows, emptyText, options = {}) {
+  const showDiff = Boolean(options.showDiff);
+  const diffKnifeByCardType = options.diffKnifeByCardType || {};
+  const profitByCardType = options.profitByCardType || {};
+  const colspan = showDiff ? 5 : 3;
   document.querySelector(`${tableId} tbody`).innerHTML = rows.length
     ? rows.map((row) => `
       <tr>
         <td>${row.card_type}</td>
         <td>${money(row.usd_amount)}</td>
         <td>${money(row.display_rmb_amount ?? row.rmb_amount)}</td>
+        ${showDiff ? `<td><span class="${diffClass(diffKnifeByCardType[row.card_type] ?? 0)}">${signedMoney(diffKnifeByCardType[row.card_type] ?? 0)}</span></td><td>${signedMoney(profitByCardType[row.card_type] ?? 0)}</td>` : ''}
       </tr>
     `).join('')
-    : `<tr><td colspan="3" class="muted">${emptyText}</td></tr>`;
+    : `<tr><td colspan="${colspan}" class="muted">${emptyText}</td></tr>`;
 }
 
 async function loadDashboard() {
@@ -452,10 +510,36 @@ async function loadDashboard() {
   const currentBreakdown = summary.current_role_card_breakdown || {};
   const currentCustomer = currentBreakdown.customer || { rows: [], total_usd_amount: 0, total_rmb_amount: 0, total_unit_count: 0 };
   const currentVendor = currentBreakdown.vendor || { rows: [], total_usd_amount: 0, total_rmb_amount: 0, total_unit_count: 0 };
+  const alignedRows = alignRoleCardRows(currentCustomer.rows || [], currentVendor.rows || []);
+  const vendorAmountByCardType = {};
+  const vendorKnifeByCardType = {};
+  for (const row of alignedRows.vendorRows) {
+    vendorAmountByCardType[row.card_type] = Number(row.display_rmb_amount ?? row.rmb_amount ?? 0);
+    vendorKnifeByCardType[row.card_type] = Number(row.usd_amount ?? 0);
+  }
+  const customerDiffKnifeByCardType = {};
+  const customerProfitByCardType = {};
+  for (const row of alignedRows.customerRows) {
+    const customerAmount = Number(row.display_rmb_amount ?? row.rmb_amount ?? 0);
+    const customerKnife = Number(row.usd_amount ?? 0);
+    const vendorAmount = Number(vendorAmountByCardType[row.card_type] ?? 0);
+    const vendorKnife = Number(vendorKnifeByCardType[row.card_type] ?? 0);
+    customerDiffKnifeByCardType[row.card_type] = customerKnife - vendorKnife;
+    customerProfitByCardType[row.card_type] = customerAmount - vendorAmount;
+  }
   document.querySelector('#dashboard-current-customer-summary').textContent = roleCardSummaryText(currentCustomer);
   document.querySelector('#dashboard-current-vendor-summary').textContent = roleCardSummaryText(currentVendor);
-  renderRoleCardTable('#dashboard-current-customer-table', currentCustomer.rows || [], '当前暂无客户卡统计');
-  renderRoleCardTable('#dashboard-current-vendor-table', currentVendor.rows || [], '当前暂无供应商卡统计');
+  renderRoleCardTable(
+    '#dashboard-current-customer-table',
+    alignedRows.customerRows,
+    '当前暂无客户卡统计',
+    {
+      showDiff: true,
+      diffKnifeByCardType: customerDiffKnifeByCardType,
+      profitByCardType: customerProfitByCardType,
+    }
+  );
+  renderRoleCardTable('#dashboard-current-vendor-table', alignedRows.vendorRows, '当前暂无供应商卡统计');
   const transactions = data.latest_transactions || [];
   document.querySelector('#latest-transactions-table tbody').innerHTML = transactions.length
     ? transactions.map((row) => `
@@ -551,7 +635,7 @@ def render_workbench_page() -> str:
       <div class="table-wrap">
         <table id="workbench-customer-cards-table">
           <thead>
-            <tr><th>卡种</th><th>刀数</th><th>金额</th></tr>
+            <tr><th>卡种</th><th>刀数</th><th>金额</th><th>差额</th><th>利润</th></tr>
           </thead>
           <tbody></tbody>
         </table>
@@ -576,7 +660,7 @@ def render_workbench_page() -> str:
   <div class="table-wrap">
     <table id="workbench-groups-table">
       <thead>
-        <tr><th>群名</th><th>角色</th><th>期初</th><th>收款</th><th>使用</th><th>期末</th><th>交易笔数</th></tr>
+        <tr><th>群名</th><th>角色</th><th>期初</th><th>收款</th><th>使用</th><th>期末</th><th>刀数</th><th>交易笔数</th></tr>
       </thead>
       <tbody></tbody>
     </table>
@@ -701,20 +785,69 @@ function roleCardSummaryText(block) {
   return `合计 ${money(block.total_usd_amount)} 刀 / ${money(block.total_display_rmb_amount ?? block.total_rmb_amount)} 元`;
 }
 
+function signedMoney(value) {
+  const number = Number(value || 0);
+  return `${number > 0 ? '+' : ''}${money(number)}`;
+}
+
+function diffClass(value) {
+  return Number(value || 0) === 0 ? 'diff-safe' : 'diff-highlight';
+}
+
+function buildCardRowMap(rows) {
+  const map = {};
+  for (const row of (rows || [])) {
+    const cardType = String(row.card_type || '').trim();
+    if (!cardType) continue;
+    map[cardType] = {
+      card_type: cardType,
+      usd_amount: Number(row.usd_amount ?? 0),
+      rmb_amount: Number(row.rmb_amount ?? 0),
+      display_rmb_amount: Number(row.display_rmb_amount ?? row.rmb_amount ?? 0),
+    };
+  }
+  return map;
+}
+
+function alignRoleCardRows(customerRows, vendorRows) {
+  const customerMap = buildCardRowMap(customerRows);
+  const vendorMap = buildCardRowMap(vendorRows);
+  const allCardTypes = Array.from(new Set([
+    ...Object.keys(customerMap),
+    ...Object.keys(vendorMap),
+  ])).sort((a, b) => a.localeCompare(b, 'en', { sensitivity: 'base' }));
+
+  const zeroRowFor = (cardType) => ({
+    card_type: cardType,
+    usd_amount: 0,
+    rmb_amount: 0,
+    display_rmb_amount: 0,
+  });
+
+  return {
+    customerRows: allCardTypes.map((cardType) => customerMap[cardType] || zeroRowFor(cardType)),
+    vendorRows: allCardTypes.map((cardType) => vendorMap[cardType] || zeroRowFor(cardType)),
+  };
+}
+
 function renderRoleCardTable(tableId, rows, emptyText, options = {}) {
   const showProfit = Boolean(options.showProfit);
+  const showDiff = Boolean(options.showDiff);
   const profitByCardType = options.profitByCardType || {};
-  const colspan = showProfit ? 4 : 3;
+  const diffKnifeByCardType = options.diffKnifeByCardType || {};
+  const colspan = 3 + (showProfit ? 1 : 0) + (showDiff ? 2 : 0);
   document.querySelector(`${tableId} tbody`).innerHTML = rows.length
     ? rows.map((row) => {
       const amount = Number(row.display_rmb_amount ?? row.rmb_amount ?? 0);
       const profit = Number(profitByCardType[row.card_type] ?? 0);
+      const diffKnife = Number(diffKnifeByCardType[row.card_type] ?? 0);
       return `
       <tr>
         <td>${row.card_type}</td>
         <td>${money(row.usd_amount)}</td>
         <td>${money(amount)}</td>
         ${showProfit ? `<td>${money(profit)}</td>` : ''}
+        ${showDiff ? `<td><span class="${diffClass(diffKnife)}">${signedMoney(diffKnife)}</span></td><td>${signedMoney(profit)}</td>` : ''}
       </tr>
     `;
     }).join('')
@@ -849,22 +982,49 @@ async function loadWorkbench(periodId) {
   const roleCardBreakdown = data.role_card_breakdown || {};
   const customerCards = roleCardBreakdown.customer || { rows: [], total_usd_amount: 0, total_rmb_amount: 0, total_unit_count: 0 };
   const vendorCards = roleCardBreakdown.vendor || { rows: [], total_usd_amount: 0, total_rmb_amount: 0, total_unit_count: 0 };
+  const alignedRows = alignRoleCardRows(customerCards.rows || [], vendorCards.rows || []);
   const customerAmountByCardType = {};
-  for (const row of (customerCards.rows || [])) {
+  const customerKnifeByCardType = {};
+  for (const row of alignedRows.customerRows) {
     customerAmountByCardType[row.card_type] = Number(row.display_rmb_amount ?? row.rmb_amount ?? 0);
+    customerKnifeByCardType[row.card_type] = Number(row.usd_amount ?? 0);
+  }
+  const vendorAmountByCardType = {};
+  const vendorKnifeByCardType = {};
+  for (const row of alignedRows.vendorRows) {
+    vendorAmountByCardType[row.card_type] = Number(row.display_rmb_amount ?? row.rmb_amount ?? 0);
+    vendorKnifeByCardType[row.card_type] = Number(row.usd_amount ?? 0);
+  }
+  const customerDiffKnifeByCardType = {};
+  const customerProfitByCardType = {};
+  for (const row of alignedRows.customerRows) {
+    const cardType = row.card_type;
+    customerDiffKnifeByCardType[cardType] =
+      Number(customerKnifeByCardType[cardType] ?? 0) - Number(vendorKnifeByCardType[cardType] ?? 0);
+    customerProfitByCardType[cardType] =
+      Number(customerAmountByCardType[cardType] ?? 0) - Number(vendorAmountByCardType[cardType] ?? 0);
   }
   const vendorProfitByCardType = {};
-  for (const row of (vendorCards.rows || [])) {
+  for (const row of alignedRows.vendorRows) {
     const vendorAmount = Number(row.display_rmb_amount ?? row.rmb_amount ?? 0);
     const customerAmount = Number(customerAmountByCardType[row.card_type] ?? 0);
-    vendorProfitByCardType[row.card_type] = customerAmount + vendorAmount;
+    vendorProfitByCardType[row.card_type] = customerAmount - vendorAmount;
   }
   document.querySelector('#workbench-customer-summary').textContent = roleCardSummaryText(customerCards);
   document.querySelector('#workbench-vendor-summary').textContent = roleCardSummaryText(vendorCards);
-  renderRoleCardTable('#workbench-customer-cards-table', customerCards.rows || [], '当前口径下暂无客户卡统计');
+  renderRoleCardTable(
+    '#workbench-customer-cards-table',
+    alignedRows.customerRows,
+    '当前口径下暂无客户卡统计',
+    {
+      showDiff: true,
+      diffKnifeByCardType: customerDiffKnifeByCardType,
+      profitByCardType: customerProfitByCardType,
+    }
+  );
   renderRoleCardTable(
     '#workbench-vendor-cards-table',
-    vendorCards.rows || [],
+    alignedRows.vendorRows,
     '当前口径下暂无供应商卡统计',
     { showProfit: true, profitByCardType: vendorProfitByCardType }
   );
@@ -913,7 +1073,9 @@ async function loadWorkbench(periodId) {
     );
   }
 
-  document.querySelector('#workbench-groups-table tbody').innerHTML = (data.group_rows || []).map((row) => `
+  const visibleGroupRows = (data.group_rows || []).filter((row) => Number(row.transaction_count || 0) > 0);
+  document.querySelector('#workbench-groups-table tbody').innerHTML = visibleGroupRows.length
+    ? visibleGroupRows.map((row) => `
     <tr>
       <td>${row.chat_name}</td>
       <td>${row.business_role || ''}</td>
@@ -921,9 +1083,11 @@ async function loadWorkbench(periodId) {
       <td>${money(row.income)}</td>
       <td>${money(row.expense)}</td>
       <td>${money(row.closing_balance)}</td>
+      <td>${money(row.total_usd_amount)}</td>
       <td>${row.transaction_count}</td>
     </tr>
-  `).join('');
+  `).join('')
+    : '<tr><td colspan="8" class="muted">当前口径下暂无有交易的群快照</td></tr>';
 
   document.querySelector('#workbench-cards-table tbody').innerHTML = (data.card_stats || []).map((row) => `
     <tr>
@@ -2032,7 +2196,7 @@ def render_history_page() -> str:
   <h2>账期列表</h2>
   <table id="history-periods-table">
     <thead>
-      <tr><th>账期</th><th>关闭时间</th><th>利润</th><th>美元面额</th><th>群数量</th><th>交易笔数</th></tr>
+      <tr><th>账期</th><th>关闭时间</th><th>客户刀数</th><th>供应商刀数</th><th>供应商总成本</th><th>客户总成本</th><th>利润</th></tr>
     </thead>
     <tbody></tbody>
   </table>
@@ -2110,10 +2274,11 @@ async function loadHistoryFromForm(pushUrl = false) {
     <tr>
       <td>${row.id}</td>
       <td>${row.closed_at}</td>
+      <td>${money(row.customer_card_usd_amount)}</td>
+      <td>${money(row.vendor_card_usd_amount)}</td>
+      <td>${money(row.vendor_card_rmb_amount)}</td>
+      <td>${money(row.customer_card_rmb_amount)}</td>
       <td>${money(row.profit)}</td>
-      <td>${money(row.total_usd_amount)}</td>
-      <td>${row.group_count}</td>
-      <td>${row.vendor_transaction_count ?? row.transaction_count}</td>
     </tr>
   `).join('');
 

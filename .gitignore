@@ -20,6 +20,11 @@ __pycache__/
 .ruff_cache/
 .venv/
 venv/
+env/
+.env
+.env.*
+!.env.example
+!.env.*.example
 
 *.db
 *.db-shm
@@ -35,7 +40,17 @@ postgresql:/
 wxbot/wxautoxdoc.pdf
 wxbot/bookkeeping-platform/.pui/
 wxbot/bookkeeping-platform/config.wechat.json
+wxbot/bookkeeping-platform/ecosystem.config.cjs
 wxbot/bookkeeping-platform/data/
+wxbot/bookkeeping-platform/runtime/
+wxbot/bookkeeping-platform/exports/
+wxbot/bookkeeping-platform/wechat_cache/
+wxbot/bookkeeping-platform/tmp/
+wxbot/bookkeeping-platform/temp/
 wxbot/whatsapp-bookkeeping/auth/
 wxbot/whatsapp-bookkeeping/config.json
 wxbot/whatsapp-bookkeeping/data/
+wxbot/**/config*.json
+!wxbot/**/config.example.json
+!wxbot/**/config*.example.json
+!wxbot/**/tsconfig.json
