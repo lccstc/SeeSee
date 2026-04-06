@@ -1943,6 +1943,18 @@ class BookkeepingDB(_BookkeepingStoreBase):
             (transaction_id,),
         ).fetchone()
 
+    def get_latest_edit_log(self, transaction_id: int) -> DBRow | None:
+        return self.conn.execute(
+            """
+            SELECT *
+            FROM transaction_edit_logs
+            WHERE transaction_id = ?
+            ORDER BY edited_at DESC, id DESC
+            LIMIT 1
+            """,
+            (transaction_id,),
+        ).fetchone()
+
     def update_transaction_fields(
         self,
         *,

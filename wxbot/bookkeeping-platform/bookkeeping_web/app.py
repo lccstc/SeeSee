@@ -146,6 +146,10 @@ def create_app(
             if not _is_authorized(environ, core_token):
                 return _respond_json(start_response, 401, {"error": "Unauthorized"})
             return _with_db(db_file, start_response, _handle_message_inspector, environ)
+        if path == "/api/difference-trace" and method == "GET":
+            if not _is_authorized(environ, core_token):
+                return _respond_json(start_response, 401, {"error": "Unauthorized"})
+            return _with_db(db_file, start_response, _handle_difference_trace, environ)
         return _respond_json(start_response, 404, {"error": f"Unknown path: {path}"})
 
     app.close = close_runtime  # type: ignore[attr-defined]
@@ -805,6 +809,157 @@ def _handle_message_inspector(db: BookkeepingDB, start_response, environ):
     if result is None:
         return _respond_json(start_response, 404, {"error": "message not found"})
     return _respond_json(start_response, 200, result)
+
+
+def _handle_difference_trace(db: BookkeepingDB, start_response, environ):
+    from bookkeeping_core.reconciliation import (
+        ISSUE_EDITED_UNREVIEWED,
+        ISSUE_MISSING_RATE,
+        ISSUE_PENDING_RECONCILIATION,
+        ISSUE_RATE_FORMULA_ERROR,
+        ReconciliationService,
+    )
+
+    params = _read_query_params(environ)
+    transaction_id = params.get("transaction_id")
+    if not transaction_id:
+        return _respond_json(
+            start_response, 400, {"error": "transaction_id is required"}
+        )
+    try:
+        transaction_id = int(transaction_id)
+    except ValueError:
+        return _respond_json(
+            start_response, 400, {"error": "transaction_id must be an integer"}
+        )
+
+    transaction = db.get_transaction_by_id(transaction_id)
+    if transaction is None:
+        return _respond_json(start_response, 404, {"error": "transaction not found"})
+
+    result = {
+        "transaction": _serialize_transaction_row(transaction),
+        "message": None,
+        "parse_result": None,
+        "issue_flags": [],
+        "latest_edit": None,
+        "trace_status": {
+            "captured": bool(transaction.get("message_id")),
+            "parsed": False,
+            "posted": False,
+            "edited": False,
+            "flagged": False,
+        },
+    }
+
+    if transaction.get("message_id"):
+        message_row = db.get_incoming_message(
+            platform=transaction["platform"],
+            chat_id=transaction["chat_id"],
+            message_id=transaction["message_id"],
+        )
+        if message_row:
+            result["message"] = {
+                "id": int(message_row["id"]),
+                "platform": str(message_row["platform"] or ""),
+                "chat_id": str(message_row["chat_id"] or ""),
+                "chat_name": str(message_row["chat_name"] or ""),
+                "message_id": str(message_row["message_id"] or ""),
+                "sender_id": str(message_row["sender_id"] or ""),
+                "sender_name": str(message_row["sender_name"] or ""),
+                "sender_kind": str(message_row["sender_kind"] or ""),
+                "content_type": str(message_row["content_type"] or ""),
+                "text": str(message_row["text"] or ""),
+                "from_self": bool(message_row["from_self"]),
+                "received_at": str(message_row["received_at"] or ""),
+                "created_at": str(message_row["created_at"] or ""),
+            }
+            parse_row = db.conn.execute(
+                """
+                SELECT classification, parse_status, raw_text
+                FROM message_parse_results
+                WHERE platform = ? AND chat_id = ? AND message_id = ?
+                """,
+                (
+                    transaction["platform"],
+                    transaction["chat_id"],
+                    transaction["message_id"],
+                ),
+            ).fetchone()
+            if parse_row and parse_row["classification"]:
+                result["parse_result"] = {
+                    "classification": str(parse_row["classification"]),
+                    "parse_status": str(parse_row["parse_status"]),
+                    "raw_text": str(parse_row["raw_text"] or "")
+                    if parse_row["raw_text"]
+                    else None,
+                }
+                result["trace_status"]["parsed"] = True
+
+    service = ReconciliationService(db)
+    category = str(transaction.get("category") or "")
+    rate = transaction.get("rate")
+    rmb_value = float(transaction["rmb_value"]) if transaction.get("rmb_value") else 0
+    business_role = transaction.get("business_role")
+    is_edited = False
+    latest_edit_log = db.get_latest_edit_log(transaction_id)
+    if latest_edit_log:
+        is_edited = True
+        result["latest_edit"] = {
+            "edited_by": str(latest_edit_log["edited_by"]),
+            "edited_at": str(latest_edit_log["edited_at"]),
+            "note": str(latest_edit_log["note"] or ""),
+        }
+        result["trace_status"]["edited"] = True
+
+    issue_flags = service._build_transaction_issue_flags(
+        business_role=business_role,
+        category=category,
+        rate=rate,
+        expected_rmb_value=None,
+        rmb_value=rmb_value,
+        is_edited=is_edited,
+    )
+    result["issue_flags"] = issue_flags
+    if issue_flags:
+        result["trace_status"]["flagged"] = True
+
+    result["trace_status"]["posted"] = True
+
+    return _respond_json(start_response, 200, result)
+
+
+def _serialize_transaction_row(row) -> dict:
+    return {
+        "id": int(row["id"]),
+        "platform": str(row["platform"] or ""),
+        "group_key": str(row["group_key"] or ""),
+        "chat_id": str(row["chat_id"] or ""),
+        "chat_name": str(row["chat_name"] or ""),
+        "sender_id": str(row["sender_id"] or ""),
+        "sender_name": str(row["sender_name"] or ""),
+        "message_id": str(row["message_id"] or "") if row["message_id"] else None,
+        "input_sign": int(row["input_sign"]),
+        "amount": str(row["amount"] or ""),
+        "category": str(row["category"] or ""),
+        "rate": float(row["rate"]) if row["rate"] is not None else None,
+        "rmb_value": float(row["rmb_value"]) if row["rmb_value"] else 0,
+        "usd_amount": float(row["usd_amount"])
+        if row["usd_amount"] is not None
+        else None,
+        "raw": str(row["raw"] or ""),
+        "parse_version": str(row["parse_version"] or ""),
+        "deleted": bool(row["deleted"]),
+        "settled": bool(row["settled"]),
+        "settled_at": str(row["settled_at"] or "") if row["settled_at"] else None,
+        "created_at": str(row["created_at"] or ""),
+        "business_role": str(row["business_role"] or "")
+        if row.get("business_role")
+        else None,
+        "group_num": int(row["mapped_group_num"])
+        if row.get("mapped_group_num") is not None
+        else None,
+    }
 
 
 def _read_json_body(environ) -> dict:

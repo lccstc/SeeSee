@@ -1021,6 +1021,130 @@ class WebAppTests(PostgresTestCase):
         )
         self.assertEqual(status, 401)
 
+    def test_difference_trace_returns_full_trace_with_all_fields(self) -> None:
+        self.db.record_incoming_message(
+            platform="wechat",
+            group_key="wechat:g-100",
+            chat_id="g-100",
+            chat_name="客户群-Web",
+            message_id="msg-trace-full",
+            is_group=True,
+            sender_id="u-trace",
+            sender_name="Trace",
+            sender_kind="user",
+            content_type="text",
+            text="+100rmb",
+            from_self=False,
+            received_at="2026-03-20 12:00:00",
+            raw_payload={},
+        )
+        self.db.record_parse_result(
+            platform="wechat",
+            chat_id="g-100",
+            message_id="msg-trace-full",
+            classification="transaction_like",
+            parse_status="parsed",
+            raw_text="+100rmb",
+        )
+        tx_id = self.db.add_transaction(
+            platform="wechat",
+            group_key="wechat:g-100",
+            group_num=5,
+            chat_id="g-100",
+            chat_name="客户群-Web",
+            sender_id="u-trace",
+            sender_name="Trace",
+            message_id="msg-trace-full",
+            input_sign=1,
+            amount=100,
+            category="rmb",
+            rate=None,
+            rmb_value=100,
+            raw="+100rmb",
+            created_at="2026-03-20 12:00:00",
+        )
+        status, payload = self._request(
+            "GET",
+            "/api/difference-trace",
+            headers={"Authorization": "Bearer core-secret"},
+            query_string=f"transaction_id={tx_id}",
+        )
+        self.assertEqual(status, 200)
+        self.assertIn("transaction", payload)
+        self.assertIn("message", payload)
+        self.assertIn("parse_result", payload)
+        self.assertIn("issue_flags", payload)
+        self.assertIn("latest_edit", payload)
+        self.assertIn("trace_status", payload)
+        self.assertEqual(payload["transaction"]["id"], tx_id)
+        self.assertEqual(payload["trace_status"]["captured"], True)
+        self.assertEqual(payload["trace_status"]["parsed"], True)
+        self.assertEqual(payload["trace_status"]["posted"], True)
+
+    def test_difference_trace_returns_transaction_without_message_parse(self) -> None:
+        tx_id = self.db.add_transaction(
+            platform="wechat",
+            group_key="wechat:g-100",
+            group_num=5,
+            chat_id="g-100",
+            chat_name="客户群-Web",
+            sender_id="u-no-msg",
+            sender_name="NoMsg",
+            message_id="msg-no-msg",
+            input_sign=-1,
+            amount=50,
+            category="xb",
+            rate=5,
+            rmb_value=-250,
+            usd_amount=50,
+            raw="-50xb5",
+            created_at="2026-03-20 13:00:00",
+        )
+        status, payload = self._request(
+            "GET",
+            "/api/difference-trace",
+            headers={"Authorization": "Bearer core-secret"},
+            query_string=f"transaction_id={tx_id}",
+        )
+        self.assertEqual(status, 200)
+        self.assertIn("transaction", payload)
+        self.assertEqual(payload["transaction"]["id"], tx_id)
+        self.assertIsNone(payload["message"])
+        self.assertIsNone(payload["parse_result"])
+        self.assertIn("trace_status", payload)
+        self.assertEqual(payload["trace_status"]["captured"], True)
+        self.assertEqual(payload["trace_status"]["parsed"], False)
+        self.assertEqual(payload["trace_status"]["posted"], True)
+        self.assertIn("issue_flags", payload)
+
+    def test_difference_trace_requires_transaction_id(self) -> None:
+        status, payload = self._request(
+            "GET",
+            "/api/difference-trace",
+            headers={"Authorization": "Bearer core-secret"},
+        )
+        self.assertEqual(status, 400)
+        self.assertIn("transaction_id", payload["error"])
+
+    def test_difference_trace_requires_auth(self) -> None:
+        status, payload = self._request(
+            "GET",
+            "/api/difference-trace",
+            query_string="transaction_id=1",
+        )
+        self.assertEqual(status, 401)
+        self.assertEqual(payload["error"], "Unauthorized")
+
+    def test_difference_trace_returns_404_for_missing_transaction(self) -> None:
+        status, payload = self._request(
+            "GET",
+            "/api/difference-trace",
+            headers={"Authorization": "Bearer core-secret"},
+            query_string="transaction_id=999999",
+        )
+        self.assertEqual(status, 404)
+        self.assertIn("transaction", payload["error"])
+
 
 if __name__ == "__main__":
     unittest.main()
