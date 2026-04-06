@@ -234,7 +234,7 @@ async function main(): Promise<void> {
       try {
         await flushCoreOutboundActions(coreApiClient, actionSender, logger);
       } catch (error) {
-        logger.error({ error }, "Failed to flush core outbound actions");
+        logger.error({ error: toLoggableError(error) }, "Failed to flush core outbound actions");
       } finally {
         isFlushingOutbound = false;
       }
@@ -273,7 +273,7 @@ async function main(): Promise<void> {
           `Core reply actions failed to send for message ${envelope.message_id}`
         );
       } catch (error) {
-        logger.error({ error }, "Failed to process WhatsApp message");
+        logger.error({ error: toLoggableError(error) }, "Failed to process WhatsApp message");
       }
     };
 
@@ -284,7 +284,7 @@ async function main(): Promise<void> {
     });
 
     void whatsapp.connect().catch((error: unknown) => {
-      logger.error({ error }, "WhatsApp connect failed");
+      logger.error({ error: toLoggableError(error) }, "WhatsApp connect failed");
     });
     const outboundTimer = setInterval(() => {
       void flushOutboundActions();
@@ -299,7 +299,7 @@ async function main(): Promise<void> {
       void shutdown(whatsapp);
     });
   } catch (error) {
-    pino().error({ error }, "Startup failed");
+    pino().error({ error: toLoggableError(error) }, "Startup failed");
     process.exit(1);
   }
 }
@@ -321,6 +321,17 @@ function resolveLocalModule(name: "config" | "core-api" | "whatsapp"): string {
   return import.meta.url.endsWith(".ts") || import.meta.url.includes("/src/")
     ? `./${name}.ts`
     : `./${name}.js`;
+}
+
+function toLoggableError(error: unknown): Record<string, unknown> {
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+      stack: error.stack,
+    };
+  }
+  return { value: String(error) };
 }
 
 if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {

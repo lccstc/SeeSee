@@ -1,0 +1,11 @@
+{
+  "whatsapp": {
+    "authDir": "./auth"
+  },
+  "logLevel": "info",
+  "coreApi": {
+    "endpoint": "http://127.0.0.1:8765",
+    "token": "REPLACE_WITH_CORE_TOKEN",
+    "requestTimeoutMs": 5000
+  }
+}

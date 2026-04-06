@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import argparse
 import os
+from socketserver import ThreadingMixIn
 from pathlib import Path
 from wsgiref.handlers import SimpleHandler
-from wsgiref.simple_server import ServerHandler, WSGIRequestHandler, make_server
+from wsgiref.simple_server import ServerHandler, WSGIRequestHandler, WSGIServer, make_server
 
 from bookkeeping_core.database import require_postgres_dsn
 from bookkeeping_web.app import create_app
@@ -46,10 +47,14 @@ class _ReportingRequestHandler(WSGIRequestHandler):
             self.wfile,
             self.get_stderr(),
             self.get_environ(),
-            multithread=False,
+            multithread=True,
         )
         handler.request_handler = self
         handler.run(self.server.get_app())
+
+
+class _ThreadingWSGIServer(ThreadingMixIn, WSGIServer):
+    daemon_threads = True
 
 
 def main() -> int:
@@ -74,7 +79,13 @@ def main() -> int:
             args.master_users,
         ),
     )
-    with make_server(args.host, args.port, app, handler_class=_ReportingRequestHandler) as server:
+    with make_server(
+        args.host,
+        args.port,
+        app,
+        server_class=_ThreadingWSGIServer,
+        handler_class=_ReportingRequestHandler,
+    ) as server:
         print(f"Reporting center running at http://{args.host}:{args.port}")
         server.serve_forever()
     return 0
