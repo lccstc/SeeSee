@@ -5,25 +5,22 @@ _STYLE = """
 <style>
   :root {
     color-scheme: light;
-    --bg: #f4f0e6;
-    --panel: rgba(255, 252, 247, 0.92);
-    --ink: #21313b;
-    --muted: #63717c;
-    --line: #d9cebd;
-    --accent: #0f6d60;
-    --accent-soft: #d8ebe4;
-    --warn: #9b2c2c;
-    --shadow: 0 18px 40px rgba(33, 49, 59, 0.08);
+    --bg: #e5e7eb;
+    --panel: #ffffff;
+    --ink: #111827;
+    --muted: #4b5563;
+    --line: #cbd5e1;
+    --accent: #0f766e;
+    --accent-soft: #ccfbf1;
+    --warn: #b91c1c;
+    --shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
   }
   * { box-sizing: border-box; }
   body {
     margin: 0;
     font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
     color: var(--ink);
-    background:
-      radial-gradient(circle at top left, rgba(15, 109, 96, 0.18), transparent 28%),
-      radial-gradient(circle at top right, rgba(209, 157, 94, 0.18), transparent 22%),
-      linear-gradient(135deg, #f5efe4, #edf3f0 55%, #f6f0e8);
+    background: var(--bg);
   }
   a { color: inherit; }
   header {
@@ -55,9 +52,9 @@ _STYLE = """
   nav a {
     text-decoration: none;
     padding: 10px 14px;
-    border-radius: 999px;
-    background: rgba(255, 255, 255, 0.55);
-    border: 1px solid rgba(15, 109, 96, 0.12);
+    border-radius: 8px;
+    background: #ffffff;
+    border: 1px solid var(--line);
   }
   nav a.active {
     background: var(--accent);
@@ -72,10 +69,9 @@ _STYLE = """
   .panel {
     background: var(--panel);
     border: 1px solid var(--line);
-    border-radius: 20px;
+    border-radius: 8px;
     padding: 18px;
     box-shadow: var(--shadow);
-    backdrop-filter: blur(6px);
   }
   .panel h2, .panel h3 {
     margin: 0 0 12px;
@@ -94,9 +90,9 @@ _STYLE = """
   }
   .card {
     padding: 16px;
-    border-radius: 18px;
-    background: linear-gradient(180deg, rgba(255,255,255,0.95), rgba(244, 250, 248, 0.95));
-    border: 1px solid rgba(15, 109, 96, 0.12);
+    border-radius: 8px;
+    background: #ffffff;
+    border: 1px solid var(--line);
   }
   .card .label {
     font-size: 13px;
@@ -129,9 +125,9 @@ _STYLE = """
   }
   input, textarea, select {
     padding: 10px 12px;
-    border-radius: 12px;
+    border-radius: 8px;
     border: 1px solid var(--line);
-    background: rgba(255,255,255,0.92);
+    background: #ffffff;
   }
   textarea {
     min-height: 88px;
@@ -139,7 +135,7 @@ _STYLE = """
   }
   button {
     border: 0;
-    border-radius: 999px;
+    border-radius: 8px;
     padding: 10px 14px;
     background: var(--accent);
     color: white;
@@ -153,7 +149,7 @@ _STYLE = """
   th, td {
     text-align: left;
     padding: 10px 8px;
-    border-bottom: 1px solid #ebe1d3;
+    border-bottom: 1px solid var(--line);
     vertical-align: top;
   }
   th {
@@ -169,7 +165,7 @@ _STYLE = """
     justify-content: center;
     min-width: 72px;
     padding: 4px 10px;
-    border-radius: 999px;
+    border-radius: 8px;
     font-size: 12px;
     font-weight: 600;
   }
@@ -194,10 +190,10 @@ _STYLE = """
     display: grid;
     gap: 6px;
     padding: 18px;
-    border-radius: 18px;
+    border-radius: 8px;
     text-decoration: none;
-    background: linear-gradient(180deg, rgba(255,255,255,0.92), rgba(237, 243, 240, 0.92));
-    border: 1px solid rgba(15, 109, 96, 0.14);
+    background: #ffffff;
+    border: 1px solid var(--line);
   }
   .entry-card strong {
     font-size: 18px;
@@ -209,9 +205,9 @@ _STYLE = """
   }
   .subpanel {
     padding: 16px;
-    border-radius: 18px;
-    background: rgba(255,255,255,0.58);
-    border: 1px solid rgba(15, 109, 96, 0.12);
+    border-radius: 8px;
+    background: #f8fafc;
+    border: 1px solid var(--line);
   }
   .action-stack {
     display: flex;
@@ -256,12 +252,187 @@ _STYLE = """
     gap: 12px;
     align-items: center;
     padding: 8px 10px;
-    border-radius: 12px;
-    background: rgba(255,255,255,0.72);
-    border: 1px solid rgba(15, 109, 96, 0.08);
+    border-radius: 8px;
+    background: #ffffff;
+    border: 1px solid var(--line);
   }
   .table-note {
     margin-top: 8px;
+  }
+  .quote-stack {
+    display: grid;
+    gap: 16px;
+  }
+  .quote-metrics {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+  }
+  .quote-metric {
+    padding: 14px;
+    border-radius: 8px;
+    background: #ffffff;
+    border: 1px solid var(--line);
+  }
+  .quote-metric .label {
+    font-size: 12px;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+  .quote-metric .value {
+    font-size: 24px;
+    font-weight: 600;
+  }
+  .quote-filter-grid {
+    display: grid;
+    grid-template-columns: 1.4fr 1fr 1fr 1fr 0.8fr;
+    gap: 10px;
+  }
+  .quote-filter-grid input,
+  .quote-filter-grid select,
+  .quote-filter-grid button {
+    border-radius: 8px;
+  }
+  .quote-table th,
+  .quote-table td {
+    white-space: nowrap;
+  }
+  .quote-table td.quote-note {
+    white-space: normal;
+    min-width: 240px;
+  }
+  .quote-table td.wrap {
+    white-space: normal;
+    min-width: 220px;
+  }
+  .quote-status-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 8px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .quote-status-chip.live {
+    background: var(--accent-soft);
+    color: var(--accent);
+  }
+  .quote-status-chip.watch {
+    background: rgba(209, 157, 94, 0.18);
+    color: #8a5200;
+  }
+  .quote-status-chip.stale {
+    background: #fee2e2;
+    color: #b91c1c;
+  }
+  .quote-status-chip.blocked {
+    background: rgba(155, 44, 44, 0.12);
+    color: var(--warn);
+  }
+  .quote-status-chip.pending {
+    background: rgba(99, 113, 124, 0.14);
+    color: var(--muted);
+  }
+  .quote-change-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 8px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .quote-change-chip.new {
+    background: #dbeafe;
+    color: #1d4ed8;
+  }
+  .quote-change-chip.up {
+    background: #dcfce7;
+    color: #15803d;
+  }
+  .quote-change-chip.down {
+    background: #fee2e2;
+    color: #b91c1c;
+  }
+  .quote-change-chip.flat {
+    background: #f1f5f9;
+    color: #475569;
+  }
+  .quote-note {
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.45;
+  }
+  .quote-age.stale {
+    color: #b91c1c;
+    font-weight: 700;
+  }
+  .quote-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: auto;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: var(--accent);
+    color: white;
+    text-decoration: none;
+    border: 1px solid var(--accent);
+  }
+  .quote-source-detail {
+    color: var(--muted);
+    display: block;
+    font-size: 12px;
+    margin-top: 3px;
+  }
+  .quote-template-help {
+    background: #f8fafc;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 12px;
+  }
+  .quote-template-help strong {
+    display: block;
+    margin-bottom: 6px;
+  }
+  .quote-modal-backdrop {
+    align-items: center;
+    background: rgba(15, 23, 42, 0.38);
+    bottom: 0;
+    display: none;
+    justify-content: center;
+    left: 0;
+    padding: 24px;
+    position: fixed;
+    right: 0;
+    top: 0;
+    z-index: 50;
+  }
+  .quote-modal-backdrop.open {
+    display: flex;
+  }
+  .quote-modal {
+    background: #ffffff;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    box-shadow: 0 20px 60px rgba(15, 23, 42, 0.25);
+    max-height: 86vh;
+    max-width: 980px;
+    overflow: auto;
+    padding: 18px;
+    width: min(980px, 100%);
+  }
+  .quote-modal-header {
+    align-items: start;
+    display: flex;
+    gap: 12px;
+    justify-content: space-between;
+    margin-bottom: 12px;
+  }
+  .quote-modal-header h2 {
+    margin: 0;
+  }
+  .quote-modal-close {
+    width: auto;
   }
   .diff-highlight {
     color: #b42318;
@@ -280,7 +451,7 @@ _STYLE = """
     justify-content: center;
     width: auto;
     padding: 10px 14px;
-    border-radius: 999px;
+    border-radius: 8px;
     background: var(--accent);
     color: white;
     text-decoration: none;
@@ -303,6 +474,10 @@ _STYLE = """
   @media (max-width: 980px) {
     .cards {
       grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .quote-metrics,
+    .quote-filter-grid {
+      grid-template-columns: 1fr;
     }
     .entry-grid,
     .subgrid {
@@ -611,6 +786,680 @@ loadDashboard();
         title="总账中心",
         subtitle="驾驶舱先给信号，再决定进入哪个账期工作台或历史分析页。",
         active_path="/",
+        body=body,
+        script=script,
+    )
+
+
+def render_quotes_page() -> str:
+    body = """
+<section class="panel stack">
+  <div class="toolbar">
+    <div>
+      <h2>报价墙</h2>
+      <div class="muted" id="quote-board-range">当前客人报价加载中</div>
+    </div>
+    <div class="toolbar-actions">
+      <button type="button" id="quote-refresh-btn">刷新</button>
+      <a class="quote-link" href="#quote-exceptions">查看异常</a>
+    </div>
+  </div>
+  <div class="quote-metrics">
+    <article class="quote-metric">
+      <div class="label">当前可用</div>
+      <div class="value" id="quote-live-count">0</div>
+    </article>
+    <article class="quote-metric">
+      <div class="label">来源客人群</div>
+      <div class="value" id="quote-source-count">0</div>
+    </article>
+    <article class="quote-metric">
+      <div class="label">异常数量</div>
+      <div class="value" id="quote-exception-count">0</div>
+    </article>
+  </div>
+  <form id="quote-filter-form" class="quote-filter-grid">
+    <input name="search" id="quote-search" type="search" placeholder="搜卡种 / 国家 / 面额 / 形态 / 限制" autocomplete="off" />
+    <input name="card_type" id="quote-card-type" placeholder="卡种，如 Steam" />
+    <input name="country_or_currency" id="quote-country" placeholder="国家 / 币种，如 USD" />
+    <input name="source_group_key" id="quote-source-group" placeholder="客人群 Key" />
+    <select name="quote_status" id="quote-status">
+      <option value="">全部状态</option>
+      <option value="live">可用</option>
+      <option value="stale">超时</option>
+      <option value="watch">观察</option>
+      <option value="blocked">不收</option>
+      <option value="pending">待处理</option>
+    </select>
+    <select name="form_factor" id="quote-form-factor">
+      <option value="">全部形态</option>
+      <option value="card">卡图</option>
+      <option value="code">代码</option>
+      <option value="paper">纸质</option>
+      <option value="electron">电子</option>
+      <option value="horizontal">横板</option>
+      <option value="vertical">竖卡</option>
+    </select>
+    <button type="submit">筛选</button>
+    <button type="button" id="quote-filter-clear">清空</button>
+  </form>
+  <div class="muted" id="quote-filter-status">按卡种看当前最高价；点“刷新”重新拉取报价墙数据。</div>
+  <div class="table-wrap">
+    <table id="quote-board-table" class="quote-table">
+      <thead>
+        <tr><th>卡种</th><th>国家 / 币种</th><th>面额 / 条件</th><th>形态</th><th>最高价</th><th>变化</th><th>客人群</th><th>更新时间</th><th>已存在</th><th>状态</th><th>限制</th><th>操作</th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</section>
+<section class="panel stack" id="quote-profile-panel">
+  <div class="toolbar">
+    <div>
+      <h2>客人群模板</h2>
+      <div class="muted">先配置群默认卡种、解析模板和超时时间；实机测试时按测试群逐个补。</div>
+    </div>
+  </div>
+  <form id="quote-profile-form" class="quote-filter-grid">
+    <input name="chat_id" placeholder="群ID / chat_id" required />
+    <input name="chat_name" placeholder="群名" />
+    <input name="default_card_type" placeholder="默认卡种，如 Apple" />
+    <input name="parser_template" placeholder="模板，如 apple_modifier_sheet" list="quote-template-options" />
+    <datalist id="quote-template-options">
+      <option value="apple_modifier_sheet"></option>
+      <option value="section_sheet"></option>
+      <option value="simple_sheet"></option>
+    </datalist>
+    <input name="stale_after_minutes" placeholder="超时分钟，如 30" />
+    <button type="submit">保存模板</button>
+  </form>
+  <div class="quote-template-help">
+    <strong>apple_modifier_sheet</strong>
+    <div class="muted">Apple 群模板：默认卡种 Apple；识别 US横白卡 基准价；识别 50X 倍数；#竖卡-0.1 / #电子-0.15 / #代码-0.3 按同一上下文派生价格；默认 30 分钟超时。</div>
+  </div>
+  <div class="table-wrap">
+    <table id="quote-profile-table" class="quote-table">
+      <thead>
+        <tr><th>平台</th><th>群ID</th><th>群名</th><th>默认卡种</th><th>模板</th><th>超时</th><th>备注</th></tr>
+      </thead>
+      <tbody><tr><td colspan="7" class="muted">暂无模板配置</td></tr></tbody>
+    </table>
+  </div>
+</section>
+<section class="panel stack" id="quote-inquiry-panel">
+  <div class="toolbar">
+    <div>
+      <h2>短回复上下文</h2>
+      <div class="muted">供应商或同事问完价格后，先建上下文；同一个客人群下一条短回复如 6.25 才能补成完整报价。</div>
+    </div>
+  </div>
+  <form id="quote-inquiry-form" class="quote-filter-grid">
+    <input name="chat_id" placeholder="回复客人群ID / chat_id" required />
+    <input name="chat_name" placeholder="回复客人群名" />
+    <input name="card_type" placeholder="卡种，如 Apple" required />
+    <input name="country_or_currency" placeholder="国家 / 币种，如 UK" required />
+    <input name="amount_range" placeholder="面额，如 10" required />
+    <input name="form_factor" placeholder="形态，如 不限 / 代码" />
+    <input name="multiplier" placeholder="倍数，可空" />
+    <input name="prompt_text" placeholder="原始询价，如 Apple UK 10 现在什么价" />
+    <button type="submit">创建上下文</button>
+  </form>
+  <div class="table-wrap">
+    <table id="quote-inquiry-table" class="quote-table">
+      <thead>
+        <tr><th>状态</th><th>客人群</th><th>卡种</th><th>国家 / 币种</th><th>面额</th><th>形态</th><th>有效到</th><th>来源询价</th></tr>
+      </thead>
+      <tbody><tr><td colspan="8" class="muted">暂无短回复上下文</td></tr></tbody>
+    </table>
+  </div>
+</section>
+<section class="panel stack" id="quote-exceptions">
+  <div class="toolbar">
+    <div>
+      <h2>异常区</h2>
+      <div class="muted" id="quote-exception-range">低置信、缺上下文、模板不匹配会先放在这里。</div>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table id="quote-exception-table" class="quote-table">
+      <thead>
+        <tr><th>时间</th><th>来源客人群</th><th>异常行</th><th>原因</th><th>建议处理</th><th>模板</th><th>置信度</th><th>状态</th><th>操作</th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</section>
+<div class="quote-modal-backdrop" id="quote-ranking-modal" aria-hidden="true">
+  <div class="quote-modal" role="dialog" aria-modal="true" aria-labelledby="quote-ranking-title">
+    <div class="quote-modal-header">
+      <div>
+        <h2>报价排名</h2>
+        <div class="muted" id="quote-ranking-title">点击报价墙任意一行查看同 SKU 客人排名。</div>
+      </div>
+      <button class="quote-modal-close" type="button" id="quote-ranking-close">关闭</button>
+    </div>
+    <div class="table-wrap">
+      <table id="quote-ranking-table" class="quote-table">
+        <thead>
+          <tr><th>排名</th><th>客人群</th><th>价格</th><th>变化</th><th>更新时间</th><th>已存在</th><th>限制</th></tr>
+        </thead>
+        <tbody><tr><td colspan="7" class="muted">未选择报价行</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+"""
+    script = """
+const QUOTE_STALE_MINUTES = 30;
+
+function compactNumber(value) {
+  if (value === null || value === undefined || value === '') {
+    return '';
+  }
+  return Number(value).toFixed(2).replace(/\\.00$/, '');
+}
+
+function textValue(value, fallback = '—') {
+  const text = String(value ?? '').trim();
+  return text || fallback;
+}
+
+function quoteStatusClass(status) {
+  const normalized = String(status || '').toLowerCase();
+  if (normalized === 'live' || normalized === 'active' || normalized === 'available') return 'live';
+  if (normalized === 'watch' || normalized === 'attention') return 'watch';
+  if (normalized === 'blocked' || normalized === 'disabled' || normalized === 'rejected') return 'blocked';
+  if (normalized === 'ignored' || normalized === 'resolved') return 'watch';
+  return 'pending';
+}
+
+function quoteStatusText(status) {
+  const normalized = String(status || '').toLowerCase();
+  if (normalized === 'live' || normalized === 'active' || normalized === 'available') return '可用';
+  if (normalized === 'watch' || normalized === 'attention') return '观察';
+  if (normalized === 'blocked' || normalized === 'disabled' || normalized === 'rejected') return '不收';
+  if (normalized === 'ignored') return '已忽略';
+  if (normalized === 'resolved') return '已处理';
+  if (normalized === 'open') return '等待回复';
+  if (normalized === 'pending' || normalized === 'review') return '待处理';
+  return textValue(status);
+}
+
+function quoteDisplayStatusClass(row) {
+  if (quoteIsStale(row) && quoteStatusClass(row.quote_status || row.status) === 'live') {
+    return 'stale';
+  }
+  return quoteStatusClass(row.quote_status || row.status);
+}
+
+function quoteDisplayStatusText(row) {
+  if (quoteIsStale(row) && quoteStatusClass(row.quote_status || row.status) === 'live') {
+    return '超时';
+  }
+  return quoteStatusText(row.quote_status || row.status);
+}
+
+function quoteChangeClass(status) {
+  const normalized = String(status || '').toLowerCase();
+  if (normalized === 'new') return 'new';
+  if (normalized === 'up' || normalized === 'rise') return 'up';
+  if (normalized === 'down' || normalized === 'drop') return 'down';
+  return 'flat';
+}
+
+function quoteChangeText(row) {
+  const status = quoteChangeClass(row.change_status);
+  const delta = row.price_change;
+  if (status === 'new') return '新增';
+  if (status === 'up') return `涨价 +${compactNumber(delta)}`;
+  if (status === 'down') return `跌价 ${compactNumber(delta)}`;
+  return '持平';
+}
+
+function quoteFormFactorText(value) {
+  const normalized = String(value || '').toLowerCase();
+  if (!normalized) return '—';
+  if (normalized === 'card') return '卡图';
+  if (normalized === 'code') return '代码';
+  if (normalized === 'paper') return '纸质';
+  if (normalized === 'electron' || normalized === 'electronic') return '电子';
+  if (normalized === 'horizontal') return '横板';
+  if (normalized === 'vertical') return '竖卡';
+  return textValue(value);
+}
+
+function quoteCountryText(row) {
+  return textValue(row.country_or_currency || row.currency || row.country || row.region);
+}
+
+function quoteAmountText(row) {
+  return textValue(
+    row.amount_label
+      || row.amount_display
+      || row.amount_range
+      || row.face_value_range
+      || row.condition_text
+      || row.amount
+  );
+}
+
+function quoteSourceText(row) {
+  return textValue(row.source_group_name || row.chat_name || row.source_group_key || row.group_key);
+}
+
+function quoteSourceDetailText(row) {
+  return textValue(row.chat_id || row.source_group_key || row.group_key);
+}
+
+function quoteRestrictionText(row) {
+  return textValue(row.restriction_text || row.note || row.remark);
+}
+
+function quoteExceptionActions(row) {
+  const status = String(row.resolution_status || row.status || 'open').toLowerCase();
+  if (status !== 'open') {
+    return '<span class="muted">已处理</span>';
+  }
+  const actions = [];
+  if (String(row.reason || '') === 'blocked_or_question_line') {
+    actions.push(`<button type="button" data-quote-exception-attach="${row.id}">附加限制</button>`);
+  }
+  actions.push(`<button type="button" data-quote-exception-ignore="${row.id}">忽略</button>`);
+  return actions.join('');
+}
+
+function parseQuoteDate(value) {
+  const text = String(value || '').trim();
+  if (!text) return null;
+  const normalized = text.includes('T') ? text : text.replace(' ', 'T');
+  const date = new Date(normalized);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function quoteAgeMinutes(value) {
+  const date = parseQuoteDate(value);
+  if (!date) return null;
+  const diffSeconds = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000));
+  return Math.floor(diffSeconds / 60);
+}
+
+function quoteAgeText(value) {
+  const date = parseQuoteDate(value);
+  if (!date) return '—';
+  const diffSeconds = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000));
+  if (diffSeconds < 60) return '刚刚';
+  const minutes = Math.floor(diffSeconds / 60);
+  if (minutes < 60) return `${minutes}分钟`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) {
+    const restMinutes = minutes % 60;
+    return restMinutes ? `${hours}小时${restMinutes}分钟` : `${hours}小时`;
+  }
+  const days = Math.floor(hours / 24);
+  const restHours = hours % 24;
+  return restHours ? `${days}天${restHours}小时` : `${days}天`;
+}
+
+function quoteIsStale(row) {
+  const minutes = quoteAgeMinutes(row.effective_at || row.message_time || row.created_at || row.updated_at || row.received_at);
+  const threshold = Number(row.stale_after_minutes || QUOTE_STALE_MINUTES);
+  return minutes !== null && minutes >= threshold;
+}
+
+function quoteAgeClass(row) {
+  return quoteIsStale(row) ? 'quote-age stale' : 'quote-age';
+}
+
+function quoteSearchText(row) {
+  return [
+    row.card_type,
+    row.country_or_currency,
+    row.currency,
+    row.country,
+    row.region,
+    row.amount_label,
+    row.amount_range,
+    row.face_value_range,
+    row.condition_text,
+    row.form_factor,
+    row.restriction_text,
+    row.note,
+    row.remark,
+    row.source_group_name,
+    row.source_group_key,
+  ].map((item) => String(item || '').toLowerCase()).join(' ');
+}
+
+function quoteRowMatches(row, filters) {
+  const search = String(filters.search || '').trim().toLowerCase();
+  if (search && !quoteSearchText(row).includes(search)) {
+    return false;
+  }
+  if (filters.card_type && String(row.card_type || '').toLowerCase() !== String(filters.card_type).toLowerCase()) {
+    return false;
+  }
+  if (filters.country_or_currency) {
+    const country = String(row.country_or_currency || row.currency || row.country || row.region || '').toLowerCase();
+    if (country !== String(filters.country_or_currency).toLowerCase()) {
+      return false;
+    }
+  }
+  if (filters.source_group_key && String(row.source_group_key || row.group_key || '').toLowerCase() !== String(filters.source_group_key).toLowerCase()) {
+    return false;
+  }
+  if (filters.quote_status) {
+    if (quoteDisplayStatusClass(row) !== String(filters.quote_status).toLowerCase()) {
+      return false;
+    }
+  }
+  if (filters.form_factor) {
+    if (String(row.form_factor || '').toLowerCase() !== String(filters.form_factor).toLowerCase()) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function latestQuoteTime(rows) {
+  let latest = '';
+  for (const row of rows || []) {
+    const value = String(row.updated_at || row.effective_at || row.created_at || row.message_time || row.received_at || '');
+    if (value && value > latest) {
+      latest = value;
+    }
+  }
+  return latest;
+}
+
+let allQuoteRows = [];
+let allQuoteExceptions = [];
+let allQuoteProfiles = [];
+let allQuoteInquiries = [];
+
+function currentQuoteFilters() {
+  const form = document.querySelector('#quote-filter-form');
+  return Object.fromEntries(new FormData(form).entries());
+}
+
+function renderQuoteBoard(rows) {
+  const filteredRows = rows.filter((row) => quoteRowMatches(row, currentQuoteFilters()));
+  document.querySelector('#quote-live-count').textContent = String(filteredRows.length);
+  document.querySelector('#quote-source-count').textContent = String(new Set(filteredRows.map((row) => quoteSourceText(row))).size);
+  document.querySelector('#quote-board-range').textContent = filteredRows.length
+    ? `已加载 ${filteredRows.length} 条可用报价，最新更新时间 ${latestQuoteTime(filteredRows) || '—'}。`
+    : '当前没有可用报价。';
+  document.querySelector('#quote-filter-status').textContent = filteredRows.length
+    ? `当前显示 ${filteredRows.length} 条报价。`
+    : '没有匹配的报价。';
+  document.querySelector('#quote-board-table tbody').innerHTML = filteredRows.length
+    ? filteredRows.map((row) => `
+      <tr>
+        <td>${textValue(row.card_type)}</td>
+        <td>${quoteCountryText(row)}</td>
+        <td>${quoteAmountText(row)}</td>
+        <td>${quoteFormFactorText(row.form_factor || row.quote_form_factor)}</td>
+        <td>${compactNumber(row.price ?? row.rate ?? row.quote_price ?? '')}</td>
+        <td><span class="quote-change-chip ${quoteChangeClass(row.change_status)}">${quoteChangeText(row)}</span></td>
+        <td>${quoteSourceText(row)}<span class="quote-source-detail">${quoteSourceDetailText(row)}</span></td>
+        <td>${textValue(row.updated_at || row.effective_at || row.created_at || row.message_time || row.received_at)}</td>
+        <td class="${quoteAgeClass(row)}">${quoteAgeText(row.effective_at || row.message_time || row.created_at || row.updated_at || row.received_at)}</td>
+        <td><span class="quote-status-chip ${quoteDisplayStatusClass(row)}">${quoteDisplayStatusText(row)}</span></td>
+        <td class="quote-note">${quoteRestrictionText(row)}</td>
+        <td><button type="button" data-quote-ranking-id="${row.id}">排名</button></td>
+      </tr>
+    `).join('')
+    : '<tr><td colspan="12" class="muted">暂无可用报价</td></tr>';
+  bindQuoteRankingButtons();
+}
+
+function bindQuoteRankingButtons() {
+  document.querySelectorAll('[data-quote-ranking-id]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const row = allQuoteRows.find((item) => String(item.id) === String(button.dataset.quoteRankingId));
+      if (row) {
+        await loadQuoteRanking(row);
+      }
+    });
+  });
+}
+
+async function loadQuoteRanking(row) {
+  document.querySelector('#quote-ranking-modal').classList.add('open');
+  document.querySelector('#quote-ranking-modal').setAttribute('aria-hidden', 'false');
+  document.querySelector('#quote-ranking-title').textContent = `${textValue(row.card_type)} / ${quoteCountryText(row)} / ${quoteAmountText(row)} / ${quoteFormFactorText(row.form_factor)}：加载中`;
+  document.querySelector('#quote-ranking-table tbody').innerHTML = '<tr><td colspan="7" class="muted">正在加载排名</td></tr>';
+  const params = new URLSearchParams({
+    card_type: row.card_type || '',
+    country_or_currency: row.country_or_currency || '',
+    amount_range: row.amount_range || '',
+    form_factor: row.form_factor || '',
+  });
+  if (row.multiplier) {
+    params.set('multiplier', row.multiplier);
+  }
+  const response = await fetch(`/api/quotes/rankings?${params.toString()}`);
+  const payload = await response.json();
+  const rankingRows = Array.isArray(payload.rows) ? payload.rows : [];
+  document.querySelector('#quote-ranking-title').textContent = `${textValue(row.card_type)} / ${quoteCountryText(row)} / ${quoteAmountText(row)} / ${quoteFormFactorText(row.form_factor)}：共 ${rankingRows.length} 个来源`;
+  document.querySelector('#quote-ranking-table tbody').innerHTML = rankingRows.length
+    ? rankingRows.map((item, index) => `
+      <tr>
+        <td>${index + 1}</td>
+        <td>${quoteSourceText(item)}<span class="quote-source-detail">${quoteSourceDetailText(item)}</span></td>
+        <td>${compactNumber(item.price)}</td>
+        <td><span class="quote-change-chip ${quoteChangeClass(item.change_status)}">${quoteChangeText(item)}</span></td>
+        <td>${textValue(item.effective_at || item.message_time || item.created_at)}</td>
+        <td class="${quoteAgeClass(item)}">${quoteAgeText(item.effective_at || item.message_time || item.created_at)}</td>
+        <td class="quote-note">${quoteRestrictionText(item)}</td>
+      </tr>
+    `).join('')
+    : '<tr><td colspan="7" class="muted">没有同 SKU 排名数据</td></tr>';
+}
+
+function closeQuoteRankingModal() {
+  document.querySelector('#quote-ranking-modal').classList.remove('open');
+  document.querySelector('#quote-ranking-modal').setAttribute('aria-hidden', 'true');
+}
+
+function renderQuoteProfiles(rows) {
+  allQuoteProfiles = rows || [];
+  document.querySelector('#quote-profile-table tbody').innerHTML = allQuoteProfiles.length
+    ? allQuoteProfiles.map((row) => `
+      <tr>
+        <td>${textValue(row.platform)}</td>
+        <td>${textValue(row.chat_id)}</td>
+        <td>${textValue(row.chat_name)}</td>
+        <td>${textValue(row.default_card_type)}</td>
+        <td>${textValue(row.parser_template)}</td>
+        <td>${textValue(row.stale_after_minutes)}分钟</td>
+        <td class="quote-note">${textValue(row.note)}</td>
+      </tr>
+    `).join('')
+    : '<tr><td colspan="7" class="muted">暂无模板配置</td></tr>';
+}
+
+function renderQuoteInquiries(rows) {
+  allQuoteInquiries = rows || [];
+  document.querySelector('#quote-inquiry-table tbody').innerHTML = allQuoteInquiries.length
+    ? allQuoteInquiries.map((row) => `
+      <tr>
+        <td><span class="quote-status-chip ${quoteStatusClass(row.status)}">${quoteStatusText(row.status)}</span></td>
+        <td>${textValue(row.chat_name || row.chat_id)}<span class="quote-source-detail">${textValue(row.chat_id)}</span></td>
+        <td>${textValue(row.card_type)}</td>
+        <td>${textValue(row.country_or_currency)}</td>
+        <td>${textValue(row.amount_range)}${row.multiplier ? ` / ${textValue(row.multiplier)}` : ''}</td>
+        <td>${quoteFormFactorText(row.form_factor)}</td>
+        <td>${textValue(row.expires_at)}</td>
+        <td class="quote-note">${textValue(row.prompt_text)}</td>
+      </tr>
+    `).join('')
+    : '<tr><td colspan="8" class="muted">暂无短回复上下文</td></tr>';
+}
+
+function renderQuoteExceptions(rows) {
+  const filteredRows = rows;
+  document.querySelector('#quote-exception-count').textContent = String(filteredRows.length);
+  document.querySelector('#quote-exception-range').textContent = filteredRows.length
+    ? `已收集 ${filteredRows.length} 条异常，优先处理模板不匹配和缺上下文短报价。`
+    : '当前没有异常。';
+  document.querySelector('#quote-exception-table tbody').innerHTML = filteredRows.length
+    ? filteredRows.map((row) => `
+      <tr>
+        <td>${textValue(row.message_time || row.created_at || row.updated_at || row.received_at)}</td>
+        <td>${textValue(row.source_group_name || row.chat_name || row.source_group_key || row.group_key)}</td>
+        <td class="quote-note">${textValue(row.source_line || row.line || row.text)}</td>
+        <td>${textValue(row.reason_label || row.reason || row.error_reason || row.status)}</td>
+        <td class="quote-note">${textValue(row.suggested_action || row.resolution_note)}</td>
+        <td>${textValue(row.template_version || row.template_name || row.parser_version)}</td>
+        <td>${textValue(row.confidence)}</td>
+        <td><span class="quote-status-chip ${quoteStatusClass(row.resolution_status || row.status)}">${quoteStatusText(row.resolution_status || row.status)}</span></td>
+        <td>${quoteExceptionActions(row)}</td>
+      </tr>
+    `).join('')
+    : '<tr><td colspan="9" class="muted">暂无异常</td></tr>';
+  bindQuoteExceptionButtons();
+}
+
+function bindQuoteExceptionButtons() {
+  document.querySelectorAll('[data-quote-exception-ignore]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      await fetch('/api/quotes/exceptions/resolve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          exception_id: Number(button.dataset.quoteExceptionIgnore),
+          resolution_status: 'ignored',
+          resolution_note: 'web ignored',
+        }),
+      });
+      await loadQuotesData();
+    });
+  });
+  document.querySelectorAll('[data-quote-exception-attach]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const response = await fetch('/api/quotes/exceptions/resolve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          exception_id: Number(button.dataset.quoteExceptionAttach),
+          resolution_status: 'attached',
+        }),
+      });
+      const payload = await response.json();
+      if (payload.status && payload.status !== 'attached') {
+        alert(`暂时不能自动附加：${payload.status}`);
+      }
+      await loadQuotesData();
+    });
+  });
+}
+
+async function loadQuotesData() {
+  const [boardResponse, exceptionResponse, profileResponse, inquiryResponse] = await Promise.all([
+    fetch('/api/quotes/board'),
+    fetch('/api/quotes/exceptions'),
+    fetch('/api/quotes/group-profiles'),
+    fetch('/api/quotes/inquiries'),
+  ]);
+  const boardPayload = await boardResponse.json();
+  const exceptionPayload = await exceptionResponse.json();
+  const profilePayload = await profileResponse.json();
+  const inquiryPayload = await inquiryResponse.json();
+  allQuoteRows = Array.isArray(boardPayload.rows) ? boardPayload.rows : [];
+  allQuoteExceptions = Array.isArray(exceptionPayload.rows) ? exceptionPayload.rows : [];
+  renderQuoteBoard(allQuoteRows);
+  renderQuoteExceptions(allQuoteExceptions);
+  renderQuoteProfiles(Array.isArray(profilePayload.rows) ? profilePayload.rows : []);
+  renderQuoteInquiries(Array.isArray(inquiryPayload.rows) ? inquiryPayload.rows : []);
+}
+
+function syncQuoteUrl() {
+  const form = document.querySelector('#quote-filter-form');
+  const params = new URLSearchParams(new FormData(form));
+  Array.from(params.entries()).forEach(([key, value]) => {
+    if (!String(value || '').trim()) {
+      params.delete(key);
+    }
+  });
+  const query = params.toString();
+  history.replaceState({}, '', query ? `/quotes?${query}` : '/quotes');
+}
+
+document.querySelector('#quote-filter-form').addEventListener('submit', (event) => {
+  event.preventDefault();
+  syncQuoteUrl();
+  renderQuoteBoard(allQuoteRows);
+});
+
+document.querySelector('#quote-filter-form').addEventListener('input', () => {
+  syncQuoteUrl();
+  renderQuoteBoard(allQuoteRows);
+});
+
+document.querySelector('#quote-filter-clear').addEventListener('click', () => {
+  document.querySelector('#quote-filter-form').reset();
+  syncQuoteUrl();
+  renderQuoteBoard(allQuoteRows);
+});
+
+document.querySelector('#quote-refresh-btn').addEventListener('click', async () => {
+  await loadQuotesData();
+});
+
+document.querySelector('#quote-profile-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const payload = Object.fromEntries(new FormData(event.currentTarget).entries());
+  await fetch('/api/quotes/group-profiles', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  event.currentTarget.reset();
+  await loadQuotesData();
+});
+
+document.querySelector('#quote-inquiry-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const payload = Object.fromEntries(new FormData(event.currentTarget).entries());
+  await fetch('/api/quotes/inquiries', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  event.currentTarget.reset();
+  await loadQuotesData();
+});
+
+document.querySelector('#quote-ranking-close').addEventListener('click', closeQuoteRankingModal);
+document.querySelector('#quote-ranking-modal').addEventListener('click', (event) => {
+  if (event.target === event.currentTarget) {
+    closeQuoteRankingModal();
+  }
+});
+
+const quoteQuery = new URLSearchParams(window.location.search);
+const quoteFieldIds = {
+  search: 'quote-search',
+  card_type: 'quote-card-type',
+  country_or_currency: 'quote-country',
+  source_group_key: 'quote-source-group',
+  quote_status: 'quote-status',
+  form_factor: 'quote-form-factor',
+};
+for (const [key, id] of Object.entries(quoteFieldIds)) {
+  const node = document.querySelector(`#${id}`);
+  const value = quoteQuery.get(key);
+  if (node && value) {
+    node.value = value;
+  }
+}
+loadQuotesData();
+setInterval(() => renderQuoteBoard(allQuoteRows), 60000);
+"""
+    return _render_layout(
+        title="报价墙",
+        subtitle="先看当前同卡最高价，再下钻到来源群、条件和异常。",
+        active_path="/quotes",
         body=body,
         script=script,
     )
@@ -2537,6 +3386,7 @@ def _render_layout(*, title: str, subtitle: str, active_path: str, body: str, sc
 <nav>
   <a href="/" class="%s">首页驾驶舱</a>
   <a href="/workbench" class="%s">账期工作台</a>
+  <a href="/quotes" class="%s">报价墙</a>
   <a href="/reconciliation" class="%s">对账中心</a>
   <a href="/role-mapping" class="%s">角色映射</a>
   <a href="/history" class="%s">跑账历史</a>
@@ -2544,6 +3394,7 @@ def _render_layout(*, title: str, subtitle: str, active_path: str, body: str, sc
 """ % (
         "active" if active_path == "/" else "",
         "active" if active_path == "/workbench" else "",
+        "active" if active_path == "/quotes" else "",
         "active" if active_path == "/reconciliation" else "",
         "active" if active_path == "/role-mapping" else "",
         "active" if active_path == "/history" else "",

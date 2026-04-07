@@ -9,6 +9,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 
 DEFAULT_TEST_DSN_ENV = "BOOKKEEPING_TEST_DSN"
+DEFAULT_LOCAL_TEST_DSN = "postgresql://bookkeeping:password@127.0.0.1:5432/bookkeeping_test"
 
 
 class PostgresTestCase(unittest.TestCase):
@@ -18,7 +19,7 @@ class PostgresTestCase(unittest.TestCase):
         self.temp_path = Path(self.tempdir.name)
         self._base_dsn = str(os.environ.get(DEFAULT_TEST_DSN_ENV, "")).strip()
         if not self._base_dsn:
-            raise RuntimeError(f"{DEFAULT_TEST_DSN_ENV} is required for PostgreSQL integration tests")
+            self._base_dsn = DEFAULT_LOCAL_TEST_DSN
         self._schema_dsns: dict[str, str] = {}
 
     def tearDown(self) -> None:

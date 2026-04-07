@@ -180,6 +180,156 @@ class WebAppTests(PostgresTestCase):
         self.assertEqual(len(payload["recent_periods"]), 1)
         self.assertIn("latest_transactions", payload)
 
+    def test_quotes_page_renders_board_and_exception_sections(self) -> None:
+        status, body = self._request_text("GET", "/quotes")
+        self.assertEqual(status, 200)
+        self.assertIn("报价墙", body)
+        self.assertIn('id="quote-filter-form"', body)
+        self.assertIn('id="quote-board-table"', body)
+        self.assertIn('id="quote-profile-table"', body)
+        self.assertIn('id="quote-inquiry-table"', body)
+        self.assertIn('id="quote-ranking-table"', body)
+        self.assertIn('id="quote-exception-table"', body)
+        self.assertIn("短回复上下文", body)
+        self.assertIn("异常行", body)
+        self.assertIn("建议处理", body)
+        self.assertIn("附加限制", body)
+
+    def test_quote_board_endpoint_returns_empty_payload_by_default(self) -> None:
+        status, payload = self._request("GET", "/api/quotes/board")
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["rows"], [])
+        self.assertEqual(payload["total"], 0)
+
+    def test_quote_history_and_exception_endpoints_accept_filters(self) -> None:
+        status, history_payload = self._request(
+            "GET",
+            "/api/quotes/history",
+            query_string="card_type=Steam&country_or_currency=USD&source_group_key=wechat:g-1&limit=5&offset=2",
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(history_payload["rows"], [])
+        self.assertEqual(history_payload["total"], 0)
+        self.assertEqual(history_payload["limit"], 5)
+        self.assertEqual(history_payload["offset"], 2)
+        self.assertEqual(history_payload["filters"]["card_type"], "Steam")
+        self.assertEqual(history_payload["filters"]["country_or_currency"], "USD")
+        self.assertEqual(history_payload["filters"]["source_group_key"], "wechat:g-1")
+
+        status, exception_payload = self._request(
+            "GET",
+            "/api/quotes/exceptions",
+            query_string="limit=7&offset=1",
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(exception_payload["rows"], [])
+        self.assertEqual(exception_payload["total"], 0)
+        self.assertEqual(exception_payload["limit"], 7)
+        self.assertEqual(exception_payload["offset"], 1)
+
+    def test_quote_inquiry_and_exception_resolution_endpoints(self) -> None:
+        status, inquiry_payload = self._request(
+            "POST",
+            "/api/quotes/inquiries",
+            {
+                "platform": "wechat",
+                "chat_id": "g-inquiry",
+                "chat_name": "询价群",
+                "card_type": "it",
+                "country_or_currency": "uk",
+                "amount_range": "10",
+            },
+        )
+        self.assertEqual(status, 200)
+        self.assertGreater(inquiry_payload["inquiry_id"], 0)
+        status, inquiries_payload = self._request("GET", "/api/quotes/inquiries")
+        self.assertEqual(status, 200)
+        self.assertEqual(inquiries_payload["rows"][0]["card_type"], "Apple")
+        self.assertEqual(inquiries_payload["rows"][0]["country_or_currency"], "GBP")
+
+        status, ranking_payload = self._request(
+            "GET",
+            "/api/quotes/rankings",
+            query_string="card_type=Apple&country_or_currency=GBP&amount_range=10&form_factor=%E4%B8%8D%E9%99%90",
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(ranking_payload["rows"], [])
+
+        status, match_payload = self._request(
+            "GET",
+            "/api/quotes/matches",
+            query_string="card_type=it&country_or_currency=us&amount=250",
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(match_payload["filters"]["card_type"], "Apple")
+        self.assertEqual(match_payload["filters"]["country_or_currency"], "USD")
+
+        status, profile_payload = self._request(
+            "POST",
+            "/api/quotes/group-profiles",
+            {
+                "platform": "wechat",
+                "chat_id": "g-profile",
+                "chat_name": "模板群",
+                "default_card_type": "it",
+                "parser_template": "apple_modifier_sheet",
+                "stale_after_minutes": 30,
+            },
+        )
+        self.assertEqual(status, 200)
+        self.assertGreater(profile_payload["profile_id"], 0)
+        status, profiles = self._request("GET", "/api/quotes/group-profiles")
+        self.assertEqual(status, 200)
+        self.assertEqual(profiles["rows"][0]["default_card_type"], "Apple")
+
+        exception_id = self.db.record_quote_exception(
+            quote_document_id=0,
+            platform="wechat",
+            source_group_key="wechat:g-ex",
+            chat_id="g-ex",
+            chat_name="异常群",
+            source_name="客人",
+            sender_id="u-ex",
+            reason="missing_context",
+            source_line="uk 10",
+            raw_text="uk 10",
+            message_time="2026-04-08 10:00:00",
+            parser_template="simple_sheet",
+            parser_version="quote-v1",
+            confidence=0.4,
+        )
+        status, resolve_payload = self._request(
+            "POST",
+            "/api/quotes/exceptions/resolve",
+            {"exception_id": exception_id, "resolution_status": "ignored"},
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(resolve_payload["updated"], 1)
+
+        attach_exception_id = self.db.record_quote_exception(
+            quote_document_id=0,
+            platform="wechat",
+            source_group_key="wechat:g-ex",
+            chat_id="g-ex",
+            chat_name="异常群",
+            source_name="客人",
+            sender_id="u-ex",
+            reason="blocked_or_question_line",
+            source_line="雷蛇待定卡不加账！！",
+            raw_text="雷蛇待定卡不加账！！",
+            message_time="2026-04-08 10:00:00",
+            parser_template="section_sheet",
+            parser_version="quote-v1",
+            confidence=0.45,
+        )
+        status, attach_payload = self._request(
+            "POST",
+            "/api/quotes/exceptions/resolve",
+            {"exception_id": attach_exception_id, "resolution_status": "attached"},
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(attach_payload["status"], "no_target_rows")
+
     def test_runtime_endpoint_requires_bearer_token(self) -> None:
         status, payload = self._request(
             "POST",

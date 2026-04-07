@@ -1,5 +1,36 @@
 # SeeSee 施工日志
 
+## 2026-04-08
+
+### 报价墙 MVP 第一轮
+本轮正式把当前主线从继续打磨 trace/reconciliation，切到“客人原始报价行情墙”。
+
+本轮决定的 P1 边界：
+- 不做万能解析器
+- 不让 AI 进入主链路
+- 不做供应商机器人自动问价
+- 先做脚本模板解析、价格历史切片、当前最高价墙和异常区
+
+本轮新增能力：
+- 新增报价捕获服务，runtime 在原始消息入库后尝试识别报价消息
+- 新增 `quote_documents`、`quote_price_rows`、`quote_parse_exceptions`
+- 新增当前报价墙、历史报价、异常报价的只读查询方法
+- 新增 `/quotes` 页面和 `/api/quotes/board`、`/api/quotes/history`、`/api/quotes/exceptions`
+- 缺上下文短报价，例如 `uk 10` / `6.25`，不会自动进入报价墙
+- 信息完整的单条报价，例如 `Mexico apple card 200 0.265`，可以解析成标准报价行
+
+本轮验证：
+- `python3 -m py_compile` 覆盖报价核心、runtime、web 页面/API 和新增测试文件
+- `PYTHONPATH=. python3 -m unittest tests.test_quote_parser -v` 通过
+- `PYTHONPATH=. python3 -m unittest tests.test_reporting_server -v` 通过
+- 已创建本地 `bookkeeping_test` 测试库，并在项目 `.venv` 安装 `psycopg[binary]`
+- `../../.venv/bin/python -m unittest tests.test_quotes -v` 在 PostgreSQL 测试库下通过
+- `../../.venv/bin/python -m unittest tests.test_webapp.WebAppTests.test_quotes_page_renders_board_and_exception_sections tests.test_webapp.WebAppTests.test_quote_board_endpoint_returns_empty_payload_by_default tests.test_webapp.WebAppTests.test_quote_history_and_exception_endpoints_accept_filters -v` 通过
+
+下一步：
+- 用真实客人 1/2/3 报价单继续扩大模板样例
+- 价格墙稳定后，P2 第一刀做“价格加错”检测
+
 ## 2026-04-07
 
 ### 当前阶段定位
