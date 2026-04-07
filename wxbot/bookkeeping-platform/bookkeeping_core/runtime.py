@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from .contracts import CoreAction, NormalizedMessageEnvelope
+from .quotes import QuoteCaptureService
 from .service import BookkeepingService
 
 
@@ -14,6 +15,7 @@ class UnifiedBookkeepingRuntime:
             master_users=master_users,
             export_dir=export_dir,
         )
+        self.quote_capture = QuoteCaptureService(db)
         self._queued_actions: list[CoreAction] = []
 
     def process_envelope(self, envelope: NormalizedMessageEnvelope | dict[str, Any]) -> list[CoreAction]:
@@ -26,6 +28,7 @@ class UnifiedBookkeepingRuntime:
 
         if not self._record_incoming_message(envelope, raw_payload):
             return []
+        self.quote_capture.capture_from_message(envelope, raw_text=envelope.text)
         return self.service.process_envelope(envelope)
 
     def flush_due_actions(self) -> list[CoreAction]:

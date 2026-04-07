@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +26,16 @@ def require_postgres_dsn(target: str | Path, *, context: str) -> str:
 
 class _BookkeepingStoreBase:
     """Shared bookkeeping persistence methods for the unified core store."""
+
+    def _last_insert_id(self, cursor) -> int:
+        value = getattr(cursor, "lastrowid", None)
+        if value:
+            return int(value)
+        try:
+            row = self.conn.execute("SELECT LASTVAL() AS id").fetchone()
+        except Exception:
+            return 0
+        return int(row["id"]) if row and row.get("id") is not None else 0
 
     def _refresh_group_profile_if_exists(
         self,
@@ -1274,7 +1285,843 @@ class _BookkeepingStoreBase:
             (platform, chat_id, message_id, classification, parse_status, raw_text),
         )
         self.conn.commit()
-        return int(cur.lastrowid) if cur.lastrowid else 0
+        return self._last_insert_id(cur)
+
+    def record_quote_document(
+        self,
+        *,
+        platform: str,
+        source_group_key: str,
+        chat_id: str,
+        chat_name: str,
+        message_id: str,
+        source_name: str,
+        sender_id: str,
+        raw_text: str,
+        message_time: str,
+        parser_template: str,
+        parser_version: str,
+        confidence: float,
+        parse_status: str,
+    ) -> int:
+        cur = self.conn.execute(
+            """
+            INSERT INTO quote_documents (
+              platform, source_group_key, chat_id, chat_name, message_id,
+              source_name, sender_id, raw_text, message_time, parser_template,
+              parser_version, confidence, parse_status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                platform,
+                source_group_key,
+                chat_id,
+                chat_name,
+                message_id,
+                source_name,
+                sender_id,
+                raw_text,
+                message_time,
+                parser_template,
+                parser_version,
+                confidence,
+                parse_status,
+            ),
+        )
+        self.conn.commit()
+        return self._last_insert_id(cur)
+
+    def upsert_quote_price_row_with_history(
+        self,
+        *,
+        quote_document_id: int,
+        message_id: str,
+        platform: str,
+        source_group_key: str,
+        chat_id: str,
+        chat_name: str,
+        source_name: str,
+        sender_id: str,
+        card_type: str,
+        country_or_currency: str,
+        amount_range: str,
+        multiplier: str | None,
+        form_factor: str,
+        price: float,
+        quote_status: str,
+        restriction_text: str,
+        source_line: str,
+        raw_text: str,
+        message_time: str,
+        effective_at: str,
+        expires_at: str | None,
+        parser_template: str,
+        parser_version: str,
+        confidence: float,
+    ) -> int:
+        active_rows = self.conn.execute(
+            """
+            SELECT id
+            FROM quote_price_rows
+            WHERE platform = ?
+              AND source_group_key = ?
+              AND card_type = ?
+              AND country_or_currency = ?
+              AND amount_range = ?
+              AND form_factor = ?
+              AND COALESCE(multiplier, '') = COALESCE(?, '')
+              AND expires_at IS NULL
+            ORDER BY effective_at DESC, id DESC
+            """,
+            (
+                platform,
+                source_group_key,
+                card_type,
+                country_or_currency,
+                amount_range,
+                form_factor,
+                multiplier,
+            ),
+        ).fetchall()
+        for row in active_rows:
+            self.conn.execute(
+                "UPDATE quote_price_rows SET expires_at = ?, quote_status = 'superseded' WHERE id = ?",
+                (effective_at, row["id"]),
+            )
+        cur = self.conn.execute(
+            """
+            INSERT INTO quote_price_rows (
+              quote_document_id, platform, source_group_key, chat_id, chat_name,
+              message_id, source_name, sender_id, card_type, country_or_currency,
+              amount_range, multiplier, form_factor, price, quote_status,
+              restriction_text, source_line, raw_text, message_time, effective_at,
+              expires_at, parser_template, parser_version, confidence
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                quote_document_id,
+                platform,
+                source_group_key,
+                chat_id,
+                chat_name,
+                message_id,
+                source_name,
+                sender_id,
+                card_type,
+                country_or_currency,
+                amount_range,
+                multiplier,
+                form_factor,
+                price,
+                quote_status,
+                restriction_text,
+                source_line,
+                raw_text,
+                message_time,
+                effective_at,
+                expires_at,
+                parser_template,
+                parser_version,
+                confidence,
+            ),
+        )
+        self.conn.commit()
+        return self._last_insert_id(cur)
+
+    def record_quote_exception(
+        self,
+        *,
+        quote_document_id: int,
+        platform: str,
+        source_group_key: str,
+        chat_id: str,
+        chat_name: str,
+        source_name: str,
+        sender_id: str,
+        reason: str,
+        source_line: str,
+        raw_text: str,
+        message_time: str,
+        parser_template: str,
+        parser_version: str,
+        confidence: float,
+    ) -> int:
+        cur = self.conn.execute(
+            """
+            INSERT INTO quote_parse_exceptions (
+              quote_document_id, platform, source_group_key, chat_id, chat_name,
+              source_name, sender_id, reason, source_line, raw_text, message_time,
+              parser_template, parser_version, confidence
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                quote_document_id,
+                platform,
+                source_group_key,
+                chat_id,
+                chat_name,
+                source_name,
+                sender_id,
+                reason,
+                source_line,
+                raw_text,
+                message_time,
+                parser_template,
+                parser_version,
+                confidence,
+            ),
+        )
+        self.conn.commit()
+        return self._last_insert_id(cur)
+
+    def resolve_quote_exception(
+        self,
+        *,
+        exception_id: int,
+        resolution_status: str,
+        resolution_note: str = "",
+    ) -> int:
+        cur = self.conn.execute(
+            """
+            UPDATE quote_parse_exceptions
+            SET resolution_status = ?,
+                resolution_note = ?,
+                resolved_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (resolution_status, resolution_note, exception_id),
+        )
+        self.conn.commit()
+        return int(getattr(cur, "rowcount", 0) or 0)
+
+    def attach_quote_exception_to_restrictions(self, *, exception_id: int) -> DBRow:
+        exception = self.conn.execute(
+            "SELECT * FROM quote_parse_exceptions WHERE id = ? LIMIT 1",
+            (exception_id,),
+        ).fetchone()
+        if not exception:
+            return {"updated": 0, "attached": 0, "status": "not_found"}
+        source_line = str(exception["source_line"] or "").strip()
+        if str(exception["reason"] or "") != "blocked_or_question_line" or not source_line:
+            return {"updated": 0, "attached": 0, "status": "not_attachable"}
+
+        rows = self.conn.execute(
+            """
+            SELECT *
+            FROM quote_price_rows
+            WHERE quote_document_id = ?
+              AND quote_status = 'active'
+              AND expires_at IS NULL
+            ORDER BY id ASC
+            """,
+            (exception["quote_document_id"],),
+        ).fetchall()
+        if not rows:
+            return {"updated": 0, "attached": 0, "status": "no_target_rows"}
+
+        card_hint = self._quote_exception_card_hint(source_line)
+        target_rows = [
+            row for row in rows if card_hint and str(row["card_type"] or "") == card_hint
+        ]
+        if not target_rows and card_hint:
+            return {
+                "updated": 0,
+                "attached": 0,
+                "status": "no_matching_card",
+                "card_type": card_hint,
+            }
+        if not target_rows:
+            card_types = {str(row["card_type"] or "") for row in rows}
+            if len(card_types) != 1:
+                return {"updated": 0, "attached": 0, "status": "ambiguous_target"}
+            target_rows = list(rows)
+
+        updated = 0
+        for row in target_rows:
+            current_text = str(row["restriction_text"] or "").strip()
+            if source_line in current_text:
+                continue
+            next_text = self._append_quote_restriction(current_text, source_line)
+            cur = self.conn.execute(
+                "UPDATE quote_price_rows SET restriction_text = ? WHERE id = ?",
+                (next_text, row["id"]),
+            )
+            updated += int(getattr(cur, "rowcount", 0) or 0)
+
+        self.conn.execute(
+            """
+            UPDATE quote_parse_exceptions
+            SET resolution_status = 'resolved',
+                resolution_note = ?,
+                resolved_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (f"attached_to_restrictions:{updated}", exception_id),
+        )
+        self.conn.commit()
+        return {
+            "updated": 1,
+            "attached": updated,
+            "status": "attached",
+            "card_type": card_hint or "",
+        }
+
+    @staticmethod
+    def _append_quote_restriction(current_text: str, source_line: str) -> str:
+        if not current_text:
+            return source_line
+        return f"{current_text} | {source_line}"
+
+    @staticmethod
+    def _quote_exception_card_hint(source_line: str) -> str:
+        normalized = source_line.lower()
+        aliases = (
+            ("razer", "Razer"),
+            ("雷蛇", "Razer"),
+            ("steam", "Steam"),
+            ("蒸汽", "Steam"),
+            ("xbox", "Xbox"),
+            ("google play", "Google Play"),
+            ("google", "Google Play"),
+            ("谷歌", "Google Play"),
+            ("roblox", "Roblox"),
+            ("罗布乐思", "Roblox"),
+            ("paysafe", "Paysafe"),
+            ("安全支付", "Paysafe"),
+            ("apple", "Apple"),
+            ("itunes", "Apple"),
+        )
+        for alias, card_type in aliases:
+            if alias.lower() in normalized:
+                return card_type
+        return ""
+
+    def create_quote_inquiry_context(
+        self,
+        *,
+        platform: str,
+        source_group_key: str,
+        chat_id: str,
+        chat_name: str,
+        card_type: str,
+        country_or_currency: str,
+        amount_range: str,
+        multiplier: str | None = None,
+        form_factor: str = "不限",
+        requested_by: str = "web",
+        prompt_text: str = "",
+        expires_at: str | None = None,
+    ) -> int:
+        cur = self.conn.execute(
+            """
+            INSERT INTO quote_inquiry_contexts (
+              platform, source_group_key, chat_id, chat_name, card_type,
+              country_or_currency, amount_range, multiplier, form_factor,
+              requested_by, prompt_text, status, expires_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', COALESCE(?, CURRENT_TIMESTAMP + INTERVAL '10 minutes'))
+            """,
+            (
+                platform,
+                source_group_key,
+                chat_id,
+                chat_name,
+                card_type,
+                country_or_currency,
+                amount_range,
+                multiplier,
+                form_factor,
+                requested_by,
+                prompt_text,
+                expires_at,
+            ),
+        )
+        self.conn.commit()
+        return self._last_insert_id(cur)
+
+    def find_open_quote_inquiry_context(
+        self,
+        *,
+        platform: str,
+        chat_id: str,
+    ) -> DBRow | None:
+        row = self.conn.execute(
+            """
+            SELECT *
+            FROM quote_inquiry_contexts
+            WHERE platform = ?
+              AND chat_id = ?
+              AND status = 'open'
+              AND expires_at >= CURRENT_TIMESTAMP
+            ORDER BY created_at DESC, id DESC
+            LIMIT 1
+            """,
+            (platform, chat_id),
+        ).fetchone()
+        return dict(row) if row else None
+
+    def resolve_quote_inquiry_context(
+        self,
+        *,
+        inquiry_id: int,
+        resolved_message_id: str,
+    ) -> int:
+        cur = self.conn.execute(
+            """
+            UPDATE quote_inquiry_contexts
+            SET status = 'resolved',
+                resolved_message_id = ?,
+                resolved_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (resolved_message_id, inquiry_id),
+        )
+        self.conn.commit()
+        return int(getattr(cur, "rowcount", 0) or 0)
+
+    def list_quote_inquiry_contexts(
+        self,
+        *,
+        limit: int = 100,
+    ) -> list[DBRow]:
+        rows = self.conn.execute(
+            """
+            SELECT *
+            FROM quote_inquiry_contexts
+            ORDER BY
+              CASE WHEN status = 'open' AND expires_at >= CURRENT_TIMESTAMP THEN 0 ELSE 1 END ASC,
+              created_at DESC,
+              id DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+        return [self._serialize_quote_db_row(row) for row in rows]
+
+    def upsert_quote_group_profile(
+        self,
+        *,
+        platform: str,
+        chat_id: str,
+        chat_name: str,
+        default_card_type: str = "",
+        parser_template: str = "",
+        stale_after_minutes: int = 120,
+        note: str = "",
+    ) -> int:
+        cur = self.conn.execute(
+            """
+            INSERT INTO quote_group_profiles (
+              platform, chat_id, chat_name, default_card_type,
+              parser_template, stale_after_minutes, note, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(platform, chat_id) DO UPDATE SET
+              chat_name = excluded.chat_name,
+              default_card_type = excluded.default_card_type,
+              parser_template = excluded.parser_template,
+              stale_after_minutes = excluded.stale_after_minutes,
+              note = excluded.note,
+              updated_at = CURRENT_TIMESTAMP
+            """,
+            (
+                platform,
+                chat_id,
+                chat_name,
+                default_card_type,
+                parser_template,
+                stale_after_minutes,
+                note,
+            ),
+        )
+        self.conn.commit()
+        existing = self.get_quote_group_profile(platform=platform, chat_id=chat_id)
+        return int(existing["id"]) if existing else self._last_insert_id(cur)
+
+    def get_quote_group_profile(self, *, platform: str, chat_id: str) -> DBRow | None:
+        row = self.conn.execute(
+            """
+            SELECT *
+            FROM quote_group_profiles
+            WHERE platform = ? AND chat_id = ?
+            LIMIT 1
+            """,
+            (platform, chat_id),
+        ).fetchone()
+        return self._serialize_quote_db_row(row) if row else None
+
+    def list_quote_group_profiles(self, *, limit: int = 200) -> list[DBRow]:
+        rows = self.conn.execute(
+            """
+            SELECT *
+            FROM quote_group_profiles
+            ORDER BY updated_at DESC, id DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+        return [self._serialize_quote_db_row(row) for row in rows]
+
+    def list_quote_board(self, *, limit: int = 500) -> list[DBRow]:
+        rows = self.conn.execute(
+            """
+            SELECT *
+            FROM quote_price_rows
+            WHERE quote_status = 'active' AND expires_at IS NULL
+            ORDER BY card_type ASC, country_or_currency ASC, amount_range ASC,
+                     COALESCE(multiplier, '') ASC, form_factor ASC, price DESC,
+                     effective_at DESC, id DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+        grouped: dict[tuple[str, str, str, str, str], DBRow] = {}
+        for row in rows:
+            key = (
+                str(row["card_type"] or ""),
+                str(row["country_or_currency"] or ""),
+                str(row["amount_range"] or ""),
+                str(row["multiplier"] or ""),
+                str(row["form_factor"] or ""),
+            )
+            current = grouped.get(key)
+            if current is None:
+                grouped[key] = self._serialize_quote_db_row(row)
+                continue
+            current_price = float(current["price"])
+            next_price = float(row["price"])
+            if next_price > current_price or (
+                next_price == current_price
+                and str(row["effective_at"] or "") > str(current["effective_at"] or "")
+            ):
+                grouped[key] = self._serialize_quote_db_row(row)
+        return sorted(
+            [self._quote_row_with_change(row) for row in grouped.values()],
+            key=lambda row: (
+                str(row["card_type"] or ""),
+                str(row["country_or_currency"] or ""),
+                str(row["amount_range"] or ""),
+                str(row["multiplier"] or ""),
+                str(row["form_factor"] or ""),
+                -float(row["price"] or 0),
+                str(row["effective_at"] or ""),
+                int(row["id"] or 0),
+            ),
+        )
+
+    def _quote_row_with_change(self, row: DBRow) -> DBRow:
+        result = dict(row)
+        previous = self.conn.execute(
+            """
+            SELECT price, effective_at, id
+            FROM quote_price_rows
+            WHERE platform = ?
+              AND source_group_key = ?
+              AND card_type = ?
+              AND country_or_currency = ?
+              AND amount_range = ?
+              AND form_factor = ?
+              AND COALESCE(multiplier, '') = COALESCE(?, '')
+              AND id <> ?
+              AND quote_document_id <> ?
+              AND effective_at <= ?
+            ORDER BY effective_at DESC, id DESC
+            LIMIT 1
+            """,
+            (
+                result["platform"],
+                result["source_group_key"],
+                result["card_type"],
+                result["country_or_currency"],
+                result["amount_range"],
+                result["form_factor"],
+                result["multiplier"],
+                result["id"],
+                result["quote_document_id"],
+                result["effective_at"],
+            ),
+        ).fetchone()
+        if not previous:
+            result["change_status"] = "new"
+            result["previous_price"] = None
+            result["price_change"] = None
+            result["previous_effective_at"] = None
+            return result
+
+        previous_price = float(previous["price"])
+        current_price = float(result["price"])
+        delta = round(current_price - previous_price, 6)
+        if delta > 0:
+            change_status = "up"
+        elif delta < 0:
+            change_status = "down"
+        else:
+            change_status = "flat"
+        result["change_status"] = change_status
+        result["previous_price"] = previous_price
+        result["price_change"] = delta
+        result["previous_effective_at"] = str(previous["effective_at"] or "")
+        return result
+
+    @staticmethod
+    def _quote_stale_after_minutes(row: DBRow) -> int:
+        if str(row.get("card_type") or "").lower() == "apple":
+            return 30
+        return 120
+
+    @staticmethod
+    def _quote_amount_display(row: DBRow) -> str:
+        amount = str(row.get("amount_range") or "")
+        multiplier = str(row.get("multiplier") or "")
+        if multiplier:
+            return f"{amount} / {multiplier}" if amount else multiplier
+        return amount
+
+    def list_quote_matches(
+        self,
+        *,
+        card_type: str,
+        country_or_currency: str,
+        amount: float,
+        form_factor: str | None = None,
+        limit: int = 50,
+    ) -> tuple[list[DBRow], int]:
+        where_parts = [
+            "quote_status = 'active'",
+            "expires_at IS NULL",
+            "card_type = ?",
+            "country_or_currency = ?",
+        ]
+        params: list = [card_type, country_or_currency]
+        if form_factor:
+            where_parts.append("form_factor = ?")
+            params.append(form_factor)
+        where_clause = " AND ".join(where_parts)
+        rows = self.conn.execute(
+            f"""
+            SELECT *
+            FROM quote_price_rows
+            WHERE {where_clause}
+            ORDER BY price DESC, effective_at DESC, id DESC
+            LIMIT 500
+            """,
+            params,
+        ).fetchall()
+        matched = [
+            self._quote_row_with_change(self._serialize_quote_db_row(row))
+            for row in rows
+            if self._quote_row_matches_amount(row, amount)
+        ]
+        return matched[:limit], len(matched)
+
+    @staticmethod
+    def _quote_row_matches_amount(row: DBRow, amount: float) -> bool:
+        card_type = str(row.get("card_type") or "")
+        multiplier = str(row.get("multiplier") or "")
+        if card_type == "Apple" and multiplier == "50X":
+            return amount >= 50 and amount <= 500 and amount % 50 == 0
+        amount_range = str(row.get("amount_range") or "").strip()
+        if not amount_range or amount_range == "不限":
+            return True
+        match = re.fullmatch(r"(\d+(?:\.\d+)?)(?:-(\d+(?:\.\d+)?))?", amount_range)
+        if match is None:
+            return False
+        start = float(match.group(1))
+        end = float(match.group(2) or match.group(1))
+        return start <= amount <= end
+
+    def list_quote_history(
+        self,
+        *,
+        card_type: str | None = None,
+        country_or_currency: str | None = None,
+        amount_range: str | None = None,
+        multiplier: str | None = None,
+        form_factor: str | None = None,
+        source_group_key: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> tuple[list[DBRow], int]:
+        where_parts = []
+        params: list = []
+        if card_type is not None:
+            where_parts.append("card_type = ?")
+            params.append(card_type)
+        if country_or_currency is not None:
+            where_parts.append("country_or_currency = ?")
+            params.append(country_or_currency)
+        if amount_range is not None:
+            where_parts.append("amount_range = ?")
+            params.append(amount_range)
+        if multiplier is not None:
+            where_parts.append("COALESCE(multiplier, '') = COALESCE(?, '')")
+            params.append(multiplier)
+        if form_factor is not None:
+            where_parts.append("form_factor = ?")
+            params.append(form_factor)
+        if source_group_key is not None:
+            where_parts.append("source_group_key = ?")
+            params.append(source_group_key)
+        where_clause = " AND ".join(where_parts) if where_parts else "1=1"
+
+        count_row = self.conn.execute(
+            f"SELECT COUNT(*) AS cnt FROM quote_price_rows WHERE {where_clause}",
+            params,
+        ).fetchone()
+        total = int(count_row["cnt"])
+
+        params.extend([limit, offset])
+        rows = self.conn.execute(
+            f"""
+            SELECT *
+            FROM quote_price_rows
+            WHERE {where_clause}
+            ORDER BY effective_at DESC, id DESC
+            LIMIT ? OFFSET ?
+            """,
+            params,
+        ).fetchall()
+        return [self._serialize_quote_db_row(row) for row in rows], total
+
+    def list_quote_rankings(
+        self,
+        *,
+        card_type: str,
+        country_or_currency: str,
+        amount_range: str,
+        multiplier: str | None = None,
+        form_factor: str,
+        limit: int = 50,
+    ) -> tuple[list[DBRow], int]:
+        params: list = [
+            card_type,
+            country_or_currency,
+            amount_range,
+            form_factor,
+            multiplier,
+        ]
+        count_row = self.conn.execute(
+            """
+            SELECT COUNT(*) AS cnt
+            FROM quote_price_rows
+            WHERE quote_status = 'active'
+              AND expires_at IS NULL
+              AND card_type = ?
+              AND country_or_currency = ?
+              AND amount_range = ?
+              AND form_factor = ?
+              AND COALESCE(multiplier, '') = COALESCE(?, '')
+            """,
+            params,
+        ).fetchone()
+        total = int(count_row["cnt"])
+        params.append(limit)
+        rows = self.conn.execute(
+            """
+            SELECT *
+            FROM quote_price_rows
+            WHERE quote_status = 'active'
+              AND expires_at IS NULL
+              AND card_type = ?
+              AND country_or_currency = ?
+              AND amount_range = ?
+              AND form_factor = ?
+              AND COALESCE(multiplier, '') = COALESCE(?, '')
+            ORDER BY price DESC, effective_at DESC, id DESC
+            LIMIT ?
+            """,
+            params,
+        ).fetchall()
+        return [self._quote_row_with_change(self._serialize_quote_db_row(row)) for row in rows], total
+
+    def list_quote_exceptions(
+        self,
+        *,
+        source_group_key: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> tuple[list[DBRow], int]:
+        where_parts = []
+        params: list = []
+        if source_group_key is not None:
+            where_parts.append("source_group_key = ?")
+            params.append(source_group_key)
+        where_clause = " AND ".join(where_parts) if where_parts else "1=1"
+        count_row = self.conn.execute(
+            f"SELECT COUNT(*) AS cnt FROM quote_parse_exceptions WHERE {where_clause}",
+            params,
+        ).fetchone()
+        total = int(count_row["cnt"])
+        params.extend([limit, offset])
+        rows = self.conn.execute(
+            f"""
+            SELECT *
+            FROM quote_parse_exceptions
+            WHERE {where_clause}
+            ORDER BY
+              CASE WHEN resolution_status = 'open' THEN 0 ELSE 1 END ASC,
+              created_at DESC,
+              id DESC
+            LIMIT ? OFFSET ?
+            """,
+            params,
+        ).fetchall()
+        return [self._serialize_quote_db_row(row) for row in rows], total
+
+    def _serialize_quote_db_row(self, row) -> dict:
+        result = dict(row)
+        for key in ("id", "quote_document_id"):
+            if result.get(key) is not None:
+                result[key] = int(result[key])
+        for key in ("price", "confidence"):
+            if result.get(key) is not None:
+                result[key] = float(result[key])
+        for key in (
+            "message_time",
+            "effective_at",
+            "expires_at",
+            "resolved_at",
+            "created_at",
+            "updated_at",
+        ):
+            if result.get(key) is not None:
+                result[key] = str(result[key])
+        if "card_type" in result and "amount_range" in result:
+            result["amount_display"] = self._quote_amount_display(result)
+            result["stale_after_minutes"] = self._quote_stale_after_minutes(result)
+        if "reason" in result and "source_line" in result:
+            result["reason_label"] = self._quote_exception_reason_label(result)
+            result["suggested_action"] = self._quote_exception_suggested_action(result)
+        return result
+
+    @staticmethod
+    def _quote_exception_reason_label(row: DBRow) -> str:
+        reason = str(row.get("reason") or "")
+        if reason == "blocked_or_question_line":
+            return "限制/问价说明"
+        if reason == "missing_context":
+            return "缺少上下文"
+        if reason == "modifier_rule":
+            return "派生价规则"
+        if reason == "low_confidence_or_non_active":
+            return "低置信或非可用报价"
+        if reason == "unparsed_price_line":
+            return "价格行未识别"
+        return reason or "未知异常"
+
+    @staticmethod
+    def _quote_exception_suggested_action(row: DBRow) -> str:
+        reason = str(row.get("reason") or "")
+        source_line = str(row.get("source_line") or "")
+        if reason == "blocked_or_question_line":
+            return "这是限制或需要询问的说明，不是可直接入墙价格；确认无误可忽略。"
+        if reason == "missing_context" and re.fullmatch(r"\d+(?:\.\d+)?", source_line.strip()):
+            return "这是短回复价格；需要先有询价上下文，或手动补卡种/国家/面额。"
+        if reason == "missing_context":
+            return "缺卡种、国家或面额；需要补模板或建立询价上下文。"
+        if reason == "modifier_rule":
+            return "派生价规则未找到可应用的基准价；需要确认它作用到哪一段报价。"
+        if reason == "low_confidence_or_non_active":
+            return "系统不敢自动生效；需要人工确认后再处理。"
+        return "先看异常行，不要看整份原文；确认不是报价可忽略。"
 
     def query_parse_results(
         self,
@@ -1573,6 +2420,156 @@ class BookkeepingDB(_BookkeepingStoreBase):
             ON message_parse_results(created_at DESC)
             """
         )
+        self.conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS quote_documents (
+              id BIGSERIAL PRIMARY KEY,
+              platform TEXT NOT NULL,
+              source_group_key TEXT NOT NULL,
+              chat_id TEXT NOT NULL,
+              chat_name TEXT NOT NULL,
+              message_id TEXT NOT NULL,
+              source_name TEXT NOT NULL,
+              sender_id TEXT NOT NULL,
+              raw_text TEXT NOT NULL,
+              message_time TIMESTAMP NOT NULL,
+              parser_template TEXT NOT NULL,
+              parser_version TEXT NOT NULL,
+              confidence NUMERIC(6, 4) NOT NULL,
+              parse_status TEXT NOT NULL,
+              created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              UNIQUE (platform, chat_id, message_id)
+            )
+            """
+        )
+        self.conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS quote_price_rows (
+              id BIGSERIAL PRIMARY KEY,
+              quote_document_id BIGINT NOT NULL,
+              platform TEXT NOT NULL,
+              source_group_key TEXT NOT NULL,
+              chat_id TEXT NOT NULL,
+              chat_name TEXT NOT NULL,
+              message_id TEXT NOT NULL,
+              source_name TEXT NOT NULL,
+              sender_id TEXT NOT NULL,
+              card_type TEXT NOT NULL,
+              country_or_currency TEXT NOT NULL,
+              amount_range TEXT NOT NULL,
+              multiplier TEXT,
+              form_factor TEXT NOT NULL,
+              price NUMERIC(18, 6) NOT NULL,
+              quote_status TEXT NOT NULL,
+              restriction_text TEXT NOT NULL DEFAULT '',
+              source_line TEXT NOT NULL,
+              raw_text TEXT NOT NULL,
+              message_time TIMESTAMP NOT NULL,
+              effective_at TIMESTAMP NOT NULL,
+              expires_at TIMESTAMP,
+              parser_template TEXT NOT NULL,
+              parser_version TEXT NOT NULL,
+              confidence NUMERIC(6, 4) NOT NULL,
+              created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        self.conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_quote_price_rows_active
+            ON quote_price_rows(card_type, country_or_currency, amount_range, multiplier, form_factor, effective_at DESC)
+            """
+        )
+        self.conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_quote_price_rows_source_lookup
+            ON quote_price_rows(source_group_key, card_type, country_or_currency, amount_range, form_factor, effective_at DESC)
+            """
+        )
+        self.conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS quote_parse_exceptions (
+              id BIGSERIAL PRIMARY KEY,
+              quote_document_id BIGINT NOT NULL,
+              platform TEXT NOT NULL,
+              source_group_key TEXT NOT NULL,
+              chat_id TEXT NOT NULL,
+              chat_name TEXT NOT NULL,
+              source_name TEXT NOT NULL,
+              sender_id TEXT NOT NULL,
+              reason TEXT NOT NULL,
+              source_line TEXT NOT NULL,
+              raw_text TEXT NOT NULL,
+              message_time TIMESTAMP NOT NULL,
+              parser_template TEXT NOT NULL,
+              parser_version TEXT NOT NULL,
+              confidence NUMERIC(6, 4) NOT NULL,
+              resolution_status TEXT NOT NULL DEFAULT 'open',
+              resolution_note TEXT NOT NULL DEFAULT '',
+              resolved_at TIMESTAMP,
+              created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        self.conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_quote_parse_exceptions_created
+            ON quote_parse_exceptions(created_at DESC)
+            """
+        )
+        self.conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS quote_inquiry_contexts (
+              id BIGSERIAL PRIMARY KEY,
+              platform TEXT NOT NULL,
+              source_group_key TEXT NOT NULL,
+              chat_id TEXT NOT NULL,
+              chat_name TEXT NOT NULL,
+              card_type TEXT NOT NULL,
+              country_or_currency TEXT NOT NULL,
+              amount_range TEXT NOT NULL,
+              multiplier TEXT,
+              form_factor TEXT NOT NULL DEFAULT '不限',
+              requested_by TEXT NOT NULL DEFAULT 'web',
+              prompt_text TEXT NOT NULL DEFAULT '',
+              status TEXT NOT NULL DEFAULT 'open',
+              expires_at TIMESTAMP NOT NULL,
+              resolved_message_id TEXT,
+              resolved_at TIMESTAMP,
+              created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        self.conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_quote_inquiry_contexts_open
+            ON quote_inquiry_contexts(platform, chat_id, status, expires_at DESC)
+            """
+        )
+        self.conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS quote_group_profiles (
+              id BIGSERIAL PRIMARY KEY,
+              platform TEXT NOT NULL,
+              chat_id TEXT NOT NULL,
+              chat_name TEXT NOT NULL,
+              default_card_type TEXT NOT NULL DEFAULT '',
+              parser_template TEXT NOT NULL DEFAULT '',
+              stale_after_minutes INTEGER NOT NULL DEFAULT 120,
+              note TEXT NOT NULL DEFAULT '',
+              created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              UNIQUE(platform, chat_id)
+            )
+            """
+        )
+        for column_name, ddl in (
+            ("resolution_status", "ALTER TABLE quote_parse_exceptions ADD COLUMN resolution_status TEXT NOT NULL DEFAULT 'open'"),
+            ("resolution_note", "ALTER TABLE quote_parse_exceptions ADD COLUMN resolution_note TEXT NOT NULL DEFAULT ''"),
+            ("resolved_at", "ALTER TABLE quote_parse_exceptions ADD COLUMN resolved_at TIMESTAMP"),
+        ):
+            if not self._table_has_column("quote_parse_exceptions", column_name):
+                self.conn.execute(ddl)
         if not self._table_has_column("outbound_actions", "claimed_at"):
             self.conn.execute(
                 """
@@ -1824,6 +2821,103 @@ class BookkeepingDB(_BookkeepingStoreBase):
                 "received_at",
                 "raw_json",
                 "created_at",
+            },
+            "quote_documents": {
+                "id",
+                "platform",
+                "source_group_key",
+                "chat_id",
+                "chat_name",
+                "message_id",
+                "source_name",
+                "sender_id",
+                "raw_text",
+                "message_time",
+                "parser_template",
+                "parser_version",
+                "confidence",
+                "parse_status",
+                "created_at",
+            },
+            "quote_price_rows": {
+                "id",
+                "quote_document_id",
+                "platform",
+                "source_group_key",
+                "chat_id",
+                "chat_name",
+                "message_id",
+                "source_name",
+                "sender_id",
+                "card_type",
+                "country_or_currency",
+                "amount_range",
+                "multiplier",
+                "form_factor",
+                "price",
+                "quote_status",
+                "restriction_text",
+                "source_line",
+                "raw_text",
+                "message_time",
+                "effective_at",
+                "expires_at",
+                "parser_template",
+                "parser_version",
+                "confidence",
+                "created_at",
+            },
+            "quote_parse_exceptions": {
+                "id",
+                "quote_document_id",
+                "platform",
+                "source_group_key",
+                "chat_id",
+                "chat_name",
+                "source_name",
+                "sender_id",
+                "reason",
+                "source_line",
+                "raw_text",
+                "message_time",
+                "parser_template",
+                "parser_version",
+                "confidence",
+                "resolution_status",
+                "resolution_note",
+                "resolved_at",
+                "created_at",
+            },
+            "quote_inquiry_contexts": {
+                "id",
+                "platform",
+                "source_group_key",
+                "chat_id",
+                "chat_name",
+                "card_type",
+                "country_or_currency",
+                "amount_range",
+                "multiplier",
+                "form_factor",
+                "requested_by",
+                "prompt_text",
+                "status",
+                "expires_at",
+                "resolved_message_id",
+                "resolved_at",
+                "created_at",
+            },
+            "quote_group_profiles": {
+                "id",
+                "platform",
+                "chat_id",
+                "chat_name",
+                "default_card_type",
+                "parser_template",
+                "stale_after_minutes",
+                "note",
+                "created_at",
+                "updated_at",
             },
         }
         mismatches: list[str] = []

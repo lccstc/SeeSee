@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import json
 import logging
 from datetime import date, datetime
@@ -10,12 +11,14 @@ from bookkeeping_core.analytics import AnalyticsService
 from bookkeeping_core.contracts import core_action_to_dict
 from bookkeeping_core.database import BookkeepingDB, require_postgres_dsn
 from bookkeeping_core.periods import AccountingPeriodService
+from bookkeeping_core.quotes import normalize_quote_card_type, normalize_quote_country_or_currency
 from bookkeeping_core.reconciliation import ReconciliationService
 from bookkeeping_core.reporting import ReportingService
 from bookkeeping_core.runtime import UnifiedBookkeepingRuntime
 from bookkeeping_web.pages import (
     render_dashboard_page,
     render_history_page,
+    render_quotes_page,
     render_reconciliation_page,
     render_role_mapping_page,
     render_workbench_page,
@@ -61,6 +64,8 @@ def create_app(
             return _respond_html(start_response, render_dashboard_page())
         if path == "/workbench":
             return _respond_html(start_response, render_workbench_page())
+        if path == "/quotes":
+            return _respond_html(start_response, render_quotes_page())
         if path == "/role-mapping":
             return _respond_html(start_response, render_role_mapping_page())
         if path == "/history":
@@ -79,6 +84,26 @@ def create_app(
             )
         if path == "/api/history" and method == "GET":
             return _with_db(db_file, start_response, _handle_history, environ)
+        if path == "/api/quotes/board" and method == "GET":
+            return _with_db(db_file, start_response, _handle_quotes_board, environ)
+        if path == "/api/quotes/history" and method == "GET":
+            return _with_db(db_file, start_response, _handle_quotes_history, environ)
+        if path == "/api/quotes/rankings" and method == "GET":
+            return _with_db(db_file, start_response, _handle_quotes_rankings, environ)
+        if path == "/api/quotes/matches" and method == "GET":
+            return _with_db(db_file, start_response, _handle_quotes_matches, environ)
+        if path == "/api/quotes/group-profiles":
+            return _with_db(db_file, start_response, _handle_quotes_group_profiles, environ)
+        if path == "/api/quotes/exceptions" and method == "GET":
+            return _with_db(
+                db_file, start_response, _handle_quotes_exceptions, environ
+            )
+        if path == "/api/quotes/exceptions/resolve" and method == "POST":
+            return _with_db(
+                db_file, start_response, _handle_quotes_exception_resolve, environ
+            )
+        if path == "/api/quotes/inquiries":
+            return _with_db(db_file, start_response, _handle_quotes_inquiries, environ)
         if path == "/api/reconciliation/ledger" and method == "GET":
             return _with_db(
                 db_file, start_response, _handle_reconciliation_ledger, environ
@@ -244,6 +269,243 @@ def _handle_history(db: BookkeepingDB, start_response, environ):
         sort_by=params.get("sort_by", "profit"),
     )
     return _respond_json(start_response, 200, payload)
+
+
+def _handle_quotes_board(db: BookkeepingDB, start_response, environ):
+    params = _read_query_params(environ)
+    payload = _call_optional_db_method(db, "list_quote_board", default={"rows": []})
+    normalized = _normalize_quote_payload(payload)
+    if params:
+        normalized["filters"] = {key: value for key, value in params.items() if value}
+    return _respond_json(start_response, 200, normalized)
+
+
+def _handle_quotes_history(db: BookkeepingDB, start_response, environ):
+    params = _read_query_params(environ)
+    try:
+        limit = int(params.get("limit", "50")) if params.get("limit") else 50
+        offset = int(params.get("offset", "0")) if params.get("offset") else 0
+        if limit < 1 or limit > 500:
+            return _respond_json(start_response, 400, {"error": "limit must be 1-500"})
+        if offset < 0:
+            return _respond_json(start_response, 400, {"error": "offset must be >= 0"})
+    except ValueError as exc:
+        return _respond_json(start_response, 400, {"error": f"Bad query: {exc}"})
+    payload = _call_optional_db_method(
+        db,
+        "list_quote_history",
+        default={"rows": [], "total": 0},
+        card_type=params.get("card_type") or None,
+        country_or_currency=params.get("country_or_currency") or None,
+        source_group_key=params.get("source_group_key") or None,
+        limit=limit,
+        offset=offset,
+    )
+    normalized = _normalize_quote_payload(payload)
+    normalized.setdefault("limit", limit)
+    normalized.setdefault("offset", offset)
+    if params.get("card_type"):
+        normalized.setdefault("filters", {})["card_type"] = params.get("card_type")
+    if params.get("country_or_currency"):
+        normalized.setdefault("filters", {})["country_or_currency"] = params.get(
+            "country_or_currency"
+        )
+    if params.get("source_group_key"):
+        normalized.setdefault("filters", {})["source_group_key"] = params.get(
+            "source_group_key"
+        )
+    return _respond_json(start_response, 200, normalized)
+
+
+def _handle_quotes_rankings(db: BookkeepingDB, start_response, environ):
+    params = _read_query_params(environ)
+    try:
+        limit = int(params.get("limit", "50")) if params.get("limit") else 50
+        if limit < 1 or limit > 200:
+            return _respond_json(start_response, 400, {"error": "limit must be 1-200"})
+        required = ("card_type", "country_or_currency", "amount_range", "form_factor")
+        missing = [key for key in required if not params.get(key)]
+        if missing:
+            return _respond_json(
+                start_response,
+                400,
+                {"error": f"missing query params: {', '.join(missing)}"},
+            )
+    except ValueError as exc:
+        return _respond_json(start_response, 400, {"error": f"Bad query: {exc}"})
+    payload = _call_optional_db_method(
+        db,
+        "list_quote_rankings",
+        default={"rows": [], "total": 0},
+        card_type=params["card_type"],
+        country_or_currency=params["country_or_currency"],
+        amount_range=params["amount_range"],
+        multiplier=params.get("multiplier") or None,
+        form_factor=params["form_factor"],
+        limit=limit,
+    )
+    normalized = _normalize_quote_payload(payload)
+    normalized["filters"] = {
+        key: value
+        for key, value in params.items()
+        if key in {"card_type", "country_or_currency", "amount_range", "multiplier", "form_factor"} and value
+    }
+    return _respond_json(start_response, 200, normalized)
+
+
+def _handle_quotes_matches(db: BookkeepingDB, start_response, environ):
+    params = _read_query_params(environ)
+    try:
+        limit = int(params.get("limit", "50")) if params.get("limit") else 50
+        amount = float(params["amount"])
+        if limit < 1 or limit > 200:
+            return _respond_json(start_response, 400, {"error": "limit must be 1-200"})
+        card_type = normalize_quote_card_type(params["card_type"])
+        country_or_currency = normalize_quote_country_or_currency(
+            params["country_or_currency"]
+        )
+        if not card_type or not country_or_currency:
+            raise ValueError("card_type and country_or_currency are required")
+    except (KeyError, ValueError) as exc:
+        return _respond_json(start_response, 400, {"error": f"Bad query: {exc}"})
+    payload = _call_optional_db_method(
+        db,
+        "list_quote_matches",
+        default={"rows": [], "total": 0},
+        card_type=card_type,
+        country_or_currency=country_or_currency,
+        amount=amount,
+        form_factor=params.get("form_factor") or None,
+        limit=limit,
+    )
+    normalized = _normalize_quote_payload(payload)
+    normalized["filters"] = {
+        "card_type": card_type,
+        "country_or_currency": country_or_currency,
+        "amount": amount,
+    }
+    return _respond_json(start_response, 200, normalized)
+
+
+def _handle_quotes_group_profiles(db: BookkeepingDB, start_response, environ):
+    method = environ.get("REQUEST_METHOD", "GET").upper()
+    if method == "GET":
+        rows = _call_optional_db_method(
+            db,
+            "list_quote_group_profiles",
+            default=[],
+        )
+        return _respond_json(start_response, 200, {"rows": rows, "total": len(rows)})
+    if method != "POST":
+        return _respond_json(start_response, 405, {"error": "Method not allowed"})
+    try:
+        payload = _read_json_body(environ)
+        profile_id = db.upsert_quote_group_profile(
+            platform=str(payload.get("platform") or "wechat").strip(),
+            chat_id=str(payload["chat_id"]).strip(),
+            chat_name=str(payload.get("chat_name") or payload["chat_id"]).strip(),
+            default_card_type=normalize_quote_card_type(
+                str(payload.get("default_card_type") or "")
+            ),
+            parser_template=str(payload.get("parser_template") or "").strip(),
+            stale_after_minutes=int(payload.get("stale_after_minutes") or 120),
+            note=str(payload.get("note") or ""),
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        return _respond_json(start_response, 400, {"error": f"Bad payload: {exc}"})
+    return _respond_json(start_response, 200, {"profile_id": profile_id})
+
+
+def _handle_quotes_exceptions(db: BookkeepingDB, start_response, environ):
+    params = _read_query_params(environ)
+    try:
+        limit = int(params.get("limit", "50")) if params.get("limit") else 50
+        offset = int(params.get("offset", "0")) if params.get("offset") else 0
+        if limit < 1 or limit > 500:
+            return _respond_json(start_response, 400, {"error": "limit must be 1-500"})
+        if offset < 0:
+            return _respond_json(start_response, 400, {"error": "offset must be >= 0"})
+    except ValueError as exc:
+        return _respond_json(start_response, 400, {"error": f"Bad query: {exc}"})
+    payload = _call_optional_db_method(
+        db,
+        "list_quote_exceptions",
+        default={"rows": [], "total": 0},
+        limit=limit,
+        offset=offset,
+    )
+    normalized = _normalize_quote_payload(payload)
+    normalized.setdefault("limit", limit)
+    normalized.setdefault("offset", offset)
+    return _respond_json(start_response, 200, normalized)
+
+
+def _handle_quotes_exception_resolve(db: BookkeepingDB, start_response, environ):
+    try:
+        payload = _read_json_body(environ)
+        exception_id = int(payload["exception_id"])
+        resolution_status = str(payload.get("resolution_status") or "ignored").strip()
+        if resolution_status == "attached":
+            result = db.attach_quote_exception_to_restrictions(
+                exception_id=exception_id,
+            )
+            return _respond_json(start_response, 200, result)
+        if resolution_status not in {"ignored", "resolved", "open"}:
+            raise ValueError("resolution_status must be ignored, resolved, attached, or open")
+        updated = db.resolve_quote_exception(
+            exception_id=exception_id,
+            resolution_status=resolution_status,
+            resolution_note=str(payload.get("resolution_note") or ""),
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        return _respond_json(start_response, 400, {"error": f"Bad payload: {exc}"})
+    return _respond_json(start_response, 200, {"updated": updated})
+
+
+def _handle_quotes_inquiries(db: BookkeepingDB, start_response, environ):
+    method = environ.get("REQUEST_METHOD", "GET").upper()
+    if method == "GET":
+        try:
+            params = _read_query_params(environ)
+            limit = int(params.get("limit", "100")) if params.get("limit") else 100
+            if limit < 1 or limit > 500:
+                return _respond_json(start_response, 400, {"error": "limit must be 1-500"})
+        except ValueError as exc:
+            return _respond_json(start_response, 400, {"error": f"Bad query: {exc}"})
+        rows = _call_optional_db_method(
+            db,
+            "list_quote_inquiry_contexts",
+            default=[],
+            limit=limit,
+        )
+        return _respond_json(start_response, 200, {"rows": rows, "total": len(rows)})
+    if method != "POST":
+        return _respond_json(start_response, 405, {"error": "Method not allowed"})
+    try:
+        payload = _read_json_body(environ)
+        platform = str(payload.get("platform") or "wechat").strip()
+        chat_id = str(payload["chat_id"]).strip()
+        chat_name = str(payload.get("chat_name") or chat_id).strip()
+        source_group_key = str(payload.get("source_group_key") or f"{platform}:{chat_id}")
+        inquiry_id = db.create_quote_inquiry_context(
+            platform=platform,
+            source_group_key=source_group_key,
+            chat_id=chat_id,
+            chat_name=chat_name,
+            card_type=normalize_quote_card_type(str(payload["card_type"]).strip()),
+            country_or_currency=normalize_quote_country_or_currency(
+                str(payload["country_or_currency"]).strip()
+            ),
+            amount_range=str(payload["amount_range"]).strip(),
+            multiplier=str(payload.get("multiplier") or "").strip() or None,
+            form_factor=str(payload.get("form_factor") or "不限").strip() or "不限",
+            requested_by=str(payload.get("requested_by") or "web"),
+            prompt_text=str(payload.get("prompt_text") or ""),
+            expires_at=str(payload.get("expires_at") or "").strip() or None,
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        return _respond_json(start_response, 400, {"error": f"Bad payload: {exc}"})
+    return _respond_json(start_response, 200, {"inquiry_id": inquiry_id})
 
 
 def _handle_reconciliation_ledger(db: BookkeepingDB, start_response, environ):
@@ -813,6 +1075,59 @@ def _handle_message_inspector(db: BookkeepingDB, start_response, environ):
     if result is None:
         return _respond_json(start_response, 404, {"error": "message not found"})
     return _respond_json(start_response, 200, result)
+
+
+def _call_optional_db_method(db: BookkeepingDB, method_name: str, default, **kwargs):
+    method = getattr(db, method_name, None)
+    if not callable(method):
+        return default
+    call_kwargs = _filter_callable_kwargs(method, kwargs)
+    return method(**call_kwargs)
+
+
+def _filter_callable_kwargs(method, kwargs: dict[str, object]) -> dict[str, object]:
+    try:
+        signature = inspect.signature(method)
+    except (TypeError, ValueError):
+        return kwargs
+    params = signature.parameters
+    if any(param.kind == inspect.Parameter.VAR_KEYWORD for param in params.values()):
+        return kwargs
+    allowed = {
+        name
+        for name, param in params.items()
+        if param.kind in {inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY}
+    }
+    return {key: value for key, value in kwargs.items() if key in allowed}
+
+
+def _normalize_quote_payload(payload) -> dict:
+    if isinstance(payload, dict):
+        normalized = dict(payload)
+        rows = normalized.get("rows")
+        if rows is None and "items" in normalized:
+            normalized["rows"] = normalized.get("items") or []
+        if "total" not in normalized:
+            row_count = normalized.get("rows")
+            if isinstance(row_count, list):
+                normalized["total"] = len(row_count)
+            else:
+                normalized["total"] = 0
+        if not isinstance(normalized.get("rows"), list):
+            normalized["rows"] = []
+        return normalized
+    if isinstance(payload, tuple) and payload:
+        rows = payload[0]
+        total = payload[1] if len(payload) > 1 else None
+        if not isinstance(rows, list):
+            rows = list(rows or [])
+        return {
+            "rows": rows,
+            "total": int(total) if total is not None else len(rows),
+        }
+    if isinstance(payload, list):
+        return {"rows": payload, "total": len(payload)}
+    return {"rows": [], "total": 0}
 
 
 def _handle_difference_trace(db: BookkeepingDB, start_response, environ):

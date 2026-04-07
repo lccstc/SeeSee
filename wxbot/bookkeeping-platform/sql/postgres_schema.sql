@@ -225,3 +225,119 @@ CREATE TABLE IF NOT EXISTS message_parse_results (
 );
 
 CREATE INDEX IF NOT EXISTS idx_message_parse_results_created ON message_parse_results(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS quote_documents (
+  id BIGSERIAL PRIMARY KEY,
+  platform TEXT NOT NULL,
+  source_group_key TEXT NOT NULL,
+  chat_id TEXT NOT NULL,
+  chat_name TEXT NOT NULL,
+  message_id TEXT NOT NULL,
+  source_name TEXT NOT NULL,
+  sender_id TEXT NOT NULL,
+  raw_text TEXT NOT NULL,
+  message_time TIMESTAMP NOT NULL,
+  parser_template TEXT NOT NULL,
+  parser_version TEXT NOT NULL,
+  confidence NUMERIC(6, 4) NOT NULL,
+  parse_status TEXT NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (platform, chat_id, message_id)
+);
+
+CREATE TABLE IF NOT EXISTS quote_price_rows (
+  id BIGSERIAL PRIMARY KEY,
+  quote_document_id BIGINT NOT NULL,
+  platform TEXT NOT NULL,
+  source_group_key TEXT NOT NULL,
+  chat_id TEXT NOT NULL,
+  chat_name TEXT NOT NULL,
+  message_id TEXT NOT NULL,
+  source_name TEXT NOT NULL,
+  sender_id TEXT NOT NULL,
+  card_type TEXT NOT NULL,
+  country_or_currency TEXT NOT NULL,
+  amount_range TEXT NOT NULL,
+  multiplier TEXT,
+  form_factor TEXT NOT NULL,
+  price NUMERIC(18, 6) NOT NULL,
+  quote_status TEXT NOT NULL,
+  restriction_text TEXT NOT NULL DEFAULT '',
+  source_line TEXT NOT NULL,
+  raw_text TEXT NOT NULL,
+  message_time TIMESTAMP NOT NULL,
+  effective_at TIMESTAMP NOT NULL,
+  expires_at TIMESTAMP,
+  parser_template TEXT NOT NULL,
+  parser_version TEXT NOT NULL,
+  confidence NUMERIC(6, 4) NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_quote_price_rows_active
+  ON quote_price_rows(card_type, country_or_currency, amount_range, multiplier, form_factor, effective_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_quote_price_rows_source_lookup
+  ON quote_price_rows(source_group_key, card_type, country_or_currency, amount_range, form_factor, effective_at DESC);
+
+CREATE TABLE IF NOT EXISTS quote_parse_exceptions (
+  id BIGSERIAL PRIMARY KEY,
+  quote_document_id BIGINT NOT NULL,
+  platform TEXT NOT NULL,
+  source_group_key TEXT NOT NULL,
+  chat_id TEXT NOT NULL,
+  chat_name TEXT NOT NULL,
+  source_name TEXT NOT NULL,
+  sender_id TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  source_line TEXT NOT NULL,
+  raw_text TEXT NOT NULL,
+  message_time TIMESTAMP NOT NULL,
+  parser_template TEXT NOT NULL,
+  parser_version TEXT NOT NULL,
+  confidence NUMERIC(6, 4) NOT NULL,
+  resolution_status TEXT NOT NULL DEFAULT 'open',
+  resolution_note TEXT NOT NULL DEFAULT '',
+  resolved_at TIMESTAMP,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_quote_parse_exceptions_created
+  ON quote_parse_exceptions(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS quote_inquiry_contexts (
+  id BIGSERIAL PRIMARY KEY,
+  platform TEXT NOT NULL,
+  source_group_key TEXT NOT NULL,
+  chat_id TEXT NOT NULL,
+  chat_name TEXT NOT NULL,
+  card_type TEXT NOT NULL,
+  country_or_currency TEXT NOT NULL,
+  amount_range TEXT NOT NULL,
+  multiplier TEXT,
+  form_factor TEXT NOT NULL DEFAULT '不限',
+  requested_by TEXT NOT NULL DEFAULT 'web',
+  prompt_text TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'open',
+  expires_at TIMESTAMP NOT NULL,
+  resolved_message_id TEXT,
+  resolved_at TIMESTAMP,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_quote_inquiry_contexts_open
+  ON quote_inquiry_contexts(platform, chat_id, status, expires_at DESC);
+
+CREATE TABLE IF NOT EXISTS quote_group_profiles (
+  id BIGSERIAL PRIMARY KEY,
+  platform TEXT NOT NULL,
+  chat_id TEXT NOT NULL,
+  chat_name TEXT NOT NULL,
+  default_card_type TEXT NOT NULL DEFAULT '',
+  parser_template TEXT NOT NULL DEFAULT '',
+  stale_after_minutes INTEGER NOT NULL DEFAULT 120,
+  note TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(platform, chat_id)
+);
