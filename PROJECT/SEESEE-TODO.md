@@ -11,7 +11,7 @@
 - [x] 结构化解析结果持久化
 - [x] 普通聊天 / 命令 / 交易型消息的初步分类
 - [x] 差额追踪的最小闭环设计
-- [ ] 回溯页面的最小草图
+- [x] 回溯页面的最小草图
 
 ## 本地 coding worker 工作流
 - [x] `acp-bridge -> opencode -> Gemma 4 31B` 打通
@@ -30,5 +30,5 @@
 - [x] 为 parse results 增加原始消息 / 交易结果联合查看能力
 - [x] 设计差额追踪的最小闭环
 - [x] 新增只读差额追踪接口（transaction -> message / parse / tx / issue flags）
-- [ ] 给 reconciliation 行补一个 trace 入口，先跳只读详情，不做复杂页面
-- [ ] 把 difference trace 接到实际对账操作路径里，减少人工来回切接口
+- [x] 给 reconciliation 行补一个 trace 入口，先跳只读详情，不做复杂页面
+- [x] 把 difference trace 接到实际对账操作路径里，减少人工来回切接口

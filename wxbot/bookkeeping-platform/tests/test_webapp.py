@@ -539,10 +539,13 @@ class WebAppTests(PostgresTestCase):
         self.assertEqual(status, 200)
         self.assertIn('id="reconciliation-filter-form"', html)
         self.assertIn('id="reconciliation-adjustment-form"', html)
+        self.assertIn('id="reconciliation-trace-panel"', html)
+        self.assertIn('id="reconciliation-trace-status"', html)
         self.assertIn('id="reconciliation-export-detail-link"', html)
         self.assertIn('id="reconciliation-export-summary-link"', html)
         self.assertIn('id="reconciliation-combination"', html)
         self.assertIn('id="reconciliation-group-num"', html)
+        self.assertIn('data-action="trace-row"', html)
 
     def test_role_mapping_group_num_can_be_updated_via_web_api(self) -> None:
         status, payload = self._request(
@@ -1144,6 +1147,35 @@ class WebAppTests(PostgresTestCase):
         )
         self.assertEqual(status, 404)
         self.assertIn("transaction", payload["error"])
+
+    def test_reconciliation_difference_trace_alias_returns_trace_without_auth(
+        self,
+    ) -> None:
+        tx_id = self.db.add_transaction(
+            platform="wechat",
+            group_key="wechat:g-100",
+            group_num=5,
+            chat_id="g-100",
+            chat_name="客户群-Web",
+            sender_id="u-trace-alias",
+            sender_name="Trace Alias",
+            message_id="msg-trace-alias",
+            input_sign=1,
+            amount=88,
+            category="rmb",
+            rate=None,
+            rmb_value=88,
+            raw="+88rmb",
+            created_at="2026-03-20 14:00:00",
+        )
+        status, payload = self._request(
+            "GET",
+            "/api/reconciliation/difference-trace",
+            query_string=f"transaction_id={tx_id}",
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["transaction"]["id"], tx_id)
+        self.assertIn("trace_status", payload)
 
 
 if __name__ == "__main__":

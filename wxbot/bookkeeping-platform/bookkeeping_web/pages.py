@@ -213,6 +213,53 @@ _STYLE = """
     background: rgba(255,255,255,0.58);
     border: 1px solid rgba(15, 109, 96, 0.12);
   }
+  .action-stack {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .action-stack button,
+  .action-stack a {
+    width: auto;
+    flex: 0 0 auto;
+  }
+  .detail-list {
+    display: grid;
+    gap: 8px;
+    margin: 0;
+  }
+  .detail-list div {
+    display: grid;
+    gap: 4px;
+  }
+  .detail-list dt {
+    margin: 0;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .detail-list dd {
+    margin: 0;
+    line-height: 1.5;
+    word-break: break-word;
+  }
+  .trace-status-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    gap: 8px;
+  }
+  .trace-status-list li {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: center;
+    padding: 8px 10px;
+    border-radius: 12px;
+    background: rgba(255,255,255,0.72);
+    border: 1px solid rgba(15, 109, 96, 0.08);
+  }
   .table-note {
     margin-top: 8px;
   }
@@ -1688,6 +1735,48 @@ def render_reconciliation_page() -> str:
     </table>
   </div>
 </section>
+<section class="panel stack" id="reconciliation-trace-panel">
+  <div class="toolbar">
+    <div>
+      <h2>差额追踪</h2>
+      <div class="muted" id="reconciliation-trace-status">点击上方逐笔台账里的“追踪”，直接查看这笔交易从原始消息到记账结果的只读链路。</div>
+    </div>
+  </div>
+  <div class="subgrid">
+    <section class="subpanel">
+      <h3>交易摘要</h3>
+      <dl class="detail-list" id="reconciliation-trace-transaction">
+        <div><dt>状态</dt><dd class="muted">尚未选择交易</dd></div>
+      </dl>
+    </section>
+    <section class="subpanel">
+      <h3>链路状态</h3>
+      <ul class="trace-status-list" id="reconciliation-trace-flow">
+        <li><span>captured</span><span class="muted">待加载</span></li>
+        <li><span>parsed</span><span class="muted">待加载</span></li>
+        <li><span>posted</span><span class="muted">待加载</span></li>
+        <li><span>edited</span><span class="muted">待加载</span></li>
+        <li><span>flagged</span><span class="muted">待加载</span></li>
+      </ul>
+    </section>
+    <section class="subpanel full">
+      <h3>原始消息 / 解析 / 修改</h3>
+      <div class="subgrid">
+        <dl class="detail-list" id="reconciliation-trace-message">
+          <div><dt>原始消息</dt><dd class="muted">尚未选择交易</dd></div>
+        </dl>
+        <dl class="detail-list" id="reconciliation-trace-parse">
+          <div><dt>解析结果</dt><dd class="muted">尚未选择交易</dd></div>
+        </dl>
+      </div>
+      <div class="table-note">
+        <dl class="detail-list" id="reconciliation-trace-edit">
+          <div><dt>最近修改</dt><dd class="muted">尚未选择交易</dd></div>
+        </dl>
+      </div>
+    </section>
+  </div>
+</section>
 """
     script = """
 function money(value) {
@@ -1699,6 +1788,15 @@ function compactNumber(value) {
     return '';
   }
   return Number(value).toFixed(4).replace(/0+$/, '').replace(/\\.$/, '');
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 function roleText(role) {
@@ -1848,6 +1946,107 @@ function noteCell(row) {
   return lines.length ? lines.join('<br>') : '<span class="muted">—</span>';
 }
 
+function traceFlagText(flag) {
+  return flag ? '已命中' : '未命中';
+}
+
+function traceFlagClass(flag) {
+  return flag ? 'diff-highlight' : 'diff-safe';
+}
+
+function renderDetailList(nodeId, items, emptyTitle, emptyText) {
+  const node = document.querySelector(`#${nodeId}`);
+  if (!items.length) {
+    node.innerHTML = `<div><dt>${escapeHtml(emptyTitle)}</dt><dd class="muted">${escapeHtml(emptyText)}</dd></div>`;
+    return;
+  }
+  node.innerHTML = items.map((item) => `
+    <div>
+      <dt>${escapeHtml(item.label)}</dt>
+      <dd>${item.html ?? escapeHtml(item.value ?? '—')}</dd>
+    </div>
+  `).join('');
+}
+
+function renderTracePlaceholder(text = '尚未选择交易') {
+  renderDetailList('reconciliation-trace-transaction', [], '状态', text);
+  document.querySelector('#reconciliation-trace-flow').innerHTML = ['captured', 'parsed', 'posted', 'edited', 'flagged']
+    .map((item) => `<li><span>${item}</span><span class="muted">待加载</span></li>`)
+    .join('');
+  renderDetailList('reconciliation-trace-message', [], '原始消息', text);
+  renderDetailList('reconciliation-trace-parse', [], '解析结果', text);
+  renderDetailList('reconciliation-trace-edit', [], '最近修改', text);
+}
+
+function renderDifferenceTrace(payload) {
+  const tx = payload.transaction || {};
+  const message = payload.message;
+  const parseResult = payload.parse_result;
+  const latestEdit = payload.latest_edit;
+  const issueFlags = payload.issue_flags || [];
+  const traceStatus = payload.trace_status || {};
+
+  renderDetailList('reconciliation-trace-transaction', [
+    { label: '交易 ID', value: tx.id ?? '—' },
+    { label: '群', value: tx.chat_name || tx.group_key || '—' },
+    { label: '角色', value: roleText(tx.business_role) },
+    { label: '卡种', value: tx.category || '—' },
+    { label: '刀数', value: tx.usd_amount === null || tx.usd_amount === undefined ? '—' : money(tx.usd_amount) },
+    { label: '汇率', value: tx.rate === null || tx.rate === undefined ? '—' : compactNumber(tx.rate) },
+    { label: '人民币', value: tx.rmb_value === null || tx.rmb_value === undefined ? '—' : money(tx.rmb_value) },
+    { label: '异常', html: issueFlags.length ? escapeHtml(issueFlags.map((item) => issueText(item)).join(' / ')) : '<span class="muted">无</span>' },
+    { label: '创建时间', value: tx.created_at || '—' },
+  ], '交易摘要', '暂无交易数据');
+
+  document.querySelector('#reconciliation-trace-flow').innerHTML = [
+    ['captured', '已录到原始消息'],
+    ['parsed', '已形成解析结果'],
+    ['posted', '已写入交易'],
+    ['edited', '已被人工修改'],
+    ['flagged', '已命中异常标记'],
+  ].map(([key, label]) => `
+    <li>
+      <span>${escapeHtml(label)}</span>
+      <span class="${traceFlagClass(Boolean(traceStatus[key]))}">${traceFlagText(Boolean(traceStatus[key]))}</span>
+    </li>
+  `).join('');
+
+  renderDetailList('reconciliation-trace-message', message ? [
+    { label: '消息 ID', value: message.message_id || '—' },
+    { label: '发送人', value: message.sender_name || message.sender_id || '—' },
+    { label: '收到时间', value: message.received_at || message.created_at || '—' },
+    { label: '正文', html: message.text ? `<span class="mono">${escapeHtml(message.text)}</span>` : '<span class="muted">—</span>' },
+  ] : [], '原始消息', '这笔交易没有关联到原始消息');
+
+  renderDetailList('reconciliation-trace-parse', parseResult ? [
+    { label: '分类', value: parseResult.classification || '—' },
+    { label: '状态', value: parseResult.parse_status || '—' },
+    { label: '原始文本', html: parseResult.raw_text ? `<span class="mono">${escapeHtml(parseResult.raw_text)}</span>` : '<span class="muted">—</span>' },
+  ] : [], '解析结果', '这笔交易当前没有对应的 parse result');
+
+  renderDetailList('reconciliation-trace-edit', latestEdit ? [
+    { label: '编辑人', value: latestEdit.edited_by || '—' },
+    { label: '编辑时间', value: latestEdit.edited_at || '—' },
+    { label: '说明', value: latestEdit.note || '—' },
+  ] : [], '最近修改', '这笔交易目前没有人工修改痕迹');
+}
+
+async function loadDifferenceTrace(transactionId) {
+  document.querySelector('#reconciliation-trace-status').className = 'muted';
+  document.querySelector('#reconciliation-trace-status').textContent = `正在加载交易 ${transactionId} 的差额追踪...`;
+  const response = await fetch(`/api/reconciliation/difference-trace?transaction_id=${transactionId}`);
+  const payload = await response.json();
+  if (!response.ok) {
+    document.querySelector('#reconciliation-trace-status').className = 'error';
+    document.querySelector('#reconciliation-trace-status').textContent = payload.error || '加载差额追踪失败。';
+    renderTracePlaceholder('加载失败');
+    return;
+  }
+  document.querySelector('#reconciliation-trace-status').className = 'muted';
+  document.querySelector('#reconciliation-trace-status').textContent = `已加载交易 ${transactionId} 的只读追踪链路，可直接对照原始消息、解析结果和人工修改痕迹。`;
+  renderDifferenceTrace(payload);
+}
+
 function fillAdjustmentForm(row) {
   document.querySelector('#reconciliation-linked-transaction-id').value = row.row_type === 'transaction' ? String(row.row_id) : '';
   document.querySelector('#reconciliation-adjustment-period-id').value = row.period_id || '';
@@ -1951,7 +2150,12 @@ function renderLedgerRows(rows) {
         <td>${money(row.rmb_value)}</td>
         <td>${issueCell(row)}</td>
         <td>${noteCell(row)}</td>
-        <td><button type="button" data-action="quote-row" data-row-id="${row.row_id}" data-row-type="${row.row_type}">引用</button></td>
+        <td>
+          <div class="action-stack">
+            <button type="button" data-action="quote-row" data-row-id="${row.row_id}" data-row-type="${row.row_type}">引用</button>
+            ${row.row_type === 'transaction' ? `<button type="button" data-action="trace-row" data-row-id="${row.row_id}">追踪</button>` : ''}
+          </div>
+        </td>
       </tr>
     `).join('')
     : '<tr><td colspan="12" class="muted">当前筛选下暂无逐笔台账</td></tr>';
@@ -2018,6 +2222,18 @@ async function loadLedger(pushUrl = false) {
         return;
       }
       fillAdjustmentForm(row);
+    });
+  });
+  document.querySelectorAll('[data-action="trace-row"]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const transactionId = Number(button.getAttribute('data-row-id'));
+      if (!transactionId) {
+        document.querySelector('#reconciliation-trace-status').className = 'error';
+        document.querySelector('#reconciliation-trace-status').textContent = '这行没有有效的 transaction_id，无法追踪。';
+        renderTracePlaceholder('无法追踪');
+        return;
+      }
+      await loadDifferenceTrace(transactionId);
     });
   });
   setLedgerStatus(`已加载 ${scopeText(scope)} / ${filterTrailText(data)} 下的逐笔台账。`);
@@ -2103,6 +2319,7 @@ document.querySelector('#reconciliation-group-num').dataset.pendingValue = query
 document.querySelector('#reconciliation-group-key').dataset.pendingValue = query.get('group_key') || '';
 document.querySelector('#reconciliation-card-type').dataset.pendingValue = query.get('card_type') || '';
 updateScopeControls();
+renderTracePlaceholder();
 loadLedger(false);
 """
     return _render_layout(

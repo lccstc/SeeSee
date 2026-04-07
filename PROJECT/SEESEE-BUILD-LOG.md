@@ -169,6 +169,32 @@ bridge 现状补记：
 - 31B worker 的状态回看 cron 不能再用持续循环 job 盯一个旧 session
 - 正确规范应是：发出 worker 任务后，只创建一个一次性 cron，约 1 分钟后唤醒当前会话查看状态；如果 worker session 变更，旧 cron 必须立刻移除或改绑
 
+### 第六轮已完成
+已把 `difference trace` 接到 reconciliation 实际页面路径里，先落最小只读详情，不再要求人工来回切接口。
+
+新增能力：
+- reconciliation 逐笔台账里的交易行现在有 `追踪` 入口
+- 点击后会在同页下方加载只读 `差额追踪` 面板
+- 面板可直接查看：交易摘要、原始消息、parse result、最近修改痕迹、trace 状态链
+- 为页面使用补了一个同口径只读入口：`GET /api/reconciliation/difference-trace?transaction_id=...`
+
+本轮实现取舍：
+- 没有新做复杂页面路由
+- 没有新建表
+- 没有改 reconciliation 核心计算口径
+- 只是把现有 `difference trace` 能力接进真实对账路径，降低排查切换成本
+
+本轮验收结果：
+- 页面结构测试通过，确认 trace 面板和入口已挂到 reconciliation 页面
+- difference trace 核心接口相关测试复跑通过
+- 页面实际使用的 `reconciliation/difference-trace` 入口测试通过
+- 本轮实际补跑 4 个测试，命令为：
+  - `.venv/bin/python -m unittest tests.test_webapp.WebAppTests.test_reconciliation_page_contains_filter_and_adjustment_controls tests.test_webapp.WebAppTests.test_difference_trace_returns_full_trace_with_all_fields tests.test_webapp.WebAppTests.test_difference_trace_returns_transaction_without_message_parse tests.test_webapp.WebAppTests.test_reconciliation_difference_trace_alias_returns_trace_without_auth`
+
+当前主线变化：
+- 差额追踪已经不再只是 API，已经进入 reconciliation 的真实操作路径
+- 对账时看到异常交易，可以直接同页追到消息、解析和人工修改痕迹
+
 ### 新窗口接手说明
 如果换新窗口，先读：
 1. `PROJECT/SEESEE-PRD-lite.md`

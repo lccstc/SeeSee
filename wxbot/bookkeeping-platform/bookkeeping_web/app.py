@@ -91,6 +91,10 @@ def create_app(
             return _with_db(
                 db_file, start_response, _handle_reconciliation_adjustments, environ
             )
+        if path == "/api/reconciliation/difference-trace" and method == "GET":
+            return _with_db(
+                db_file, start_response, _handle_difference_trace, environ
+            )
         if path == "/api/accounting-periods" and method == "GET":
             return _with_db(db_file, start_response, _handle_accounting_periods)
         if path == "/api/accounting-periods/close" and method == "POST":
