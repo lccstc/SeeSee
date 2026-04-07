@@ -29,5 +29,6 @@
 ## 当前下一刀
 - [x] 为 parse results 增加原始消息 / 交易结果联合查看能力
 - [x] 设计差额追踪的最小闭环
-- [ ] 新增只读差额追踪接口（transaction -> message / parse / tx / issue flags）
+- [x] 新增只读差额追踪接口（transaction -> message / parse / tx / issue flags）
 - [ ] 给 reconciliation 行补一个 trace 入口，先跳只读详情，不做复杂页面
+- [ ] 把 difference trace 接到实际对账操作路径里，减少人工来回切接口

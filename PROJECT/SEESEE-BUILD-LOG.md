@@ -145,6 +145,30 @@ bridge 现状补记：
 2. 复用现有 `message-inspector` 与 reconciliation 数据，不重复造表
 3. 再给 reconciliation 行补一个 trace 入口
 
+### 第五轮已完成
+已完成只读 `difference trace` 接口，作为差额追踪的第一条最小闭环。
+
+新增能力：
+- 新增 `GET /api/difference-trace?transaction_id=...`
+- 可从 `transaction_id` 直接查看交易摘要、原始消息、parse result、当前 issue flags、最近一次 edit 信息
+- 会返回最小状态链：`captured / parsed / posted / edited / flagged`
+- transaction 即使缺少 `message_id`，仍可返回 transaction 本体与 trace 状态，不会整条失败
+
+本轮实际实现方式：
+- 没有新建表
+- 复用了现有 `transactions`、`incoming_messages`、`message_parse_results`、`transaction_edit_logs`
+- issue flags 口径与 reconciliation 保持一致
+
+本轮验收结果：
+- 使用项目自己的测试方式补跑了 difference trace 相关 5 个新增测试
+- 需要带 `BOOKKEEPING_TEST_DSN` 环境变量，指向本机 PostgreSQL 测试连接
+- 5 个新增测试已通过
+- 对应功能提交已存在：`7639a9d feat: add difference trace api`
+
+本轮额外流程修正：
+- 31B worker 的状态回看 cron 不能再用持续循环 job 盯一个旧 session
+- 正确规范应是：发出 worker 任务后，只创建一个一次性 cron，约 1 分钟后唤醒当前会话查看状态；如果 worker session 变更，旧 cron 必须立刻移除或改绑
+
 ### 新窗口接手说明
 如果换新窗口，先读：
 1. `PROJECT/SEESEE-PRD-lite.md`
