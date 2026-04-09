@@ -595,17 +595,46 @@ def _handle_quotes_exceptions(db: BookkeepingDB, start_response, environ):
 
 
 def _handle_quotes_exception_resolve(db: BookkeepingDB, start_response, environ):
+    import json
+    from bookkeeping_core.template_engine import generate_strict_pattern_from_annotations
     try:
         payload = _read_json_body(environ)
         exception_id = int(payload["exception_id"])
+        
+        # New resolution mode: "annotate"
         resolution_status = str(payload.get("resolution_status") or "ignored").strip()
+        if resolution_status == "annotate":
+            annotations = payload.get("annotations", [])
+            exc_row = db.get_quote_exception(exception_id=exception_id)
+            if not exc_row:
+                return _respond_json(start_response, 404, {"error": "exception not found"})
+                
+            source_line = str(exc_row["source_line"])
+            platform = str(exc_row["platform"])
+            chat_id = str(exc_row["chat_id"])
+            
+            # Generate new strict pattern
+            pattern = generate_strict_pattern_from_annotations(source_line, annotations)
+            new_rule = {"pattern": pattern, "type": "price"}
+            
+            # Append rule to DB
+            db.append_rule_to_group_profile(platform=platform, chat_id=chat_id, new_rule=new_rule)
+            
+            # Mark exception as resolved
+            updated = db.resolve_quote_exception(
+                exception_id=exception_id,
+                resolution_status="resolved",
+                resolution_note=f"auto-generated strict rule: {pattern}"
+            )
+            return _respond_json(start_response, 200, {"updated": updated, "new_pattern": pattern})
+            
         if resolution_status == "attached":
             result = db.attach_quote_exception_to_restrictions(
                 exception_id=exception_id,
             )
             return _respond_json(start_response, 200, result)
-        if resolution_status not in {"ignored", "resolved", "open"}:
-            raise ValueError("resolution_status must be ignored, resolved, attached, or open")
+        if resolution_status not in {"ignored", "resolved", "attached", "annotate", "open"}:
+            raise ValueError("resolution_status must be ignored, resolved, attached, annotate, or open")
         updated = db.resolve_quote_exception(
             exception_id=exception_id,
             resolution_status=resolution_status,
