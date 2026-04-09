@@ -2615,6 +2615,85 @@ class BookkeepingDB(_BookkeepingStoreBase):
     def _ensure_support_tables(self) -> None:
         self.conn.execute(
             """
+            CREATE TABLE IF NOT EXISTS accounting_periods (
+              id BIGSERIAL PRIMARY KEY,
+              start_at TIMESTAMP NOT NULL,
+              end_at TIMESTAMP NOT NULL,
+              closed_at TIMESTAMP NOT NULL,
+              closed_by TEXT NOT NULL,
+              note TEXT,
+              has_adjustment INTEGER NOT NULL DEFAULT 0,
+              snapshot_version INTEGER NOT NULL DEFAULT 1
+            )
+            """
+        )
+        self.conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS period_group_snapshots (
+              id BIGSERIAL PRIMARY KEY,
+              period_id BIGINT NOT NULL,
+              group_key TEXT NOT NULL,
+              platform TEXT NOT NULL,
+              chat_name TEXT NOT NULL,
+              group_num INTEGER,
+              business_role TEXT,
+              opening_balance NUMERIC(18, 4) NOT NULL DEFAULT 0,
+              income NUMERIC(18, 4) NOT NULL DEFAULT 0,
+              expense NUMERIC(18, 4) NOT NULL DEFAULT 0,
+              closing_balance NUMERIC(18, 4) NOT NULL DEFAULT 0,
+              transaction_count INTEGER NOT NULL DEFAULT 0,
+              anomaly_flags_json TEXT NOT NULL DEFAULT '[]',
+              UNIQUE (period_id, group_key)
+            )
+            """
+        )
+        self.conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS period_group_card_stats (
+              id BIGSERIAL PRIMARY KEY,
+              period_id BIGINT NOT NULL,
+              group_key TEXT NOT NULL,
+              card_type TEXT NOT NULL,
+              country_or_currency TEXT NOT NULL,
+              unit_count_net INTEGER NOT NULL DEFAULT 0,
+              usd_amount_net NUMERIC(18, 4) NOT NULL DEFAULT 0,
+              UNIQUE (period_id, group_key, card_type, country_or_currency)
+            )
+            """
+        )
+        self.conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS period_card_stats (
+              id BIGSERIAL PRIMARY KEY,
+              period_id BIGINT NOT NULL,
+              group_key TEXT NOT NULL,
+              business_role TEXT,
+              card_type TEXT NOT NULL,
+              usd_amount NUMERIC(18, 4) NOT NULL DEFAULT 0,
+              rate NUMERIC(18, 6),
+              rmb_amount NUMERIC(18, 4) NOT NULL DEFAULT 0,
+              unit_face_value NUMERIC(18, 6),
+              unit_count NUMERIC(18, 6),
+              sample_raw TEXT
+            )
+            """
+        )
+        self.conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS period_adjustments (
+              id BIGSERIAL PRIMARY KEY,
+              period_id BIGINT NOT NULL,
+              group_key TEXT NOT NULL,
+              adjustment_type TEXT NOT NULL,
+              amount NUMERIC(18, 4) NOT NULL,
+              note TEXT NOT NULL,
+              created_by TEXT NOT NULL,
+              created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        self.conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS transaction_edit_logs (
               id BIGSERIAL PRIMARY KEY,
               transaction_id BIGINT NOT NULL,
