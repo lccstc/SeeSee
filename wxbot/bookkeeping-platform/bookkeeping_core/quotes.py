@@ -24,6 +24,7 @@ _RANGE_RE = re.compile(
 )
 _MULTIPLIER_RE = re.compile(r"(?P<value>\d+(?:\.\d+)?)\s*(?:X|x|倍数|倍)")
 _QUESTION_KEYWORDS = ("问", "待定", "不拿", "不收", "不加账", "ask", "询价")
+
 _RESTRICTION_KEYWORDS = (
     "尾刀",
     "连卡",
@@ -46,9 +47,14 @@ _MODIFIER_RE = re.compile(r"[-+]\d+(?:\.\d+)?")
 class QuoteGroupProfile:
     key: str
     default_card_type: str | None = None
+    default_country_or_currency: str | None = None
+    default_form_factor: str | None = None
+    default_multiplier: str | None = None
     parser_template: str | None = None
     stale_after_minutes: int | None = None
     note: str = ""
+    template_config: str = ""
+    dictionary_aliases: dict[str, tuple[tuple[str, str], ...]] | None = None
 
 
 _QUOTE_GROUP_PROFILES: tuple[tuple[str, QuoteGroupProfile], ...] = (
@@ -113,6 +119,10 @@ _COUNTRY_ALIASES: list[tuple[str, str]] = [
     ("gbp", "GBP"),
     ("uk", "GBP"),
     ("英镑", "GBP"),
+    ("英国", "GBP"),
+    ("hkd", "HKD"),
+    ("hk", "HKD"),
+    ("香港", "HKD"),
     ("cad", "CAD"),
     ("加元", "CAD"),
     ("加拿大", "CAD"),
@@ -123,6 +133,26 @@ _COUNTRY_ALIASES: list[tuple[str, str]] = [
     ("新西兰", "NZD"),
     ("chf", "CHF"),
     ("瑞士", "CHF"),
+    ("希腊", "EUR"),
+    ("葡萄牙", "EUR"),
+    ("意大利", "EUR"),
+    ("意", "EUR"),
+    ("比利时", "EUR"),
+    ("比", "EUR"),
+    ("爱尔兰", "EUR"),
+    ("爱", "EUR"),
+    ("奥地利", "EUR"),
+    ("奥", "EUR"),
+    ("荷兰", "EUR"),
+    ("荷", "EUR"),
+    ("法国", "EUR"),
+    ("法", "EUR"),
+    ("芬兰", "EUR"),
+    ("芬", "EUR"),
+    ("西班牙", "EUR"),
+    ("西", "EUR"),
+    ("斯洛伐克", "EUR"),
+    ("斯洛文尼亚", "EUR"),
     ("pln", "PLN"),
     ("波兰", "PLN"),
     ("sgd", "SGD"),
@@ -163,7 +193,12 @@ _COUNTRY_ALIASES: list[tuple[str, str]] = [
 
 _FORM_FACTORS: list[tuple[str, str]] = [
     ("横白卡", "横白卡"),
+    ("横白卡图", "横白卡"),
+    ("横白", "横白卡"),
+    ("横卡", "横白卡"),
+    ("横板", "横白卡"),
     ("竖卡", "竖卡"),
+    ("竖板", "竖卡"),
     ("电子", "电子"),
     ("代码", "代码"),
     ("图密", "图密"),
@@ -172,6 +207,72 @@ _FORM_FACTORS: list[tuple[str, str]] = [
     ("photo", "photo"),
     ("图片", "图片"),
 ]
+
+_BUILTIN_TEMPLATE_KEYS: set[str] = {
+    "apple_modifier_sheet",
+    "section_sheet",
+    "simple_sheet",
+    "group_fixed_sheet",
+    "sectioned_group_sheet",
+}
+
+
+def list_builtin_quote_dictionary_aliases(
+    category: str | None = None,
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    requested = str(category or "").strip()
+    selected = {
+        "country_currency",
+        "card_type",
+        "form_factor",
+    }
+    if requested:
+        if requested not in selected:
+            return []
+        selected = {requested}
+
+    def _append(cat: str, alias: str, canonical: str) -> None:
+        if cat not in selected:
+            return
+        normalized_alias = str(alias or "").strip()
+        normalized_canonical = str(canonical or "").strip()
+        if not normalized_alias or not normalized_canonical:
+            return
+        rows.append(
+            {
+                "category": cat,
+                "alias": normalized_alias,
+                "canonical_value": normalized_canonical,
+                "canonical_input": normalized_canonical,
+                "scope_platform": "",
+                "scope_chat_id": "",
+                "note": "builtin",
+                "enabled": 1,
+                "source": "builtin",
+                "editable": False,
+            }
+        )
+
+    for alias, canonical in _COUNTRY_ALIASES:
+        _append("country_currency", alias, normalize_quote_country_or_currency(canonical))
+    for alias, canonical in _CARD_TYPE_ALIASES:
+        _append("card_type", alias, normalize_quote_card_type(canonical))
+    for alias, canonical in _CARD_TYPE_QUERY_ALIASES.items():
+        _append("card_type", alias, normalize_quote_card_type(canonical))
+    for alias, canonical in _FORM_FACTORS:
+        _append("form_factor", alias, normalize_quote_form_factor(canonical))
+
+    deduped: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for row in rows:
+        key = f'{row["category"]}:{_normalize_key(str(row["alias"]))}'
+        if key in seen:
+            continue
+        seen.add(key)
+        row["id"] = f'builtin:{row["category"]}:{len(deduped) + 1}'
+        deduped.append(row)
+    return deduped
 
 
 def normalize_quote_card_type(value: str) -> str:
@@ -189,6 +290,118 @@ def normalize_quote_country_or_currency(value: str) -> str:
     if not text:
         return ""
     return _infer_country_or_currency(text) or text.upper()
+
+
+def normalize_quote_form_factor(value: str) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return "不限"
+    if text == "不限":
+        return text
+    normalized = _normalize_key(text)
+    if any(
+        alias in normalized
+        for alias in (
+            "横白卡",
+            "横白",
+            "横卡",
+            "横板",
+            "horizontal",
+            "卡图",
+            "图片",
+            "photo",
+            "image",
+            "card",
+        )
+    ):
+        return "横白卡"
+    if any(alias in normalized for alias in ("竖卡", "竖板", "vertical")):
+        return "竖卡"
+
+    values: list[str] = []
+    if any(alias in normalized for alias in ("代码", "code")):
+        values.append("代码")
+    if any(alias in normalized for alias in ("电子", "electronic", "electron")):
+        values.append("电子")
+    if any(alias in normalized for alias in ("卡图", "图片", "photo", "image", "card")):
+        values.append("横白卡")
+    if any(alias in normalized for alias in ("纸质", "paper")):
+        values.append("纸质")
+    if values:
+        deduped: list[str] = []
+        for item in values:
+            if item not in deduped:
+                deduped.append(item)
+        return "/".join(deduped)
+    return text
+
+
+def normalize_quote_amount_range(value: str) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return "不限"
+    if text == "不限":
+        return text
+    text = text.replace("／", "/").replace("－", "-").replace("—", "-").replace("~", "-")
+    spaced_range = re.fullmatch(r"(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)", text)
+    if spaced_range:
+        start = float(spaced_range.group(1))
+        end = float(spaced_range.group(2))
+        if end < start:
+            start, end = end, start
+        start_text = f"{start:g}"
+        end_text = f"{end:g}"
+        return start_text if start_text == end_text else f"{start_text}-{end_text}"
+    text = re.sub(r"\s+", "", text)
+    if "/" in text:
+        parts = [item for item in text.split("/") if item]
+        text = "-".join(parts)
+    numeric_tokens = re.findall(r"\d+(?:\.\d+)?", text)
+    if not numeric_tokens:
+        return text or "不限"
+    if len(numeric_tokens) == 1:
+        return f"{float(numeric_tokens[0]):g}"
+    bounds = sorted(float(token) for token in numeric_tokens)
+    start_text = f"{bounds[0]:g}"
+    end_text = f"{bounds[-1]:g}"
+    return start_text if start_text == end_text else f"{start_text}-{end_text}"
+
+
+def normalize_quote_multiplier(value: str) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    matched = re.fullmatch(r"(\d+(?:\.\d+)?)\s*(?:X|x|倍数|倍)", text)
+    if matched:
+        number = matched.group(1)
+        if number.endswith(".0"):
+            number = number[:-2]
+        return f"{number}X"
+    return ""
+
+
+def quote_dictionary_aliases_from_rows(
+    rows: list[dict[str, Any]] | tuple[dict[str, Any], ...],
+) -> dict[str, tuple[tuple[str, str], ...]]:
+    grouped: dict[str, list[tuple[str, str]]] = {}
+    seen: dict[str, set[str]] = {}
+    for row in rows or []:
+        category = str(row.get("category") or "").strip()
+        alias = str(row.get("alias") or "").strip()
+        canonical = str(row.get("canonical_value") or "").strip()
+        if not category or not alias or not canonical:
+            continue
+        alias_key = _normalize_key(alias)
+        if alias_key in seen.setdefault(category, set()):
+            continue
+        seen[category].add(alias_key)
+        grouped.setdefault(category, []).append((alias, canonical))
+    return {
+        category: tuple(
+            sorted(values, key=lambda item: len(_normalize_key(item[0])), reverse=True)
+        )
+        for category, values in grouped.items()
+    }
 
 
 @dataclass(slots=True)
@@ -267,11 +480,15 @@ class QuoteCaptureService:
         text = str(raw_text if raw_text is not None else envelope.text or "").strip()
         if not text or not envelope.is_group or envelope.content_type != "text":
             return {"captured": False, "rows": 0, "exceptions": 0}
+        # 采集供应商组（2/3/4）和客人组（5/6/7/8）的报价
+        group_key = f"{envelope.platform}:{envelope.chat_id}"
+        group_num = self.db.get_group_num(group_key)
+        if group_num is None or group_num not in (2, 3, 4, 5, 6, 7, 8):
+            return {"captured": False, "rows": 0, "exceptions": 0}
+        group_profile = self._group_profile_for_envelope(envelope, text)
         inquiry_reply = self._capture_inquiry_reply(envelope, text=text)
         if inquiry_reply.get("captured"):
             return inquiry_reply
-        if not looks_like_quote_message(text):
-            return {"captured": False, "rows": 0, "exceptions": 0}
         message_time = _normalize_message_time(envelope.received_at)
 
         parsed = parse_quote_document(
@@ -284,7 +501,7 @@ class QuoteCaptureService:
             source_group_key=f"{envelope.platform}:{envelope.chat_id}",
             raw_text=text,
             message_time=message_time,
-            group_profile=self._group_profile_for_envelope(envelope, text),
+            group_profile=group_profile,
         )
         if not parsed.rows and not parsed.exceptions:
             return {"captured": False, "rows": 0, "exceptions": 0}
@@ -382,6 +599,12 @@ class QuoteCaptureService:
         envelope: NormalizedMessageEnvelope,
         text: str,
     ) -> QuoteGroupProfile:
+        dictionary_aliases: dict[str, tuple[tuple[str, str], ...]] | None = None
+        alias_method = getattr(self.db, "list_quote_dictionary_aliases_for_scope", None)
+        if callable(alias_method):
+            dictionary_aliases = quote_dictionary_aliases_from_rows(
+                alias_method(platform=envelope.platform, chat_id=envelope.chat_id)
+            )
         method = getattr(self.db, "get_quote_group_profile", None)
         if callable(method):
             row = method(platform=envelope.platform, chat_id=envelope.chat_id)
@@ -389,15 +612,22 @@ class QuoteCaptureService:
                 return QuoteGroupProfile(
                     key=f"{envelope.platform}:{envelope.chat_id}",
                     default_card_type=str(row.get("default_card_type") or "") or None,
+                    default_country_or_currency=str(row.get("default_country_or_currency") or "")
+                    or None,
+                    default_form_factor=str(row.get("default_form_factor") or "") or None,
+                    default_multiplier=str(row.get("default_multiplier") or "") or None,
                     parser_template=str(row.get("parser_template") or "") or None,
                     stale_after_minutes=int(row.get("stale_after_minutes") or DEFAULT_STALE_AFTER_MINUTES),
                     note=str(row.get("note") or ""),
+                    template_config=str(row.get("template_config") or ""),
+                    dictionary_aliases=dictionary_aliases,
                 )
-        return resolve_quote_group_profile(
+        profile = resolve_quote_group_profile(
             source_group_key=f"{envelope.platform}:{envelope.chat_id}",
             chat_name=envelope.chat_name,
             raw_text=text,
         )
+        return replace(profile, dictionary_aliases=dictionary_aliases)
 
     def _capture_inquiry_reply(
         self,
@@ -443,9 +673,9 @@ class QuoteCaptureService:
             sender_id=envelope.sender_id,
             card_type=str(context["card_type"]),
             country_or_currency=str(context["country_or_currency"]),
-            amount_range=str(context["amount_range"]),
+            amount_range=normalize_quote_amount_range(str(context["amount_range"])),
             multiplier=str(context["multiplier"]) if context.get("multiplier") else None,
-            form_factor=str(context["form_factor"] or "不限"),
+            form_factor=normalize_quote_form_factor(str(context["form_factor"] or "不限")),
             price=price,
             quote_status="active",
             restriction_text="询价上下文回复",
@@ -495,7 +725,54 @@ def parse_quote_document(
         chat_name=chat_name,
         raw_text=raw_text,
     )
-    template_key = group_profile.parser_template or _infer_template_key(compact_lines)
+    profile_template_key = str(group_profile.parser_template or "").strip()
+    template_key = profile_template_key or _infer_template_key(compact_lines)
+    if template_key == "sectioned_group_sheet":
+        return _parse_sectioned_group_sheet(
+            platform=platform,
+            chat_id=chat_id,
+            chat_name=chat_name,
+            message_id=message_id,
+            source_name=source_name,
+            sender_id=sender_id,
+            source_group_key=source_group_key,
+            raw_text=raw_text,
+            message_time=message_time,
+            group_profile=group_profile,
+        )
+    if (
+        profile_template_key
+        and profile_template_key not in _BUILTIN_TEMPLATE_KEYS
+        and group_profile.default_card_type
+        and group_profile.default_country_or_currency
+    ):
+        return _parse_fixed_group_sheet(
+            platform=platform,
+            chat_id=chat_id,
+            chat_name=chat_name,
+            message_id=message_id,
+            source_name=source_name,
+            sender_id=sender_id,
+            source_group_key=source_group_key,
+            raw_text=raw_text,
+            message_time=message_time,
+            group_profile=group_profile,
+            parser_template_key=profile_template_key,
+        )
+    if template_key == "group_fixed_sheet":
+        return _parse_fixed_group_sheet(
+            platform=platform,
+            chat_id=chat_id,
+            chat_name=chat_name,
+            message_id=message_id,
+            source_name=source_name,
+            sender_id=sender_id,
+            source_group_key=source_group_key,
+            raw_text=raw_text,
+            message_time=message_time,
+            group_profile=group_profile,
+            parser_template_key=template_key,
+        )
     default_card_type = (
         _infer_card_type(title)
         or _infer_card_type(raw_text)
@@ -665,6 +942,426 @@ def parse_quote_document(
     )
 
 
+def _parse_sectioned_group_sheet(
+    *,
+    platform: str,
+    chat_id: str,
+    chat_name: str,
+    message_id: str,
+    source_name: str,
+    sender_id: str,
+    source_group_key: str,
+    raw_text: str,
+    message_time: str,
+    group_profile: QuoteGroupProfile,
+) -> ParsedQuoteDocument:
+    lines = [line.strip() for line in raw_text.splitlines()]
+    dictionary_aliases = group_profile.dictionary_aliases
+    default_card_type = (
+        normalize_quote_card_type(str(group_profile.default_card_type or "").strip())
+        or _infer_card_type(raw_text, dictionary_aliases)
+        or _infer_card_type(chat_name, dictionary_aliases)
+        or "unknown"
+    )
+    default_country = normalize_quote_country_or_currency(
+        str(group_profile.default_country_or_currency or "").strip()
+    )
+    default_form_factor = normalize_quote_form_factor(
+        str(group_profile.default_form_factor or "").strip() or "横白"
+    )
+    template_key = "sectioned_group_sheet"
+    rows: list[ParsedQuoteRow] = []
+    exceptions: list[ParsedQuoteException] = []
+    section_card_type = default_card_type
+    section_countries: list[str] = [default_country] if default_country else []
+
+    for line in lines:
+        if not line or _is_separator_line(line):
+            continue
+        header_text = _sectioned_header_text(line, dictionary_aliases)
+        if header_text:
+            section_card_type = (
+                _infer_card_type(header_text, dictionary_aliases)
+                or default_card_type
+                or section_card_type
+            )
+            header_countries = _infer_country_or_currency_candidates(
+                header_text, dictionary_aliases
+            )
+            if header_countries:
+                section_countries = header_countries
+            elif "外卡" in header_text:
+                section_countries = []
+            else:
+                section_countries = [default_country] if default_country else []
+            continue
+
+        parsed_rows = _parse_sectioned_price_line(
+            line=line,
+            section_card_type=section_card_type,
+            section_countries=section_countries,
+            default_form_factor=default_form_factor,
+            dictionary_aliases=dictionary_aliases,
+            source_group_key=source_group_key,
+            platform=platform,
+            chat_id=chat_id,
+            chat_name=chat_name,
+            message_id=message_id,
+            source_name=source_name,
+            sender_id=sender_id,
+            raw_text=raw_text,
+            message_time=message_time,
+            parser_template=template_key,
+        )
+        if parsed_rows:
+            rows.extend(parsed_rows)
+            continue
+        exceptions.append(
+            _build_exception(
+                source_group_key=source_group_key,
+                platform=platform,
+                chat_id=chat_id,
+                chat_name=chat_name,
+                source_name=source_name,
+                sender_id=sender_id,
+                reason="unparsed_template_line" if not _contains_price(line) else "unknown_currency",
+                source_line=line,
+                raw_text=raw_text,
+                message_time=message_time,
+                parser_template=template_key,
+                confidence=0.4,
+            )
+        )
+
+    parse_status = "parsed" if rows else "exception"
+    if rows and exceptions:
+        parse_status = "partial"
+    confidence = _document_confidence(rows, exceptions, template_key)
+    return ParsedQuoteDocument(
+        source_group_key=source_group_key,
+        platform=platform,
+        chat_id=chat_id,
+        chat_name=chat_name,
+        message_id=message_id,
+        source_name=source_name,
+        sender_id=sender_id,
+        raw_text=raw_text,
+        message_time=message_time,
+        parser_template=template_key,
+        parser_version=PARSER_VERSION,
+        confidence=confidence,
+        parse_status=parse_status,
+        rows=rows,
+        exceptions=exceptions,
+    )
+
+
+def _sectioned_header_text(
+    line: str,
+    dictionary_aliases: dict[str, tuple[tuple[str, str], ...]] | None = None,
+) -> str:
+    if not any(marker in line for marker in ("[", "]", "【", "】", "=")):
+        if not _contains_price(line) and _infer_country_or_currency_candidates(
+            line,
+            dictionary_aliases,
+        ):
+            return line.strip()
+        return ""
+    candidate = _SECTION_HEADER_RE.search(line)
+    if candidate is not None:
+        return candidate.group("label").strip()
+    cleaned = re.sub(r"[=\[\]【】]+", " ", line)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    if cleaned and _infer_card_type(cleaned):
+        return cleaned
+    return ""
+
+
+def _parse_sectioned_price_line(
+    *,
+    line: str,
+    section_card_type: str,
+    section_countries: list[str],
+    default_form_factor: str,
+    dictionary_aliases: dict[str, tuple[tuple[str, str], ...]] | None,
+    source_group_key: str,
+    platform: str,
+    chat_id: str,
+    chat_name: str,
+    message_id: str,
+    source_name: str,
+    sender_id: str,
+    raw_text: str,
+    message_time: str,
+    parser_template: str,
+) -> list[ParsedQuoteRow]:
+    matches = list(
+        re.finditer(
+            r"(?P<amount>\d+(?:\s*[-~－—/／]\s*\d+)?)\s*[:：=]\s*(?P<price>\d+(?:\.\d+)?)",
+            line,
+        )
+    )
+    if not matches:
+        return []
+
+    prefix = line[: matches[0].start()].strip(" ：:=()（）")
+    line_countries = _infer_country_or_currency_candidates(prefix, dictionary_aliases)
+    countries = line_countries or section_countries
+    if not countries:
+        return []
+    card_type = (
+        _infer_card_type(prefix, dictionary_aliases)
+        or section_card_type
+        or _infer_card_type(line, dictionary_aliases)
+        or "unknown"
+    )
+    if not card_type or card_type == "unknown":
+        return []
+    form_factor = normalize_quote_form_factor(
+        _infer_form_factor(prefix, dictionary_aliases) or default_form_factor
+    )
+    rows: list[ParsedQuoteRow] = []
+    for index, match in enumerate(matches):
+        tail_end = matches[index + 1].start() if index + 1 < len(matches) else len(line)
+        tail = line[match.end() : tail_end].strip()
+        pair_context = " ".join(part for part in (prefix, tail) if part)
+        pair_countries = (
+            _infer_country_or_currency_candidates(pair_context, dictionary_aliases)
+            or countries
+        )
+        pair_form_factor = normalize_quote_form_factor(
+            _infer_form_factor(pair_context, dictionary_aliases) or form_factor
+        )
+        multiplier = normalize_quote_multiplier(_extract_multiplier(tail) or "") or None
+        restriction = _sectioned_restriction_tail(tail)
+        for country in pair_countries:
+            rows.append(
+                ParsedQuoteRow(
+                    source_group_key=source_group_key,
+                    platform=platform,
+                    chat_id=chat_id,
+                    chat_name=chat_name,
+                    message_id=message_id,
+                    source_name=source_name,
+                    sender_id=sender_id,
+                    card_type=card_type,
+                    country_or_currency=country,
+                    amount_range=normalize_quote_amount_range(match.group("amount")),
+                    multiplier=multiplier,
+                    form_factor=pair_form_factor,
+                    price=float(match.group("price")),
+                    quote_status="active",
+                    restriction_text=restriction,
+                    source_line=line,
+                    raw_text=raw_text,
+                    message_time=message_time,
+                    effective_at=message_time,
+                    expires_at=None,
+                    parser_template=parser_template,
+                    parser_version=PARSER_VERSION,
+                    confidence=0.96,
+                )
+            )
+    return rows
+
+
+def _sectioned_restriction_tail(tail: str) -> str:
+    text = re.sub(r"\d+(?:\.\d+)?\s*(?:X|x|倍数|倍)", " ", str(tail or ""))
+    text = text.strip(" ：:=,，、")
+    text = text.replace("（", "").replace("）", "").replace("(", "").replace(")", "")
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _parse_fixed_group_sheet(
+    *,
+    platform: str,
+    chat_id: str,
+    chat_name: str,
+    message_id: str,
+    source_name: str,
+    sender_id: str,
+    source_group_key: str,
+    raw_text: str,
+    message_time: str,
+    group_profile: QuoteGroupProfile,
+    parser_template_key: str,
+) -> ParsedQuoteDocument:
+    lines = [line.strip() for line in raw_text.splitlines() if line.strip()]
+    card_type = str(group_profile.default_card_type or "").strip()
+    country_or_currency = str(group_profile.default_country_or_currency or "").strip()
+    default_form_factor = normalize_quote_form_factor(
+        str(group_profile.default_form_factor or "").strip() or "不限"
+    )
+    default_multiplier = normalize_quote_multiplier(
+        str(group_profile.default_multiplier or "").strip()
+    ) or None
+    template_key = str(parser_template_key or "group_fixed_sheet")
+    section_restrictions: list[str] = []
+    anchor_rows: list[ParsedQuoteRow] = []
+    rows: list[ParsedQuoteRow] = []
+    exceptions: list[ParsedQuoteException] = []
+
+    for line in lines:
+        if _is_separator_line(line):
+            continue
+        if _is_form_factor_modifier_line(line):
+            derived_rows = _derive_modifier_rows(line, anchor_rows)
+            if derived_rows:
+                rows.extend(derived_rows)
+            else:
+                exceptions.append(
+                    _build_exception(
+                        source_group_key=source_group_key,
+                        platform=platform,
+                        chat_id=chat_id,
+                        chat_name=chat_name,
+                        source_name=source_name,
+                        sender_id=sender_id,
+                        reason="modifier_rule",
+                        source_line=line,
+                        raw_text=raw_text,
+                        message_time=message_time,
+                        parser_template=template_key,
+                        confidence=0.55,
+                    )
+                )
+            continue
+        if line.startswith("#"):
+            restriction = line.lstrip("#").strip()
+            section_restrictions.append(restriction)
+            if restriction:
+                for index, existing in enumerate(rows):
+                    rows[index] = replace(
+                        existing,
+                        restriction_text=_merge_restrictions(
+                            [existing.restriction_text],
+                            restriction,
+                        ),
+                    )
+                for index, existing in enumerate(anchor_rows):
+                    anchor_rows[index] = replace(
+                        existing,
+                        restriction_text=_merge_restrictions(
+                            [existing.restriction_text],
+                            restriction,
+                        ),
+                    )
+            continue
+        amount_value, price_value, right_text = _extract_fixed_sheet_amount_price(line)
+        if amount_value is None or price_value is None:
+            if _looks_like_fixed_sheet_footer(line) or _looks_like_fixed_sheet_header(line):
+                continue
+            if not re.search(r"\d", line):
+                section_restrictions.append(line)
+                for index, existing in enumerate(rows):
+                    rows[index] = replace(
+                        existing,
+                        restriction_text=_merge_restrictions(
+                            [existing.restriction_text],
+                            line,
+                        ),
+                    )
+                for index, existing in enumerate(anchor_rows):
+                    anchor_rows[index] = replace(
+                        existing,
+                        restriction_text=_merge_restrictions(
+                            [existing.restriction_text],
+                            line,
+                        ),
+                    )
+                continue
+            exceptions.append(
+                _build_exception(
+                    source_group_key=source_group_key,
+                    platform=platform,
+                    chat_id=chat_id,
+                    chat_name=chat_name,
+                    source_name=source_name,
+                    sender_id=sender_id,
+                    reason="missing_context",
+                    source_line=line,
+                    raw_text=raw_text,
+                    message_time=message_time,
+                    parser_template=template_key,
+                    confidence=0.4,
+                )
+            )
+            continue
+        line_form_factor = normalize_quote_form_factor(
+            _infer_form_factor(line) or default_form_factor
+        )
+        line_multiplier = normalize_quote_multiplier(
+            _extract_multiplier(line) or default_multiplier or ""
+        ) or None
+        row = ParsedQuoteRow(
+            source_group_key=source_group_key,
+            platform=platform,
+            chat_id=chat_id,
+            chat_name=chat_name,
+            message_id=message_id,
+            source_name=source_name,
+            sender_id=sender_id,
+            card_type=card_type or "unknown",
+            country_or_currency=country_or_currency,
+            amount_range=amount_value,
+            multiplier=line_multiplier,
+            form_factor=line_form_factor,
+            price=price_value,
+            quote_status="active",
+            restriction_text=_merge_restrictions(section_restrictions, right_text),
+            source_line=line,
+            raw_text=raw_text,
+            message_time=message_time,
+            effective_at=message_time,
+            expires_at=None,
+            parser_template=template_key,
+            parser_version=PARSER_VERSION,
+            confidence=0.95,
+        )
+        if not card_type or not country_or_currency:
+            exceptions.append(
+                _build_exception(
+                    source_group_key=source_group_key,
+                    platform=platform,
+                    chat_id=chat_id,
+                    chat_name=chat_name,
+                    source_name=source_name,
+                    sender_id=sender_id,
+                    reason="missing_context",
+                    source_line=line,
+                    raw_text=raw_text,
+                    message_time=message_time,
+                    parser_template=template_key,
+                    confidence=0.45,
+                )
+            )
+            continue
+        rows.append(row)
+        anchor_rows.append(row)
+
+    parse_status = "parsed" if rows else "exception"
+    if rows and exceptions:
+        parse_status = "partial"
+    confidence = _document_confidence(rows, exceptions, template_key)
+    return ParsedQuoteDocument(
+        source_group_key=source_group_key,
+        platform=platform,
+        chat_id=chat_id,
+        chat_name=chat_name,
+        message_id=message_id,
+        source_name=source_name,
+        sender_id=sender_id,
+        raw_text=raw_text,
+        message_time=message_time,
+        parser_template=template_key,
+        parser_version=PARSER_VERSION,
+        confidence=confidence,
+        parse_status=parse_status,
+        rows=rows,
+        exceptions=exceptions,
+    )
+
+
 @dataclass(slots=True)
 class _ParsedSegments:
     rows: list[ParsedQuoteRow]
@@ -801,8 +1498,12 @@ def _parse_single_segment(
         or _fallback_card_type(context_text)
     )
     country_or_currency = _infer_country_or_currency(context_text) or inherited_country
-    form_factor = _infer_form_factor(context_text) or inherited_form_factor or "不限"
-    amount_range = _extract_amount_range(context_text) or inherited_amount_range or "不限"
+    form_factor = normalize_quote_form_factor(
+        _infer_form_factor(context_text) or inherited_form_factor or "不限"
+    )
+    amount_range = normalize_quote_amount_range(
+        _extract_amount_range(context_text) or inherited_amount_range or "不限"
+    )
     multiplier = _extract_multiplier(context_text)
     restriction_text = _merge_restrictions(section_restrictions, right_text)
     if _looks_like_modifier_line(cleaned):
@@ -935,7 +1636,7 @@ def _derive_modifier_rows(
     modifier_line: str,
     anchor_rows: list[ParsedQuoteRow],
 ) -> list[ParsedQuoteRow]:
-    target_form_factor = _infer_form_factor(modifier_line)
+    target_form_factor = normalize_quote_form_factor(_infer_form_factor(modifier_line))
     delta = _extract_modifier_delta(modifier_line)
     if not target_form_factor or delta is None or not anchor_rows:
         return []
@@ -943,7 +1644,7 @@ def _derive_modifier_rows(
     derived: list[ParsedQuoteRow] = []
     modifier_note = modifier_line.lstrip("#").strip()
     for row in anchor_rows:
-        if row.form_factor == target_form_factor:
+        if normalize_quote_form_factor(row.form_factor) == target_form_factor:
             continue
         price = round(row.price + delta, 6)
         if price <= 0:
@@ -985,6 +1686,66 @@ def _extract_standalone_reply_price(text: str) -> float | None:
         if price is not None and not _infer_card_type(left_text) and not _infer_country_or_currency(left_text):
             return price
     return None
+
+
+def _extract_fixed_sheet_amount_price(line: str) -> tuple[str | None, float | None, str]:
+    normalized_line = str(line or "").strip()
+    working = normalized_line
+    if "：" in working:
+        working = working.split("：", 1)[1].strip()
+    elif ":" in working:
+        working = working.split(":", 1)[1].strip()
+    # Remove explicit multiplier markers first, so lines like
+    # "100-500 100倍数 5.47" won't parse the multiplier number as price.
+    working_without_multiplier = re.sub(
+        r"\d+(?:\.\d+)?\s*(?:X|x|倍数|倍)",
+        " ",
+        working,
+    )
+
+    for pattern in (
+        re.compile(
+            r"(?P<amount>\d+(?:\s*[/-]\s*\d+)*)\s*[:：=]\s*(?P<price>\d+(?:\.\d+)?)\s*(?P<tail>.*)$"
+        ),
+        re.compile(
+            r"(?P<amount>\d+(?:\s*[/-]\s*\d+)*(?:\s+\d+)?)\s+(?P<price>\d+(?:\.\d+)?)\s*(?P<tail>.*)$"
+        ),
+    ):
+        match = pattern.search(working_without_multiplier)
+        if match is None:
+            continue
+        amount_value = _normalize_fixed_sheet_amount(str(match.group("amount") or ""))
+        right_text = str(match.group("tail") or "").strip()
+        return amount_value or "不限", float(match.group("price")), right_text
+    return None, None, ""
+
+
+def _normalize_fixed_sheet_amount(raw_amount: str) -> str:
+    text = re.sub(r"\s+", " ", str(raw_amount or "").strip())
+    text = text.replace("／", "/").replace("－", "-").replace("—", "-")
+    spaced_range = re.fullmatch(r"(\d+)\s+(\d+)", text)
+    if spaced_range:
+        return normalize_quote_amount_range(f"{spaced_range.group(1)}-{spaced_range.group(2)}")
+    if "/" in text:
+        parts = [item.strip() for item in text.split("/") if item.strip()]
+        return normalize_quote_amount_range("-".join(parts))
+    return normalize_quote_amount_range(text.replace(" ", ""))
+
+
+def _looks_like_fixed_sheet_footer(text: str) -> bool:
+    normalized = _normalize_key(text)
+    if not normalized:
+        return True
+    return normalized in {"tw;a", "tw;a;", "a", "tw"} or normalized.startswith("tw;a")
+
+
+def _looks_like_fixed_sheet_header(text: str) -> bool:
+    normalized = _normalize_key(text)
+    if not normalized:
+        return True
+    if any(marker in text for marker in ("【", "】", "价格表", "报价单", "行情")):
+        return True
+    return bool(_infer_card_type(text) or _infer_country_or_currency(text))
 
 
 def _split_segments(line: str) -> list[str]:
@@ -1139,7 +1900,27 @@ def _section_header_tail(line: str) -> str:
     return re.sub(r"\s+", " ", tail).strip()
 
 
-def _infer_card_type(text: str) -> str | None:
+def _infer_dictionary_alias(
+    text: str,
+    category: str,
+    dictionary_aliases: dict[str, tuple[tuple[str, str], ...]] | None = None,
+) -> str | None:
+    normalized = _normalize_key(text)
+    if not normalized:
+        return None
+    for alias, canonical in (dictionary_aliases or {}).get(category, ()):
+        if _normalize_key(alias) and _normalize_key(alias) in normalized:
+            return canonical
+    return None
+
+
+def _infer_card_type(
+    text: str,
+    dictionary_aliases: dict[str, tuple[tuple[str, str], ...]] | None = None,
+) -> str | None:
+    dictionary_value = _infer_dictionary_alias(text, "card_type", dictionary_aliases)
+    if dictionary_value:
+        return dictionary_value
     normalized = _normalize_key(text)
     if not normalized:
         return None
@@ -1164,21 +1945,44 @@ def _normalize_card_type_label(text: str) -> str:
     return cleaned.strip()
 
 
-def _infer_country_or_currency(text: str) -> str | None:
+def _infer_country_or_currency(
+    text: str,
+    dictionary_aliases: dict[str, tuple[tuple[str, str], ...]] | None = None,
+) -> str | None:
+    candidates = _infer_country_or_currency_candidates(text, dictionary_aliases)
+    return candidates[0] if candidates else None
+
+
+def _infer_country_or_currency_candidates(
+    text: str,
+    dictionary_aliases: dict[str, tuple[tuple[str, str], ...]] | None = None,
+) -> list[str]:
     normalized = _normalize_key(text)
     if not normalized:
-        return None
+        return []
+    values: list[str] = []
+    for alias, canonical in (dictionary_aliases or {}).get("country_currency", ()):
+        if _normalize_key(alias) and _normalize_key(alias) in normalized and canonical not in values:
+            values.append(canonical)
+    if values:
+        return values
     for alias, canonical in _COUNTRY_ALIASES:
-        if _normalize_key(alias) in normalized:
-            return canonical
-    return None
+        if _normalize_key(alias) in normalized and canonical not in values:
+            values.append(canonical)
+    return values
 
 
-def _infer_form_factor(text: str) -> str | None:
+def _infer_form_factor(
+    text: str,
+    dictionary_aliases: dict[str, tuple[tuple[str, str], ...]] | None = None,
+) -> str | None:
     normalized = _normalize_key(text)
     if not normalized:
         return None
     values: list[str] = []
+    dictionary_value = _infer_dictionary_alias(text, "form_factor", dictionary_aliases)
+    if dictionary_value:
+        values.append(dictionary_value)
     for alias, canonical in _FORM_FACTORS:
         if _normalize_key(alias) in normalized:
             if canonical not in values:
@@ -1198,10 +2002,10 @@ def _extract_amount_range(text: str) -> str | None:
         if match is not None:
             value = re.sub(r"\s+", "", match.group("value"))
             value = value.replace("~", "-").replace("－", "-").replace("—", "-").replace("／", "/").replace("/", "-")
-            return value
+            return normalize_quote_amount_range(value)
     numeric_tokens = re.findall(r"\d+(?:\.\d+)?", text)
     if len(numeric_tokens) >= 2:
-        return numeric_tokens[0]
+        return normalize_quote_amount_range(f"{numeric_tokens[0]}-{numeric_tokens[1]}")
     return None
 
 
@@ -1348,6 +2152,14 @@ def _looks_like_short_quote(text: str) -> bool:
 
 def _looks_like_modifier_line(text: str) -> bool:
     return text.lstrip().startswith("#") and bool(_MODIFIER_RE.search(text))
+
+
+def _is_form_factor_modifier_line(text: str) -> bool:
+    if not text.lstrip().startswith("#"):
+        return False
+    if _extract_modifier_delta(text) is None:
+        return False
+    return _infer_form_factor(text) is not None
 
 
 def _looks_like_restriction_line(text: str) -> bool:
