@@ -15,17 +15,13 @@ import re
 
 @dataclass
 class TemplateConfig:
-    """群报价模板定义。"""
-
-    version: str = "tpl-v1"
+    """群报价模板定义 (Data Engine v1)。"""
+    version: str = "data-engine-v1"
+    rules: list[dict[str, str]] = field(default_factory=list)
     defaults: dict[str, str | None] = field(default_factory=dict)
-    price_lines: list[dict[str, str | None]] = field(default_factory=list)
-    restriction_lines: list[str] = field(default_factory=list)
-    section_lines: list[str] = field(default_factory=list)
-    skip_lines: list[str] = field(default_factory=list)
-
+    
     @classmethod
-    def from_json(cls, raw: str) -> TemplateConfig:
+    def from_json(cls, raw: str) -> "TemplateConfig":
         if not raw or not raw.strip():
             raise ValueError("empty template config")
         try:
@@ -33,22 +29,16 @@ class TemplateConfig:
         except json.JSONDecodeError as exc:
             raise ValueError(f"invalid JSON: {exc}") from exc
         return cls(
-            version=data.get("version", "tpl-v1"),
-            defaults=data.get("defaults", {}),
-            price_lines=data.get("price_lines", []),
-            restriction_lines=data.get("restriction_lines", []),
-            section_lines=data.get("section_lines", []),
-            skip_lines=data.get("skip_lines", []),
+            version=data.get("version", "data-engine-v1"),
+            rules=data.get("rules", []),
+            defaults=data.get("defaults", {})
         )
 
     def to_json(self) -> str:
         return json.dumps({
             "version": self.version,
+            "rules": self.rules,
             "defaults": self.defaults,
-            "price_lines": self.price_lines,
-            "restriction_lines": self.restriction_lines,
-            "section_lines": self.section_lines,
-            "skip_lines": self.skip_lines,
         }, ensure_ascii=False)
 
 
@@ -59,7 +49,7 @@ def match_pattern(line: str, pattern: str) -> dict[str, str] | None:
     返回提取的变量字典，不匹配则返回 None。
     """
     # 把 pattern 转成正则：固定文字转义，{name} 变捕获组
-    parts = re.split(r"\{(\w+)\}", pattern)
+    parts = re.split(r"\{(\\w+)\}", pattern)
     if not parts:
         return None
 
@@ -70,9 +60,13 @@ def match_pattern(line: str, pattern: str) -> dict[str, str] | None:
             # 固定文字 — 转义正则特殊字符
             regex_parts.append(re.escape(part))
         else:
-            # 变量插槽 — 匹配数字（含小数、区间、斜杠、空格分隔）
+            # 变量插槽
             names.append(part)
-            regex_parts.append(r"([\d]+(?:[.\-/ ][\d]+)*)")
+            # {country} 匹配文本（国家/货币名称，支持中英文混合），其他匹配数字
+            if part == "country":
+                regex_parts.append(r"([A-Za-z\u4e00-\u9fff\s]+)")
+            else:
+                regex_parts.append(r"([\d]+(?:[.\-/ ][\d]+)*)")
 
     regex = "^" + "".join(regex_parts)
     m = re.match(regex, line.strip())
@@ -148,7 +142,8 @@ def parse_message_with_template(
 
             amount = variables.get("amount", "不限")
             card_type = template.defaults.get("card_type") or "unknown"
-            country = template.defaults.get("country") or ""
+            # 优先使用从消息中提取的 country，否则使用 defaults 中的 country
+            country = variables.get("country") or template.defaults.get("country") or ""
             form_factor = (
                 price_line.get("form_factor")
                 or template.defaults.get("form_factor")
