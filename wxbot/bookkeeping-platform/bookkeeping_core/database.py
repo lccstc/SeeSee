@@ -1336,6 +1336,15 @@ class _BookkeepingStoreBase:
         self.conn.commit()
         return self._last_insert_id(cur)
 
+    def deactivate_old_quotes_for_group(self, *, source_group_key: str) -> None:
+        """同一群发新消息时，将旧的 active 报价标记为 inactive。"""
+        self.conn.execute(
+            "UPDATE quote_price_rows SET quote_status = 'inactive' "
+            "WHERE source_group_key = ? AND quote_status = 'active'",
+            (source_group_key,),
+        )
+        self.conn.commit()
+
     def upsert_quote_price_row_with_history(
         self,
         *,

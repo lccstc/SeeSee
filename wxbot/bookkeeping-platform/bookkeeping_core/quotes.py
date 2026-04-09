@@ -517,6 +517,12 @@ class QuoteCaptureService:
         if not parsed.rows and not parsed.exceptions:
             return {"captured": False, "rows": 0, "exceptions": 0}
 
+        # 同一群发新消息时，旧报价标记为不活跃
+        source_group_key = f"{envelope.platform}:{envelope.chat_id}"
+        deactivate_method = getattr(self.db, "deactivate_old_quotes_for_group", None)
+        if callable(deactivate_method):
+            deactivate_method(source_group_key=source_group_key)
+
         document_id = self.db.record_quote_document(
             platform=parsed.platform,
             source_group_key=parsed.source_group_key,
