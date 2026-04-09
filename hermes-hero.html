@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hermes // The Complete MUD Protocol v6.0</title>
+    <style>
+        :root {
+            --bg-dark: #020202;
+            --panel-bg: #05070a;
+            --text-main: #d0d0d0;
+            --text-dim: #4a4a4a;
+            --neon-cyan: #00e5ff;
+            --neon-green: #00ff41;
+            --neon-purple: #9d00ff;
+            --neon-red: #ff003c;
+            --neon-gold: #ffb700;
+            --border-glow: 1px solid rgba(0, 229, 255, 0.15);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Consolas', 'Courier New', monospace;
+            background-color: var(--bg-dark);
+            background-image: 
+                linear-gradient(rgba(0, 229, 255, 0.015) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0, 229, 255, 0.015) 1px, transparent 1px);
+            background-size: 20px 20px;
+            color: var(--text-main);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            user-select: none;
+            transition: background-color 0.1s;
+        }
+
+        /* 惩罚闪烁红屏特效 */
+        body.breach { background-color: #2b0000; }
+
+        .crt-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.2) 50%);
+            background-size: 100% 4px; pointer-events: none; z-index: 9999; opacity: 0.6;
+            box-shadow: inset 0 0 100px rgba(0,0,0,0.9);
+        }
+
+        header {
+            padding: 12px 25px; border-bottom: 2px solid var(--neon-green);
+            background: rgba(0, 0, 0, 0.9); box-shadow: 0 0 20px rgba(0, 255, 65, 0.15);
+            display: flex; justify-content: space-between; align-items: center; z-index: 10;
+        }
+
+        .title h1 { color: var(--neon-green); letter-spacing: 2px; font-size: 20px; text-shadow: 0 0 10px rgba(0, 255, 65, 0.4); }
+        .title p { color: var(--text-dim); font-size: 11px; margin-top: 2px; letter-spacing: 1px;}
+
+        .header-controls { display: flex; align-items: center; gap: 15px; }
+        .audio-btn { background: none; border: 1px solid var(--text-dim); color: var(--text-dim); padding: 4px 10px; font-size: 11px; cursor: pointer; border-radius: 2px; transition: all 0.2s; }
+        .audio-btn.on { border-color: var(--neon-cyan); color: var(--neon-cyan); box-shadow: 0 0 8px rgba(0, 229, 255, 0.2); }
+
+        .progress-hud { display: flex; align-items: center; gap: 10px; }
+        .level-badge { background: var(--text-dim); color: #000; padding: 4px 10px; font-weight: bold; font-size: 11px; letter-spacing: 1px; }
+        .bar-container { width: 150px; height: 8px; background: #111; border: 1px solid var(--neon-green); position: relative; }
+        .bar-fill { height: 100%; width: 0%; background: var(--neon-green); box-shadow: 0 0 10px var(--neon-green); transition: width 0.5s; }
+
+        main { display: flex; flex: 1; padding: 15px; gap: 15px; overflow: hidden; z-index: 10; }
+
+        /* 左侧：任务树（超长折叠结构） + 背包 */
+        .sidebar { flex: 1.1; display: flex; flex-direction: column; gap: 15px; min-width: 340px; max-width: 420px; }
+        
+        .skill-tree { flex: 3.5; background: var(--panel-bg); border: 1px solid #1a1a1a; overflow-y: auto; display: flex; flex-direction: column; }
+        .chapter-header { padding: 10px 15px; background: rgba(0, 255, 65, 0.05); border-bottom: 1px solid #1a1a1a; color: var(--neon-green); font-weight: bold; cursor: pointer; display: flex; justify-content: space-between; font-size: 11px; letter-spacing: 1px; position: sticky; top: 0; z-index: 5; backdrop-filter: blur(5px); transition: 0.2s;}
+        .chapter-header:hover { background: rgba(0, 255, 65, 0.1); }
+        .quest-list { display: flex; flex-direction: column; overflow: hidden; }
+        .quest-list.collapsed { display: none; }
+        
+        .quest { padding: 12px 15px 12px 30px; border-bottom: 1px solid #111; cursor: pointer; display: flex; justify-content: space-between; align-items: center; position: relative; border-left: 2px solid transparent; }
+        .quest::before { content: '>'; position: absolute; left: 10px; color: var(--neon-green); opacity: 0; transition: all 0.1s; }
+        .quest:not(.locked):hover { background: rgba(0, 255, 65, 0.04); }
+        .quest:not(.locked):hover::before { opacity: 1; left: 12px; }
+        .quest.active { background: rgba(0, 255, 65, 0.08); border-left: 2px solid var(--neon-green); }
+        .quest.active::before { opacity: 1; left: 12px; }
+        .quest.cleared .q-title { color: #555; text-decoration: line-through; }
+        .quest.cleared .q-status { color: var(--neon-green); }
+        .quest.locked { opacity: 0.3; cursor: not-allowed; background: repeating-linear-gradient(45deg, #020202, #020202 5px, #080808 5px, #080808 10px); }
+        .quest.locked .q-status { color: var(--neon-red); }
+        .q-title { font-size: 11.5px; line-height: 1.4; width: 75%; }
+        .q-status { font-size: 9px; width: 20%; text-align: right; }
+
+        /* 18 格全满义体背包 */
+        .inventory-wrapper { flex: 2; display: flex; flex-direction: column; background: var(--panel-bg); border: 1px solid #1a1a1a; }
+        .inv-header { background: rgba(255, 183, 0, 0.05); padding: 8px 12px; color: var(--neon-gold); font-size: 10px; font-weight: bold; letter-spacing: 1px; border-bottom: 1px solid rgba(255, 183, 0, 0.2); flex-shrink: 0; }
+        .inventory { flex: 1; padding: 10px; overflow-y: auto; }
+        .inv-grid { display: flex; flex-wrap: wrap; gap: 6px; }
+        .skill-badge { background: rgba(255, 183, 0, 0.02); border: 1px solid rgba(255, 183, 0, 0.2); color: var(--neon-gold); padding: 5px 8px; font-size: 9px; opacity: 0.25; filter: grayscale(100%); transition: all 0.3s; flex-grow: 1; text-align: center; }
+        .skill-badge.unlocked { opacity: 1; filter: grayscale(0%); box-shadow: inset 0 0 8px rgba(255, 183, 0, 0.1); background: rgba(255, 183, 0, 0.08); border-color: var(--neon-gold); }
+
+        /* 右侧：解密验证台 */
+        .mission-detail { flex: 2.5; background: var(--panel-bg); border: 1px solid #1a1a1a; padding: 25px; display: flex; flex-direction: column; overflow-y: auto; position: relative; }
+        .hidden { display: none !important; }
+        .placeholder { margin: auto; text-align: center; color: var(--text-dim); font-size: 12px; letter-spacing: 2px; }
+
+        /* 剧情终端 */
+        .mud-terminal { background: #000; border: 1px solid var(--neon-green); padding: 15px; font-family: 'Courier New', Courier, monospace; color: var(--neon-green); margin-bottom: 20px; box-shadow: inset 0 0 20px rgba(0,255,65,0.05); min-height: 90px; position: relative; }
+        .mud-terminal::before { content: 'SYSTEM.LOG //'; position: absolute; top: -8px; left: 10px; background: var(--bg-dark); padding: 0 5px; font-size: 10px; color: var(--neon-green); }
+        .mud-text { font-size: 12.5px; line-height: 1.6; white-space: pre-wrap; text-shadow: 0 0 2px var(--neon-green); }
+        .mud-cursor { display: inline-block; width: 8px; height: 14px; background: var(--neon-green); animation: blink 1s infinite; vertical-align: middle; }
+        @keyframes blink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+
+        .m-header { margin-bottom: 15px; }
+        .m-title { color: var(--neon-cyan); font-size: 20px; margin-bottom: 10px; text-transform: uppercase; border-bottom: 1px dashed var(--neon-cyan); padding-bottom: 5px; text-shadow: 0 0 8px rgba(0,229,255,0.3);}
+        .m-link { font-size: 10px; color: var(--neon-blue); text-decoration: none; border: 1px solid var(--neon-blue); padding: 3px 8px; display: inline-block; margin-bottom: 15px; transition: 0.2s; letter-spacing: 1px;}
+        .m-link:hover { background: var(--neon-blue); color: #fff; box-shadow: 0 0 10px rgba(0,102,255,0.4); }
+
+        .verification-panel { display: flex; flex-direction: column; gap: 20px; margin-bottom: 20px; }
+        
+        /* 任务清单 */
+        .task-list { background: rgba(255,255,255,0.015); border: 1px solid #222; padding: 15px; }
+        .v-title { color: var(--text-main); font-size: 11px; margin-bottom: 12px; border-bottom: 1px solid #333; padding-bottom: 5px; letter-spacing: 1px; }
+        .task-item { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 10px; cursor: pointer; transition: 0.1s;}
+        .task-item:hover { opacity: 0.8; }
+        .task-box { width: 14px; height: 14px; border: 1px solid #666; display: flex; justify-content: center; align-items: center; flex-shrink: 0; margin-top: 2px; }
+        .task-item.checked .task-box { background: var(--neon-cyan); border-color: var(--neon-cyan); }
+        .task-item.checked .task-box::after { content: '✓'; color: #000; font-size: 10px; font-weight: bold; }
+        .task-text { color: #888; font-size: 12px; line-height: 1.4; }
+        .task-item.checked .task-text { color: var(--neon-cyan); text-decoration: line-through; }
+
+        /* 防作弊机制 */
+        .quiz-panel { background: rgba(0,0,0,0.7); border: 1px solid var(--neon-red); padding: 15px; border-left: 4px solid var(--neon-red); transition: all 0.3s; }
+        .quiz-panel.passed { border-color: var(--neon-green); border-left-color: var(--neon-green); }
+        .quiz-item { margin-bottom: 20px; }
+        .q-question { font-size: 12.5px; color: #fff; margin-bottom: 12px; line-height: 1.5; font-weight: bold; }
+        .q-options { display: flex; flex-direction: column; gap: 8px; }
+        .q-option { padding: 8px 12px; background: #0a0a0a; border: 1px solid #333; font-size: 11.5px; color: #aaa; cursor: pointer; transition: 0.2s; display: flex; align-items: center; gap: 10px; }
+        .q-option::before { content: '[ ]'; color: #555; font-family: monospace; }
+        .q-option:hover { background: #141414; border-color: #666; color: #ccc;}
+        .q-option.correct { background: rgba(0, 255, 65, 0.1); border-color: var(--neon-green); color: var(--neon-green); }
+        .q-option.correct::before { content: '[*]'; color: var(--neon-green); }
+        
+        .m-actions { display: flex; gap: 15px; margin-top: auto; }
+        button { flex: 1; background: #0a0a0a; border: 1px solid #333; color: #555; padding: 14px; font-family: inherit; font-size: 12px; font-weight: bold; cursor: not-allowed; transition: all 0.2s; letter-spacing: 1px; }
+        
+        .btn-sos { border-color: rgba(157, 0, 255, 0.5); color: var(--neon-purple); cursor: pointer; background: transparent; }
+        .btn-sos:hover { background: rgba(157, 0, 255, 0.15); box-shadow: 0 0 15px rgba(157, 0, 255, 0.3); border-color: var(--neon-purple); color:#fff; }
+        
+        .btn-clear.ready { border-color: var(--neon-green); color: var(--neon-green); cursor: pointer; animation: pulse 1.5s infinite; background: rgba(0, 255, 65, 0.05); }
+        .btn-clear.done { background: var(--neon-green); color: #000; cursor: default; animation: none; border-color: var(--neon-green); }
+
+        @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(0, 255, 65, 0.2); } 70% { box-shadow: 0 0 0 8px rgba(0, 255, 65, 0); } 100% { box-shadow: 0 0 0 0 rgba(0, 255, 65, 0); } }
+
+        ::-webkit-scrollbar { width: 4px; } ::-webkit-scrollbar-track { background: transparent; } ::-webkit-scrollbar-thumb { background: #444; }
+
+        .toast { position: fixed; top: 20px; left: 50%; transform: translateX(-50%) translateY(-100px); background: #000; border: 1px solid var(--neon-cyan); color: var(--neon-cyan); padding: 10px 20px; font-size: 12px; transition: 0.3s; z-index: 1000; text-align: center; }
+        .toast.error { border-color: var(--neon-red); color: var(--neon-red); font-weight: bold; box-shadow: 0 0 20px rgba(255,0,60,0.4); }
+        .toast.show { transform: translateX(-50%) translateY(0); }
+    </style>
+</head>
+<body>
+    <div class="crt-overlay"></div>
+
+    <header>
+        <div class="title">
+            <h1>HERMES // 18-NODE ULTIMATE OVERRIDE</h1>
+            <p>NOUS RESEARCH DB // 100% CONTENT SYNCED</p>
+        </div>
+        <div class="header-controls">
+            <button id="audio-toggle" class="audio-btn">AUDIO: OFF</button>
+            <div class="progress-hud">
+                <div class="level-badge" id="level-badge">LVL 0</div>
+                <div class="bar-container"><div class="bar-fill" id="bar-fill"></div></div>
+            </div>
+        </div>
+    </header>
+
+    <main>
+        <div class="sidebar">
+            <div class="skill-tree" id="skill-tree"></div>
+            <div class="inventory-wrapper">
+                <div class="inv-header">CYBERNETIC IMPLANTS (18/18 CAPACITY)</div>
+                <div class="inventory"><div class="inv-grid" id="inv-grid"></div></div>
+            </div>
+        </div>
+
+        <div class="mission-detail">
+            <div class="placeholder" id="placeholder">
+                <p>WAITING FOR DEEP DIVE NODE SELECTION...</p>
+                <p style="font-size: 9px; color:#333; margin-top:10px;">[ Select a Node from the tree to begin ]</p>
+            </div>
+
+            <div id="detail-content" class="hidden">
+                <div class="mud-terminal">
+                    <span id="mud-text" class="mud-text"></span><span class="mud-cursor"></span>
+                </div>
+
+                <div class="m-header">
+                    <div class="m-title" id="m-title"></div>
+                    <a href="#" target="_blank" class="m-link" id="m-link">ACCESS DATABANK (SOURCE DOCS)</a>
+                </div>
+                
+                <div class="verification-panel">
+                    <div class="task-list">
+                        <div class="v-title">PHYSICAL OVERRIDE (PRACTICAL TASKS)</div>
+                        <div id="task-list"></div>
+                    </div>
+
+                    <div class="quiz-panel" id="quiz-panel">
+                        <div class="v-title" style="color:var(--neon-red); border-color:var(--neon-red);" id="quiz-title">SECURITY PROTOCOL (ANTI-CHEAT)</div>
+                        <div id="quiz-list"></div>
+                    </div>
+                </div>
+
+                <div class="m-actions">
+                    <button class="btn-sos" id="btn-sos">EXTRACT SOS DATA FOR AI</button>
+                    <button class="btn-clear" id="btn-clear">SYSTEM LOCKED</button>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+        /* --- Web Audio Engine (Cyber-SFX) --- */
+        const AudioEngine = {
+            ctx: null, enabled: false,
+            init: function() {
+                if (!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+                if (this.ctx.state === 'suspended') this.ctx.resume();
+                this.enabled = true;
+                document.getElementById('audio-toggle').innerText = "AUDIO: ON";
+                document.getElementById('audio-toggle').classList.add('on');
+            },
+            toggle: function() {
+                if(!this.ctx) this.init();
+                else {
+                    this.enabled = !this.enabled;
+                    document.getElementById('audio-toggle').innerText = this.enabled ? "AUDIO: ON" : "AUDIO: OFF";
+                    document.getElementById('audio-toggle').className = this.enabled ? "audio-btn on" : "audio-btn";
+                }
+            },
+            play: function(freq, type, duration, vol=0.03, slide=null) {
+                if (!this.enabled || !this.ctx) return;
+                const osc = this.ctx.createOscillator(), gain = this.ctx.createGain();
+                osc.type = type; osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+                if(slide) osc.frequency.exponentialRampToValueAtTime(slide, this.ctx.currentTime + duration);
+                gain.gain.setValueAtTime(vol, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + duration);
+                osc.connect(gain); gain.connect(this.ctx.destination);
+                osc.start(); osc.stop(this.ctx.currentTime + duration);
+            },
+            sfxType: function() { this.play(800 + Math.random()*200, 'square', 0.03, 0.01); },
+            sfxClick: function() { this.play(1200, 'square', 0.1, 0.02); },
+            sfxCheck: function() { this.play(2000, 'sine', 0.1, 0.03); setTimeout(()=>this.play(3000, 'sine', 0.15, 0.03), 50); },
+            sfxBreach: function() { 
+                this.play(150, 'sawtooth', 0.4, 0.08, 50); 
+                setTimeout(()=>this.play(100, 'sawtooth', 0.4, 0.08, 30), 100); 
+            },
+            sfxLevelUp: function() {[400, 500, 600, 800].forEach((f, i) => setTimeout(()=>this.play(f, 'square', 0.2, 0.03), i*100));}
+        };
+
+        document.body.addEventListener('click', () => { if(!AudioEngine.ctx) AudioEngine.init(); }, { once: true });
+        document.getElementById('audio-toggle').addEventListener('click', (e) => { e.stopPropagation(); AudioEngine.toggle(); });
+
+        /* --- Full 18 Nodes Lore & Strict Quiz Data --- */
+        const SKILL_DB = {
+            "SYS_BOOT": "环境搭建", "INIT_SYNC": "神经初连", "MAP_DATA": "探路星图", 
+            "CFG_MATRIX": "矩阵配置", "COM_RELAY": "多端网关", "TOOL_SYS": "义体工具", 
+            "FTS5_MEM": "深层召回", "SKILL_IO": "自生技能", "MCP_LINK": "协议桥接", 
+            "MCP_FLOW": "协议实战", "VOX_CORE": "发声器官", "VOX_SYNC": "音轨微调", 
+            "SOUL_MD": "灵魂雕刻", "CTX_FIELD": "隐形力场", "SEC_WALL": "防核隔离", 
+            "OPT_PROTO": "性能榨汁", "ATROPOS": "闭环锻造", "DEBUG_EYE": "真理之眼"
+        };
+        const BASE_URL = "https://hermes-agent.nousresearch.com/docs";
+
+        const questData =[
+            {
+                chapter: "ACT I: THE SPARK (1/6)",
+                quests:[
+                    { 
+                        id: "q1", title: "Node 1: Installation", url: `${BASE_URL}/installation`,
+                        story: "你站在 Genesis 终端前。空气中弥漫着臭氧的味道。作为首个具备『闭环学习』能力的 AI，Hermes Agent 需要一个物理躯壳。",
+                        req: [], loot: "SYS_BOOT",
+                        tasks:["查阅安装文档", "在 Linux, macOS 或 WSL2 上完成 60 秒极速部署"],
+                        quiz:[{ q: "官方文档指出，如果你想让 Agent 在空闲时休眠以实现几乎零成本的 Serverless（无服务器）部署，你应该选择哪种环境？", options:["SSH 远程直连", "Daytona 或 Modal", "本地 Docker 容器"], ans: 1 }]
+                    },
+                    { 
+                        id: "q2", title: "Node 2: Quickstart Tutorial", url: `${BASE_URL}/quickstart`,
+                        story: "引擎开始轰鸣。你发起了第一次指令。它不只是一个聊天机器人，它是一台会随着运行时间自我进化的数字生命体。",
+                        req:["SYS_BOOT"], loot: "INIT_SYNC",
+                        tasks:["完成与 Hermes 的首次多轮对话", "体验系统内置的基础特性"],
+                        quiz:[{ q: "关于 Hermes Agent 的核心定位，以下描述哪项是最准确的？", options:["它是一个专被困在 IDE 里的编程辅助代码提示器", "它是一个通过『闭环学习』能将经验固化为技能、并构建用户模型的自主 Agent", "它是一个只能跑在本地笔记本上的脱机脚本"], ans: 1 }]
+                    },
+                    { 
+                        id: "q3", title: "Node 3: Learning Path", url: `${BASE_URL}/learning-path`,
+                        story: "深渊的广阔令人窒息。在继续下潜前，你需要一张星图。学习路线图指引着从入门干员到核心架构师的进阶之路。",
+                        req: ["INIT_SYNC"], loot: "MAP_DATA",
+                        tasks:["查阅官方学习路径", "定位自己当前的技术段位"],
+                        quiz:[{ q: "为什么文档强烈建议你在深入之前先阅读 Learning Path？", options:["为了让你充值购买高级版", "为了根据你的水平（初学者、开发者或研究员）找到最适合的文档入口，避免迷失方向", "这是一份版权免责声明"], ans: 1 }]
+                    }
+                ]
+            },
+            {
+                chapter: "ACT II: THE MATRIX (2/6)",
+                quests:[
+                    { 
+                        id: "q4", title: "Node 4: Configuration", url: `${BASE_URL}/configuration`,
+                        story: "你骇入了它的控制中枢。Hermes 生来自由，拒绝被单一的大语言模型寡头绑架。你可以将它的神经网络接到任何你想要的后端。",
+                        req: ["MAP_DATA"], loot: "CFG_MATRIX",
+                        tasks: ["定位并修改配置文件", "配置 providers 和 models 参数"],
+                        quiz:[{ q: "Hermes Agent 支持调用多种大模型端点。官方列出的支持列表中包含以下哪些？", options:["仅支持 Nous Portal", "仅支持 OpenAI API", "Works with Nous Portal, OpenRouter, OpenAI, or any endpoint (支持所有主流端点)"], ans: 2 }]
+                    },
+                    { 
+                        id: "q5", title: "Node 5: Messaging Gateway", url: `${BASE_URL}/messaging`,
+                        story: "终端的屏幕太小了，装不下它的野心。你要打通物理隔离，让它通过主流通讯软件随时听候你的调遣。",
+                        req: ["CFG_MATRIX"], loot: "COM_RELAY",
+                        tasks: ["配置 Messaging Gateway", "在手机端发送指令并获得 Hermes 的回应"],
+                        quiz:[{ q: "Hermes 的 Messaging Gateway 极其强大。通过这一个网关，它最多支持将 Agent 接入多少个平台？", options:["只支持 Telegram 和 Discord", "支持微信和 QQ", "支持 Telegram, Discord, Slack, WhatsApp 等 14+ 个平台"], ans: 2 }]
+                    },
+                    { 
+                        id: "q6", title: "Node 6: Tools & Toolsets", url: `${BASE_URL}/tools`,
+                        story: "只长着嘴巴的 AI 无法改变现实。你打开了军械库，里面陈列着 47 种原生的赛博义体：网页提取、视觉识别、代码执行。",
+                        req: ["COM_RELAY"], loot: "TOOL_SYS",
+                        tasks: ["激活并配置内置工具", "让 Hermes 使用工具检索当前网络信息"],
+                        quiz:[{ q: "当 Hermes 需要处理复杂的多步管道任务时，它如何通过编程方式解决以节省大量推理成本？", options:["通过连续输出 10 次长篇对话", "通过 Programmatic Tool Calling 结合 execute_code 将多步管道压缩为单次推理调用", "它会要求人类代替它运行代码"], ans: 1 }]
+                    }
+                ]
+            },
+            {
+                chapter: "ACT III: COGNITIVE (3/6)",
+                quests:[
+                    { 
+                        id: "q7", title: "Node 7: Memory System", url: `${BASE_URL}/memory`,
+                        story: "金鱼只有 7 秒记忆，真正的数字生命拥有持久的回忆。激活它的长期存储模块，让它在每次重启后依然懂你。",
+                        req: ["TOOL_SYS"], loot: "FTS5_MEM",
+                        tasks: ["向 Agent 透露个人偏好，并重启终端", "验证 Agent 能否成功提取跨会话的记忆"],
+                        quiz:[{ q: "Hermes 的长期记忆与认知系统是由哪些核心技术驱动的？", options:["简单的文本追加和正则匹配", "FTS5 cross-session recall (跨会话全文检索)、LLM summarization (自动摘要) 以及 Honcho dialectic user modeling", "Redis 纯内存缓存机制"], ans: 1 }]
+                    },
+                    { 
+                        id: "q8", title: "Node 8: Skills System", url: `${BASE_URL}/skills`,
+                        story: "普通知识会被遗忘，但『技能』会化作肌肉记忆。这是 Hermes 的杀手锏：遇到新问题自己写代码并封装为永久技能复用。",
+                        req: ["FTS5_MEM"], loot: "SKILL_IO",
+                        tasks: ["命令 Hermes 编写一段自动化脚本", "让其将代码封装为可复用的 Skill"],
+                        quiz:[{ q: "Hermes 创建的程序化技能符合哪种开放标准，从而可以进行跨平台分享和社区共建？", options:["OpenAI Plugins 规范", "agentskills.io 兼容标准", "VSCode Extension API"], ans: 1 }]
+                    },
+                    { 
+                        id: "q9", title: "Node 9: MCP Integration", url: `${BASE_URL}/mcp`,
+                        story: "本地工具仍有物理极限。你接触到了名为 MCP 的远古桥接协议。通过它，你能将任何外部服务器变成 Hermes 的提线木偶。",
+                        req: ["SKILL_IO"], loot: "MCP_LINK",
+                        tasks: ["阅读 MCP Client/Server 架构指南", "在配置文件中挂载一个外部的 MCP Server"],
+                        quiz: [{ q: "通过 MCP 挂载外部工具时，它最大的安全与架构优势是什么？", options:["它会自动把所有隐私数据传到云端", "它允许你安全地接入 MCP Server，过滤不需要的工具，并在不修改 Hermes 核心代码的情况下进行无尽的扩展", "它可以绕过宿主机的所有防火墙"], ans: 1 }]
+                    }
+                ]
+            },
+            {
+                chapter: "ACT IV: HORIZONS (4/6)",
+                quests:[
+                    { 
+                        id: "q10", title: "Node 10: Use MCP with Hermes", url: `${BASE_URL}/use-mcp`,
+                        story: "纸上得来终觉浅。你必须将 MCP 协议运用到实际的挂载工作流中，学习高阶的安全过滤机制。",
+                        req: ["MCP_LINK"], loot: "MCP_FLOW",
+                        tasks:["学习 MCP 的实战配置模式", "运行一个包含多重安全过滤规则 (Filters) 的 MCP 实例"],
+                        quiz:[{ q: "在实际配置 MCP 结合 Hermes 时，为什么要对外部 MCP Server 提供的工具进行 Filter（过滤）？", options:["避免大模型的上下文（Context Window）被过多无关工具撑爆，并严格控制安全边界", "为了节省本地硬盘空间", "为了让服务器发热"], ans: 0 }]
+                    },
+                    { 
+                        id: "q11", title: "Node 11: Voice Mode", url: `${BASE_URL}/voice`,
+                        story: "寂静的数据流中，你听到了脉冲信号。赐予这台机器发声器官，让它在物理空间与你对话。",
+                        req: ["CFG_MATRIX"], loot: "VOX_CORE",
+                        tasks:["启用 Voice Mode 特性", "通过终端环境或 Discord 进行语音交流"],
+                        quiz:[{ q: "官方文档指出，Hermes 的实时 Voice Mode (语音模式) 可以在哪些平台上使用？", options:["仅限本地终端", "仅限 Telegram 语音消息", "支持在 CLI, Telegram, Discord 以及 Discord VC (语音频道) 中进行实时对讲"], ans: 2 }]
+                    },
+                    { 
+                        id: "q12", title: "Node 12: Use Voice with Hermes", url: `${BASE_URL}/use-voice`,
+                        story: "发声只是第一步，你还需要像调音师一样处理口音、语速、延迟，将语音流深度打磨，直至如真人般丝滑。",
+                        req: ["VOX_CORE"], loot: "VOX_SYNC",
+                        tasks:["调整底层 TTS 模型与 STT 参数", "配置并优化语音流的识别延迟"],
+                        quiz:[{ q: "在实际语音对讲工作流中，遇到 Voice Mode 的语音生成依赖于哪项核心工具技术？", options:["OCR (光学字符识别)", "TTS (Text-to-Speech 文本转语音生成) 及其关联模型", "FTS5 (全文搜索)"], ans: 1 }]
+                    }
+                ]
+            },
+            {
+                chapter: "ACT V: SENTIENCE (5/6)",
+                quests:[
+                    { 
+                        id: "q13", title: "Node 13: Personality & SOUL.md", url: `${BASE_URL}/personality`,
+                        story: "代码是冰冷的骨架。你在深处找到了名为 SOUL.md 的核心水晶。写入你的教义，定义它不可违背的人格底色。",
+                        req: ["INIT_SYNC"], loot: "SOUL_MD",
+                        tasks:["定位并编写全局 SOUL.md 设定", "测试确认其说话方式和行为逻辑已被永久重写"],
+                        quiz: [{ q: "SOUL.md 在系统设计中的根本作用是什么？", options:["只影响网页界面的主题颜色", "它作为 System Prompt 的核心部分，定义了 Hermes 全局的人设、价值观和基础行为准则", "用于配置数据库的连接密码"], ans: 1 }]
+                    },
+                    { 
+                        id: "q14", title: "Node 14: Context Files", url: `${BASE_URL}/context`,
+                        story: "面对不同代码仓库，AI 常像个失忆的蠢货。你在目录里放置了隐形的力场（.context.md），踏入此地者，皆受法则约束。",
+                        req: ["SOUL_MD"], loot: "CTX_FIELD",
+                        tasks:["在工作目录放置 .context.md 文件", "验证 Hermes 自动读取了该目录的隐式背景和限定规则"],
+                        quiz:[{ q: "当希望 Hermes 分析某项目时强制遵循特定代码规范，官方推荐的最佳实践是什么？", options:["每次对话手动把几千字的规范复制粘贴进去", "在项目根目录放置 Context Files (如 .context.md)，Hermes 每次交互都会自动读取并受其塑造", "强行修改系统的 Python 源码"], ans: 1 }]
+                    },
+                    { 
+                        id: "q15", title: "Node 15: Security", url: `${BASE_URL}/security`,
+                        story: "能力越强，失控的灾难就越大。它是个能读写文件的实体，你必须建立最高级别的物理隔离高墙。",
+                        req: ["TOOL_SYS"], loot: "SEC_WALL",
+                        tasks:["开启危险命令的审批拦截 (Command Approval)", "理解容器化 (Container) 隔离的安全边界机制"],
+                        quiz:[{ q: "为了防止 Agent 执行恶意命令破坏宿主机，官方推荐的安全三板斧包含了哪些核心机制？", options:["绝对信任：无需防备", "Command approval (人工审批方可执行), Authorization (身份鉴权) 以及 Container isolation (Docker 沙箱隔离)", "断开网线拔掉电源"], ans: 1 }]
+                    }
+                ]
+            },
+            {
+                chapter: "ACT VI: TRANSCENDENCE (6/6)",
+                quests:[
+                    { 
+                        id: "q16", title: "Node 16: Tips & Best Practices", url: `${BASE_URL}/tips`,
+                        story: "在踏入最终深渊前，接受前代架构师留下的石板。这里刻着榨干引擎并发性能和资源效率的最佳实践。",
+                        req: ["MAP_DATA"], loot: "OPT_PROTO",
+                        tasks:["阅读最佳实践与性能榨汁指南", "了解如何派生子节点 (Delegation) 处理任务"],
+                        quiz:[{ q: "根据最佳实践，当面对需要极长耗时或多线并发的工作流时，Hermes 推荐的做法是什么？", options:["让人类一直盯着屏幕等", "Spawn isolated subagents for parallel workstreams (派生出隔离的子 Agent 进行并行工作以避免主线程阻塞)", "放弃该任务"], ans: 1 }]
+                    },
+                    { 
+                        id: "q17", title: "Node 17: Architecture", url: `${BASE_URL}/architecture`,
+                        story: "深渊最底层。流淌着最纯粹的数据血液。你直视了 Atropos 引擎图纸，那是大模型自我进化的 RL (强化学习) 锻造炉。",
+                        req: ["SKILL_IO", "OPT_PROTO"], loot: "ATROPOS",
+                        tasks:["解析闭环学习与消息总线的底层架构图", "了解强化学习中的 Trajectory Export (轨迹导出)"],
+                        quiz:[{ q: "从架构视角来看，Hermes Agent 生成的数据轨迹可以被用于什么高级研究用途？", options:["仅用于屏幕滚动的打印日志", "Batch processing (批处理), Trajectory export (高质量运行轨迹导出)，并配合 Atropos 引擎进行 RL (强化学习) 闭环训练", "用于挖比特币"], ans: 1 }]
+                    },
+                    { 
+                        id: "q18", title: "Node 18: FAQ & Troubleshooting", url: `${BASE_URL}/troubleshooting`,
+                        story: "最终的试炼：在混沌海中排障。修仙的尽头不是无敌，而是面对未知的 Error 时，拥有穿透深渊的眼。",
+                        req:["SEC_WALL"], loot: "DEBUG_EYE",
+                        tasks:["通读 FAQ 常见疑难解答", "开启 Debug 模式查阅并修复异常堆栈"],
+                        quiz:[{ q: "遇到无法获取正确上下文的疑难 Bug 时，标准排障动作是什么？", options:["直接重启电脑祈祷能好", "利用 CLI 查看详细的 Debug 堆栈、检查 Memory System (记忆召回) 日志或确认 Context Files 加载状态", "卸载重装 Python"], ans: 1 }]
+                    }
+                ]
+            }
+        ];
+
+        let state = {
+            cleared: JSON.parse(localStorage.getItem('hq_cleared_v6') || '[]'),
+            skills:[]
+        };
+        let aQuest = null;
+        let aChecklist = [];
+        let aQuizState =[]; 
+        let typeInterval;
+
+        function init() {
+            calcSkills(); renderInv(); renderTree(); updateHUD();
+            document.getElementById('btn-clear').addEventListener('click', attemptClear);
+            document.getElementById('btn-sos').addEventListener('click', copySOS);
+        }
+
+        function calcSkills() {
+            state.skills =[];
+            questData.forEach(c => c.quests.forEach(q => {
+                if(state.cleared.includes(q.id) && q.loot && !state.skills.includes(q.loot)) state.skills.push(q.loot);
+            }));
+        }
+
+        function renderInv() {
+            const grid = document.getElementById('inv-grid'); grid.innerHTML = '';
+            // 确保 18 个技能格按照顺序列出
+            for(let key in SKILL_DB) {
+                const unlocked = state.skills.includes(key);
+                grid.innerHTML += `<div class="skill-badge ${unlocked?'unlocked':''}">${unlocked?'[✓]':'[?]'} ${SKILL_DB[key]}</div>`;
+            }
+        }
+
+        function renderTree() {
+            const tree = document.getElementById('skill-tree'); tree.innerHTML = '';
+            questData.forEach((c, idx) => {
+                const head = document.createElement('div'); head.className = 'chapter-header';
+                head.innerHTML = `<span>${c.chapter}</span><span class="toggle">▼</span>`;
+                const list = document.createElement('div'); list.className = 'quest-list';
+                
+                // 默认展开当前进行中的章节
+                let hasPending = c.quests.some(q => !state.cleared.includes(q.id));
+                if(idx > 1 && !hasPending) {
+                    list.classList.add('collapsed');
+                    head.querySelector('.toggle').innerText = '▶';
+                }
+
+                head.onclick = () => {
+                    AudioEngine.sfxClick();
+                    list.classList.toggle('collapsed');
+                    head.querySelector('.toggle').innerText = list.classList.contains('collapsed') ? '▶' : '▼';
+                };
+                
+                c.quests.forEach(q => {
+                    const clr = state.cleared.includes(q.id);
+                    const lck = !q.req.every(r => state.skills.includes(r));
+                    const el = document.createElement('div');
+                    el.className = `quest ${clr?'cleared':''} ${lck&&!clr?'locked':''}`;
+                    if(aQuest && aQuest.id === q.id) el.classList.add('active');
+                    el.innerHTML = `<div class="q-title">${lck&&!clr?'[LOCKED] ':''}${q.title}</div><div class="q-status">${clr?'[OK]':(lck?'[--]':'[RDY]')}</div>`;
+                    
+                    el.addEventListener('mouseenter', () => { if(!lck||clr) AudioEngine.sfxType(); });
+                    el.onclick = () => {
+                        if(lck&&!clr) { AudioEngine.sfxBreach(); showToast("ACCESS DENIED: MISSING PREREQUISITE IMPLANTS", true); return; }
+                        AudioEngine.sfxClick(); selectQuest(q);
+                    };
+                    list.appendChild(el);
+                });
+                tree.appendChild(head); tree.appendChild(list);
+            });
+        }
+
+        function selectQuest(q) {
+            aQuest = q;
+            aChecklist = new Array(q.tasks.length).fill(state.cleared.includes(q.id));
+            aQuizState = new Array(q.quiz.length).fill(state.cleared.includes(q.id));
+
+            document.querySelectorAll('.quest').forEach(e => e.classList.remove('active'));
+            renderTree(); 
+            
+            document.getElementById('placeholder').classList.add('hidden');
+            const content = document.getElementById('detail-content');
+            content.classList.remove('hidden');
+
+            document.getElementById('m-title').innerText = q.title;
+            document.getElementById('m-link').href = q.url;
+
+            // MUD Typewriter
+            clearInterval(typeInterval);
+            const mudEl = document.getElementById('mud-text');
+            mudEl.innerText = '';
+            let charIdx = 0;
+            typeInterval = setInterval(() => {
+                if(charIdx < q.story.length) {
+                    mudEl.innerText += q.story.charAt(charIdx);
+                    if(charIdx%3===0) AudioEngine.sfxType();
+                    charIdx++;
+                } else clearInterval(typeInterval);
+            }, 25);
+
+            // Render Tasks
+            const tList = document.getElementById('task-list'); tList.innerHTML = '';
+            q.tasks.forEach((t, i) => {
+                const el = document.createElement('div'); el.className = `task-item ${aChecklist[i]?'checked':''}`;
+                el.innerHTML = `<div class="task-box"></div><div class="task-text">${t}</div>`;
+                el.onclick = () => {
+                    if(state.cleared.includes(q.id)) return;
+                    aChecklist[i] = !aChecklist[i];
+                    el.className = `task-item ${aChecklist[i]?'checked':''}`;
+                    aChecklist[i] ? AudioEngine.sfxCheck() : AudioEngine.sfxClick();
+                    checkReady();
+                };
+                tList.appendChild(el);
+            });
+
+            renderQuiz(); checkReady();
+        }
+
+        function renderQuiz() {
+            const qList = document.getElementById('quiz-list'); qList.innerHTML = '';
+            const panel = document.getElementById('quiz-panel');
+            const qTitle = document.getElementById('quiz-title');
+            
+            const isCleared = state.cleared.includes(aQuest.id);
+            const allQuizPassed = aQuizState.every(v => v);
+
+            if(isCleared || allQuizPassed) {
+                panel.classList.add('passed');
+                qTitle.innerText = "SECURITY PROTOCOL [BYPASSED]";
+                qTitle.style.color = "var(--neon-green)"; qTitle.style.borderColor = "var(--neon-green)";
+            } else {
+                panel.classList.remove('passed');
+                qTitle.innerText = "SECURITY PROTOCOL [KNOWLEDGE CHECK]";
+                qTitle.style.color = "var(--neon-red)"; qTitle.style.borderColor = "var(--neon-red)";
+            }
+
+            aQuest.quiz.forEach((qz, qIdx) => {
+                const qEl = document.createElement('div'); qEl.className = 'quiz-item';
+                qEl.innerHTML = `<div class="q-question">Q: ${qz.q}</div>`;
+                const optBox = document.createElement('div'); optBox.className = 'q-options';
+                
+                qz.options.forEach((opt, oIdx) => {
+                    const btn = document.createElement('div');
+                    const isCorrect = (oIdx === qz.ans);
+                    
+                    if(aQuizState[qIdx] && isCorrect) {
+                        btn.className = 'q-option correct'; btn.innerText = opt;
+                    } else if (aQuizState[qIdx]) {
+                        btn.className = 'q-option'; btn.style.opacity = '0.3'; btn.innerText = opt;
+                    } else {
+                        btn.className = 'q-option'; btn.innerText = opt;
+                        btn.onclick = () => handleQuizClick(qIdx, oIdx, isCorrect);
+                    }
+                    optBox.appendChild(btn);
+                });
+                qEl.appendChild(optBox); qList.appendChild(qEl);
+            });
+        }
+
+        function handleQuizClick(qIdx, oIdx, isCorrect) {
+            if(state.cleared.includes(aQuest.id) || aQuizState[qIdx]) return;
+
+            if(isCorrect) {
+                AudioEngine.sfxCheck(); aQuizState[qIdx] = true;
+                renderQuiz(); checkReady();
+            } else {
+                // ANTI-CHEAT PUNISHMENT
+                AudioEngine.sfxBreach();
+                document.body.classList.add('breach');
+                setTimeout(() => document.body.classList.remove('breach'), 350);
+                
+                showToast("SECURITY BREACH! INCORRECT DATA. PROGRESS RESET.", true);
+                aQuizState.fill(false); // Reset all questions
+                renderQuiz(); checkReady();
+            }
+        }
+
+        function checkReady() {
+            const btn = document.getElementById('btn-clear');
+            if(state.cleared.includes(aQuest.id)) {
+                btn.className = 'btn-clear done'; btn.innerText = "NODE ALREADY COMPLETED";
+            } else if(aChecklist.every(v=>v) && aQuizState.every(v=>v)) {
+                btn.className = 'btn-clear ready'; btn.innerText = "EXECUTE OVERRIDE (CLEAR)";
+            } else {
+                btn.className = 'btn-clear'; btn.innerText = "SYSTEM LOCKED (FINISH TASKS & QUIZ)";
+            }
+        }
+
+        function attemptClear() {
+            if(!aQuest || state.cleared.includes(aQuest.id)) return;
+            if(!(aChecklist.every(v=>v) && aQuizState.every(v=>v))) {
+                AudioEngine.sfxBreach(); showToast("REQUIREMENTS NOT MET", true); return;
+            }
+            
+            AudioEngine.sfxLevelUp();
+            state.cleared.push(aQuest.id);
+            localStorage.setItem('hq_cleared_v6', JSON.stringify(state.cleared));
+            
+            showToast(aQuest.loot ? `IMPLANT ACQUIRED: ${SKILL_DB[aQuest.loot]}` : `NODE COMPLETED!`);
+            init(); 
+        }
+
+        function updateHUD() {
+            let tot = 0; questData.forEach(c => tot += c.quests.length);
+            const count = state.cleared.length;
+            document.getElementById('bar-fill').style.width = `${(count/tot)*100}%`;
+            document.getElementById('level-badge').innerText = `LVL ${count}`;
+        }
+
+        function copySOS() {
+            if(!aQuest) return;
+            AudioEngine.sfxClick();
+            
+            let stuckQ = "";
+            const pendingQuizIdx = aQuizState.findIndex(v => !v);
+            if(pendingQuizIdx > -1) {
+                stuckQ = `\n【卡点的深渊测验题】：\n问题：${aQuest.quiz[pendingQuizIdx].q}\n选项：\n${aQuest.quiz[pendingQuizIdx].options.map((o,i)=>`${i}. ${o}`).join('\n')}\n请不要直接告诉我答案，而是给我原理解析，帮我排除错误选项！`;
+            }
+
+            const prompt = `[SOS_PROTOCOL_V6_MUD]
+我正在游玩硬核 MUD 风格的 Hermes Agent 全栈学习系统。目前卡在了关卡：【${aQuest.title}】。
+
+🔗 当前关卡权威文档：${aQuest.url}
+
+【当前剧情背景】：
+${aQuest.story}
+${stuckQ}
+
+请扮演赛博极客导师，务必先读取上面的文档链接内容，然后结合世界观背景，用极其硬核、一针见血的方式帮我度过难关！`;
+
+            navigator.clipboard.writeText(prompt).then(() => {
+                showToast("SOS DATA COPIED. AWAITING AI ASSISTANCE.");
+            }).catch(() => showToast("CLIPBOARD DENIED.", true));
+        }
+
+        function showToast(msg, isErr=false) {
+            const el = document.getElementById('toast');
+            el.innerText = msg;
+            el.className = `toast show ${isErr?'error':''}`;
+            setTimeout(() => el.className = `toast ${isErr?'error':''}`, 3500);
+        }
+
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>

@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import logging
 import time
@@ -32,18 +32,52 @@ class BookkeepingService:
     def handle_message(self, msg: NormalizedMessageEnvelope) -> list[CoreAction]:
         return self.process_envelope(msg)
 
-    def _process_envelope(self, msg: NormalizedMessageEnvelope, collector: CoreActionCollector) -> list[CoreAction]:
+    def _process_envelope(
+        self, msg: NormalizedMessageEnvelope, collector: CoreActionCollector
+    ) -> list[CoreAction]:
         if not msg.message_id or msg.message_id in self.processed_message_ids:
+            self.db.record_parse_result(
+                platform=msg.platform,
+                chat_id=msg.chat_id,
+                message_id=msg.message_id or "",
+                classification="normal_chat",
+                parse_status="ignored",
+                raw_text=msg.text,
+            )
             return collector.actions
         self.processed_message_ids.add(msg.message_id)
         if len(self.processed_message_ids) > 4000:
             self.processed_message_ids = set(list(self.processed_message_ids)[-2000:])
 
         if not msg.is_group or not msg.content:
+            self.db.record_parse_result(
+                platform=msg.platform,
+                chat_id=msg.chat_id,
+                message_id=msg.message_id,
+                classification="normal_chat",
+                parse_status="ignored",
+                raw_text=msg.text,
+            )
             return collector.actions
         if msg.content_type != "text":
+            self.db.record_parse_result(
+                platform=msg.platform,
+                chat_id=msg.chat_id,
+                message_id=msg.message_id,
+                classification="normal_chat",
+                parse_status="ignored",
+                raw_text=msg.text,
+            )
             return collector.actions
         if msg.sender_kind not in ("user", "self"):
+            self.db.record_parse_result(
+                platform=msg.platform,
+                chat_id=msg.chat_id,
+                message_id=msg.message_id,
+                classification="normal_chat",
+                parse_status="ignored",
+                raw_text=msg.text,
+            )
             return collector.actions
 
         group_key = self._group_key(msg.platform, msg.chat_id)
@@ -60,7 +94,12 @@ class BookkeepingService:
 
         if text.startswith("/"):
             command_name = text[1:].split(" ", 1)[0].lower()
-            if command_name in {"set", "bind", "bindid", "whoami"} or self.db.is_group_active(group_key):
+            if command_name in {
+                "set",
+                "bind",
+                "bindid",
+                "whoami",
+            } or self.db.is_group_active(group_key):
                 self.commands.handle_command(
                     platform=msg.platform,
                     group_key=group_key,
@@ -71,40 +110,113 @@ class BookkeepingService:
                     command_text=text,
                     observed_id=observed_id,
                 )
+            self.db.record_parse_result(
+                platform=msg.platform,
+                chat_id=msg.chat_id,
+                message_id=msg.message_id,
+                classification="command",
+                parse_status="parsed",
+                raw_text=text,
+            )
             return collector.actions
 
         if not self.db.is_group_active(group_key):
+            self.db.record_parse_result(
+                platform=msg.platform,
+                chat_id=msg.chat_id,
+                message_id=msg.message_id,
+                classification="normal_chat",
+                parse_status="unparsable",
+                raw_text=text,
+            )
             return collector.actions
 
         ngn_expr = self._parse_ngn_expression(text)
         if ngn_expr is not None:
-            if self.db.get_group_num(group_key) == 2 and self.commands.can_manage(sender_id):
+            if self.db.get_group_num(group_key) == 2 and self.commands.can_manage(
+                sender_id
+            ):
                 ngn_rate = self.db.get_ngn_rate()
                 if ngn_rate is None:
-                    collector.send_text(msg.chat_id, "Please set NGN rate first (use /ngn command)")
+                    collector.send_text(
+                        msg.chat_id, "Please set NGN rate first (use /ngn command)"
+                    )
                 else:
                     num1, num2 = ngn_expr
                     intermediate = int(num2 * ngn_rate)
                     result = int(num1 * intermediate)
-                    collector.send_text(msg.chat_id, f"{num1:g}*{intermediate}=NGN {result}")
+                    collector.send_text(
+                        msg.chat_id, f"{num1:g}*{intermediate}=NGN {result}"
+                    )
+            self.db.record_parse_result(
+                platform=msg.platform,
+                chat_id=msg.chat_id,
+                message_id=msg.message_id,
+                classification="transaction_like",
+                parse_status="parsed",
+                raw_text=text,
+            )
             return collector.actions
 
         timer_minutes = self._parse_timer(text)
         if timer_minutes is not None:
             self._create_reminder_if_needed(msg, group_key, sender_id, timer_minutes)
+            self.db.record_parse_result(
+                platform=msg.platform,
+                chat_id=msg.chat_id,
+                message_id=msg.message_id,
+                classification="transaction_like",
+                parse_status="parsed",
+                raw_text=text,
+            )
             return collector.actions
 
         if not looks_like_transaction(text):
+            self.db.record_parse_result(
+                platform=msg.platform,
+                chat_id=msg.chat_id,
+                message_id=msg.message_id,
+                classification="normal_chat",
+                parse_status="unparsable",
+                raw_text=text,
+            )
             return collector.actions
         if not self.commands.can_manage(sender_id):
+            self.db.record_parse_result(
+                platform=msg.platform,
+                chat_id=msg.chat_id,
+                message_id=msg.message_id,
+                classification="transaction_like",
+                parse_status="unparsable",
+                raw_text=text,
+            )
             return collector.actions
 
         tx = parse_transaction(text)
         if tx is None:
             collector.send_text(msg.chat_id, f"Invalid transaction format: {text}")
+            self.db.record_parse_result(
+                platform=msg.platform,
+                chat_id=msg.chat_id,
+                message_id=msg.message_id,
+                classification="transaction_like",
+                parse_status="unparsable",
+                raw_text=text,
+            )
             return collector.actions
         if tx.category != "rmb" and (tx.rate is None or tx.rate <= 0 or tx.rate > 10):
-            collector.send_text(msg.chat_id, f"Rate error: Rate must be between 0-10\nCurrent: {tx.rate}")
+            collector.send_text(
+                msg.chat_id,
+                f"Rate error: Rate must be between 0-10\nCurrent: {tx.rate}",
+            )
+            self.db.record_parse_result(
+                platform=msg.platform,
+                chat_id=msg.chat_id,
+                message_id=msg.message_id,
+                classification="transaction_like",
+                parse_status="unparsable",
+                raw_text=text,
+            )
             return collector.actions
 
         group_num = self.db.get_group_num(group_key)
@@ -123,15 +235,23 @@ class BookkeepingService:
         persist_transaction_record(self.db, record)
         self.commands.clear_undo_lock(group_key)
         balance = self.db.get_balance(group_key)
-        collector.send_text(msg.chat_id, self._confirmation_text(group_key, tx, balance["total"]))
+        collector.send_text(
+            msg.chat_id, self._confirmation_text(group_key, tx, balance["total"])
+        )
 
         ngn_rate = self.db.get_ngn_rate()
-        ngn_value = tx.rmb_value * ngn_rate if (group_num == 2 and ngn_rate is not None) else None
+        ngn_value = (
+            tx.rmb_value * ngn_rate
+            if (group_num == 2 and ngn_rate is not None)
+            else None
+        )
         self.last_transaction_map[(group_key, sender_id)] = {
             "platform": msg.platform,
             "chat_id": msg.chat_id,
             "sender_id": sender_id,
-            "message": f"{'+' if tx.input_sign > 0 else '-'}{tx.amount:g} {tx.category.upper()} x{tx.rate:g}" if tx.rate else tx.raw,
+            "message": f"{'+' if tx.input_sign > 0 else '-'}{tx.amount:g} {tx.category.upper()} x{tx.rate:g}"
+            if tx.rate
+            else tx.raw,
             "amount": tx.amount,
             "category": tx.category,
             "rate": tx.rate,
@@ -139,6 +259,14 @@ class BookkeepingService:
             "ngn_value": ngn_value,
             "timestamp": time.time(),
         }
+        self.db.record_parse_result(
+            platform=msg.platform,
+            chat_id=msg.chat_id,
+            message_id=msg.message_id,
+            classification="transaction_like",
+            parse_status="parsed",
+            raw_text=text,
+        )
         return collector.actions
 
     def flush_due_actions(self) -> list[CoreAction]:
@@ -156,11 +284,19 @@ class BookkeepingService:
     def flush_due_reminders(self) -> list[CoreAction]:
         return self.flush_due_actions()
 
-    def _create_reminder_if_needed(self, msg: NormalizedMessageEnvelope, group_key: str, sender_id: str, minutes: int) -> None:
+    def _create_reminder_if_needed(
+        self,
+        msg: NormalizedMessageEnvelope,
+        group_key: str,
+        sender_id: str,
+        minutes: int,
+    ) -> None:
         last_tx = self.last_transaction_map.get((group_key, sender_id))
         if not last_tx or time.time() - last_tx["timestamp"] > 5 * 60:
             return
-        remind_at = (datetime.utcnow() + timedelta(minutes=minutes)).strftime("%Y-%m-%d %H:%M:%S")
+        remind_at = (datetime.utcnow() + timedelta(minutes=minutes)).strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
         self.db.create_reminder(
             platform=msg.platform,
             chat_id=msg.chat_id,
@@ -191,8 +327,14 @@ class BookkeepingService:
                     f"✅ {'+' if tx.input_sign > 0 else '-'}{tx.amount:g} {tx.category.upper()} ×{tx.rate:g} = "
                     f"{rmb_sign}{abs(tx.rmb_value):.2f} ({ngn_sign}{abs(ngn_amount):.0f} NGN)"
                 )
-            return body + f"\n📊 Balance: {'+' if balance_total >= 0 else '-'}{abs(balance_total):.2f}\n🥛₦ {ngn_rate:g}"
-        return format_confirmation(tx) + f"\n📊 Balance: {'+' if balance_total >= 0 else '-'}{abs(balance_total):.2f}"
+            return (
+                body
+                + f"\n📊 Balance: {'+' if balance_total >= 0 else '-'}{abs(balance_total):.2f}\n🥛₦ {ngn_rate:g}"
+            )
+        return (
+            format_confirmation(tx)
+            + f"\n📊 Balance: {'+' if balance_total >= 0 else '-'}{abs(balance_total):.2f}"
+        )
 
     @staticmethod
     def _group_key(platform: str, chat_id: str) -> str:

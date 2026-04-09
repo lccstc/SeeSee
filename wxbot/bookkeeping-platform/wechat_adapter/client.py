@@ -330,6 +330,7 @@ class WeChatPlatformAPI:
         if item is None or not hasattr(item, "details"):
             return None
         details = dict(item.details)
+        # 优先使用 details 里的真实的 chat_name
         chat_name = str(details.get("chat_name") or chat_name_hint or "")
         from_self = str(details.get("type") or "") == "self"
         sender_name = str(details.get("sender_remark") or details.get("sender") or "")
@@ -378,8 +379,7 @@ class WeChatPlatformAPI:
         hint = WeChatPlatformAPI._normalize_chat_name(str(chat_name_hint or "").strip())
         if not hint:
             return message
-        message.chat_id = hint
-        message.chat_name = hint
+        # 不再用 hint 覆盖实际的 chat_name 和 chat_id
         return message
 
     @staticmethod

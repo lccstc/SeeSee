@@ -78,19 +78,29 @@ python3 "/Users/lcc/SeeSee/wxbot/bookkeeping-platform/reporting_server.py" \
 
 ### 回归验证
 
+本地测试默认使用：
+
+`postgresql://bookkeeping:password@127.0.0.1:5432/bookkeeping_test`
+
+如需覆盖默认值，再显式设置 `BOOKKEEPING_TEST_DSN`。第一次准备本地测试环境：
+
 ```bash
-export BOOKKEEPING_TEST_DSN="postgresql://bookkeeping:password@127.0.0.1:5432/bookkeeping_test"
-python3 -m unittest tests.test_analytics -v
-python3 -m unittest tests.test_webapp -v
-python3 -m unittest -v tests.test_periods tests.test_reporting tests.test_analytics tests.test_webapp tests.test_postgres_backend
+python3 -m venv ../../.venv
+../../.venv/bin/python -m pip install -r requirements-dev.txt
+psql postgresql://bookkeeping:password@127.0.0.1:5432/postgres -c "SELECT 'CREATE DATABASE bookkeeping_test' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'bookkeeping_test')\\gexec"
+```
+
+```bash
+../../.venv/bin/python -m unittest tests.test_analytics -v
+../../.venv/bin/python -m unittest tests.test_webapp -v
+../../.venv/bin/python -m unittest -v tests.test_periods tests.test_reporting tests.test_analytics tests.test_webapp tests.test_postgres_backend
 ```
 
 建议按下面顺序验证：
 
 ```bash
-export BOOKKEEPING_TEST_DSN="postgresql://bookkeeping:password@127.0.0.1:5432/bookkeeping_test"
-python3 -m unittest tests.test_postgres_backend -v
-python3 -m unittest tests.test_ingestion_alignment tests.test_periods tests.test_reporting tests.test_analytics tests.test_webapp tests.test_postgres_backend -v
+../../.venv/bin/python -m unittest tests.test_postgres_backend -v
+../../.venv/bin/python -m unittest tests.test_ingestion_alignment tests.test_periods tests.test_reporting tests.test_analytics tests.test_webapp tests.test_postgres_backend -v
 ```
 
 ## 启动 WeChat

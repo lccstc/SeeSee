@@ -181,6 +181,26 @@ CREATE TABLE IF NOT EXISTS ingested_events (
   ingested_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS incoming_messages (
+  id BIGSERIAL PRIMARY KEY,
+  platform TEXT NOT NULL,
+  group_key TEXT NOT NULL,
+  chat_id TEXT NOT NULL,
+  chat_name TEXT NOT NULL,
+  message_id TEXT NOT NULL,
+  is_group INTEGER NOT NULL DEFAULT 0,
+  sender_id TEXT NOT NULL,
+  sender_name TEXT NOT NULL,
+  sender_kind TEXT NOT NULL DEFAULT 'user',
+  content_type TEXT NOT NULL DEFAULT 'text',
+  text TEXT,
+  from_self INTEGER NOT NULL DEFAULT 0,
+  received_at TIMESTAMP,
+  raw_json TEXT NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (platform, chat_id, message_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_tx_group_key ON transactions(group_key, deleted);
 CREATE INDEX IF NOT EXISTS idx_tx_platform_group ON transactions(platform, group_key, deleted);
 CREATE INDEX IF NOT EXISTS idx_tx_settled ON transactions(group_key, settled, deleted);
@@ -189,3 +209,157 @@ CREATE INDEX IF NOT EXISTS idx_manual_adjustments_period ON manual_adjustments(p
 CREATE INDEX IF NOT EXISTS idx_finance_adjustments_period ON finance_adjustment_entries(period_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_finance_adjustments_group ON finance_adjustment_entries(group_key, created_at);
 CREATE INDEX IF NOT EXISTS idx_ingested_events_platform ON ingested_events(platform, occurred_at);
+CREATE INDEX IF NOT EXISTS idx_incoming_messages_group_created ON incoming_messages(group_key, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_incoming_messages_chat_received ON incoming_messages(platform, chat_id, received_at DESC);
+
+CREATE TABLE IF NOT EXISTS message_parse_results (
+  id BIGSERIAL PRIMARY KEY,
+  platform TEXT NOT NULL,
+  chat_id TEXT NOT NULL,
+  message_id TEXT NOT NULL,
+  classification TEXT NOT NULL,
+  parse_status TEXT NOT NULL,
+  raw_text TEXT,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (platform, chat_id, message_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_message_parse_results_created ON message_parse_results(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS quote_documents (
+  id BIGSERIAL PRIMARY KEY,
+  platform TEXT NOT NULL,
+  source_group_key TEXT NOT NULL,
+  chat_id TEXT NOT NULL,
+  chat_name TEXT NOT NULL,
+  message_id TEXT NOT NULL,
+  source_name TEXT NOT NULL,
+  sender_id TEXT NOT NULL,
+  raw_text TEXT NOT NULL,
+  message_time TIMESTAMP NOT NULL,
+  parser_template TEXT NOT NULL,
+  parser_version TEXT NOT NULL,
+  confidence NUMERIC(6, 4) NOT NULL,
+  parse_status TEXT NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (platform, chat_id, message_id)
+);
+
+CREATE TABLE IF NOT EXISTS quote_price_rows (
+  id BIGSERIAL PRIMARY KEY,
+  quote_document_id BIGINT NOT NULL,
+  platform TEXT NOT NULL,
+  source_group_key TEXT NOT NULL,
+  chat_id TEXT NOT NULL,
+  chat_name TEXT NOT NULL,
+  message_id TEXT NOT NULL,
+  source_name TEXT NOT NULL,
+  sender_id TEXT NOT NULL,
+  card_type TEXT NOT NULL,
+  country_or_currency TEXT NOT NULL,
+  amount_range TEXT NOT NULL,
+  multiplier TEXT,
+  form_factor TEXT NOT NULL,
+  price NUMERIC(18, 6) NOT NULL,
+  quote_status TEXT NOT NULL,
+  restriction_text TEXT NOT NULL DEFAULT '',
+  source_line TEXT NOT NULL,
+  raw_text TEXT NOT NULL,
+  message_time TIMESTAMP NOT NULL,
+  effective_at TIMESTAMP NOT NULL,
+  expires_at TIMESTAMP,
+  parser_template TEXT NOT NULL,
+  parser_version TEXT NOT NULL,
+  confidence NUMERIC(6, 4) NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_quote_price_rows_active
+  ON quote_price_rows(card_type, country_or_currency, amount_range, multiplier, form_factor, effective_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_quote_price_rows_source_lookup
+  ON quote_price_rows(source_group_key, card_type, country_or_currency, amount_range, form_factor, effective_at DESC);
+
+CREATE TABLE IF NOT EXISTS quote_parse_exceptions (
+  id BIGSERIAL PRIMARY KEY,
+  quote_document_id BIGINT NOT NULL,
+  platform TEXT NOT NULL,
+  source_group_key TEXT NOT NULL,
+  chat_id TEXT NOT NULL,
+  chat_name TEXT NOT NULL,
+  source_name TEXT NOT NULL,
+  sender_id TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  source_line TEXT NOT NULL,
+  raw_text TEXT NOT NULL,
+  message_time TIMESTAMP NOT NULL,
+  parser_template TEXT NOT NULL,
+  parser_version TEXT NOT NULL,
+  confidence NUMERIC(6, 4) NOT NULL,
+  resolution_status TEXT NOT NULL DEFAULT 'open',
+  resolution_note TEXT NOT NULL DEFAULT '',
+  resolved_at TIMESTAMP,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_quote_parse_exceptions_created
+  ON quote_parse_exceptions(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS quote_inquiry_contexts (
+  id BIGSERIAL PRIMARY KEY,
+  platform TEXT NOT NULL,
+  source_group_key TEXT NOT NULL,
+  chat_id TEXT NOT NULL,
+  chat_name TEXT NOT NULL,
+  card_type TEXT NOT NULL,
+  country_or_currency TEXT NOT NULL,
+  amount_range TEXT NOT NULL,
+  multiplier TEXT,
+  form_factor TEXT NOT NULL DEFAULT '不限',
+  requested_by TEXT NOT NULL DEFAULT 'web',
+  prompt_text TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'open',
+  expires_at TIMESTAMP NOT NULL,
+  resolved_message_id TEXT,
+  resolved_at TIMESTAMP,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_quote_inquiry_contexts_open
+  ON quote_inquiry_contexts(platform, chat_id, status, expires_at DESC);
+
+CREATE TABLE IF NOT EXISTS quote_group_profiles (
+  id BIGSERIAL PRIMARY KEY,
+  platform TEXT NOT NULL,
+  chat_id TEXT NOT NULL,
+  chat_name TEXT NOT NULL,
+  default_card_type TEXT NOT NULL DEFAULT '',
+  default_country_or_currency TEXT NOT NULL DEFAULT '',
+  default_form_factor TEXT NOT NULL DEFAULT '不限',
+  default_multiplier TEXT NOT NULL DEFAULT '',
+  parser_template TEXT NOT NULL DEFAULT '',
+  stale_after_minutes INTEGER NOT NULL DEFAULT 120,
+  note TEXT NOT NULL DEFAULT '',
+  template_config TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(platform, chat_id)
+);
+
+CREATE TABLE IF NOT EXISTS quote_dictionary_aliases (
+  id BIGSERIAL PRIMARY KEY,
+  category TEXT NOT NULL,
+  alias TEXT NOT NULL,
+  canonical_value TEXT NOT NULL,
+  canonical_input TEXT NOT NULL DEFAULT '',
+  scope_platform TEXT NOT NULL DEFAULT '',
+  scope_chat_id TEXT NOT NULL DEFAULT '',
+  note TEXT NOT NULL DEFAULT '',
+  enabled INTEGER NOT NULL DEFAULT 1,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(category, alias, scope_platform, scope_chat_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_quote_dictionary_aliases_lookup
+  ON quote_dictionary_aliases(category, scope_platform, scope_chat_id, enabled);

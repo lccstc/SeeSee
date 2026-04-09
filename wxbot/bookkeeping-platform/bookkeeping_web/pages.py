@@ -5,25 +5,22 @@ _STYLE = """
 <style>
   :root {
     color-scheme: light;
-    --bg: #f4f0e6;
-    --panel: rgba(255, 252, 247, 0.92);
-    --ink: #21313b;
-    --muted: #63717c;
-    --line: #d9cebd;
-    --accent: #0f6d60;
-    --accent-soft: #d8ebe4;
-    --warn: #9b2c2c;
-    --shadow: 0 18px 40px rgba(33, 49, 59, 0.08);
+    --bg: #e5e7eb;
+    --panel: #ffffff;
+    --ink: #111827;
+    --muted: #4b5563;
+    --line: #cbd5e1;
+    --accent: #0f766e;
+    --accent-soft: #ccfbf1;
+    --warn: #b91c1c;
+    --shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
   }
   * { box-sizing: border-box; }
   body {
     margin: 0;
     font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
     color: var(--ink);
-    background:
-      radial-gradient(circle at top left, rgba(15, 109, 96, 0.18), transparent 28%),
-      radial-gradient(circle at top right, rgba(209, 157, 94, 0.18), transparent 22%),
-      linear-gradient(135deg, #f5efe4, #edf3f0 55%, #f6f0e8);
+    background: var(--bg);
   }
   a { color: inherit; }
   header {
@@ -55,9 +52,9 @@ _STYLE = """
   nav a {
     text-decoration: none;
     padding: 10px 14px;
-    border-radius: 999px;
-    background: rgba(255, 255, 255, 0.55);
-    border: 1px solid rgba(15, 109, 96, 0.12);
+    border-radius: 8px;
+    background: #ffffff;
+    border: 1px solid var(--line);
   }
   nav a.active {
     background: var(--accent);
@@ -72,10 +69,9 @@ _STYLE = """
   .panel {
     background: var(--panel);
     border: 1px solid var(--line);
-    border-radius: 20px;
+    border-radius: 8px;
     padding: 18px;
     box-shadow: var(--shadow);
-    backdrop-filter: blur(6px);
   }
   .panel h2, .panel h3 {
     margin: 0 0 12px;
@@ -94,9 +90,9 @@ _STYLE = """
   }
   .card {
     padding: 16px;
-    border-radius: 18px;
-    background: linear-gradient(180deg, rgba(255,255,255,0.95), rgba(244, 250, 248, 0.95));
-    border: 1px solid rgba(15, 109, 96, 0.12);
+    border-radius: 8px;
+    background: #ffffff;
+    border: 1px solid var(--line);
   }
   .card .label {
     font-size: 13px;
@@ -129,9 +125,9 @@ _STYLE = """
   }
   input, textarea, select {
     padding: 10px 12px;
-    border-radius: 12px;
+    border-radius: 8px;
     border: 1px solid var(--line);
-    background: rgba(255,255,255,0.92);
+    background: #ffffff;
   }
   textarea {
     min-height: 88px;
@@ -139,7 +135,7 @@ _STYLE = """
   }
   button {
     border: 0;
-    border-radius: 999px;
+    border-radius: 8px;
     padding: 10px 14px;
     background: var(--accent);
     color: white;
@@ -153,7 +149,7 @@ _STYLE = """
   th, td {
     text-align: left;
     padding: 10px 8px;
-    border-bottom: 1px solid #ebe1d3;
+    border-bottom: 1px solid var(--line);
     vertical-align: top;
   }
   th {
@@ -169,7 +165,7 @@ _STYLE = """
     justify-content: center;
     min-width: 72px;
     padding: 4px 10px;
-    border-radius: 999px;
+    border-radius: 8px;
     font-size: 12px;
     font-weight: 600;
   }
@@ -194,10 +190,10 @@ _STYLE = """
     display: grid;
     gap: 6px;
     padding: 18px;
-    border-radius: 18px;
+    border-radius: 8px;
     text-decoration: none;
-    background: linear-gradient(180deg, rgba(255,255,255,0.92), rgba(237, 243, 240, 0.92));
-    border: 1px solid rgba(15, 109, 96, 0.14);
+    background: #ffffff;
+    border: 1px solid var(--line);
   }
   .entry-card strong {
     font-size: 18px;
@@ -209,12 +205,234 @@ _STYLE = """
   }
   .subpanel {
     padding: 16px;
-    border-radius: 18px;
-    background: rgba(255,255,255,0.58);
-    border: 1px solid rgba(15, 109, 96, 0.12);
+    border-radius: 8px;
+    background: #f8fafc;
+    border: 1px solid var(--line);
+  }
+  .action-stack {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .action-stack button,
+  .action-stack a {
+    width: auto;
+    flex: 0 0 auto;
+  }
+  .detail-list {
+    display: grid;
+    gap: 8px;
+    margin: 0;
+  }
+  .detail-list div {
+    display: grid;
+    gap: 4px;
+  }
+  .detail-list dt {
+    margin: 0;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .detail-list dd {
+    margin: 0;
+    line-height: 1.5;
+    word-break: break-word;
+  }
+  .trace-status-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    gap: 8px;
+  }
+  .trace-status-list li {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: center;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: #ffffff;
+    border: 1px solid var(--line);
   }
   .table-note {
     margin-top: 8px;
+  }
+  .quote-stack {
+    display: grid;
+    gap: 16px;
+  }
+  .quote-metrics {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+  }
+  .quote-metric {
+    padding: 14px;
+    border-radius: 8px;
+    background: #ffffff;
+    border: 1px solid var(--line);
+  }
+  .quote-metric .label {
+    font-size: 12px;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+  .quote-metric .value {
+    font-size: 24px;
+    font-weight: 600;
+  }
+  .quote-filter-grid {
+    display: grid;
+    grid-template-columns: 1.4fr 1fr 1fr 1fr 0.8fr;
+    gap: 10px;
+  }
+  .quote-filter-grid input,
+  .quote-filter-grid select,
+  .quote-filter-grid button {
+    border-radius: 8px;
+  }
+  .quote-table th,
+  .quote-table td {
+    white-space: nowrap;
+  }
+  .quote-table td.quote-note {
+    white-space: normal;
+    min-width: 240px;
+  }
+  .quote-table td.wrap {
+    white-space: normal;
+    min-width: 220px;
+  }
+  .quote-status-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 8px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .quote-status-chip.live {
+    background: var(--accent-soft);
+    color: var(--accent);
+  }
+  .quote-status-chip.watch {
+    background: rgba(209, 157, 94, 0.18);
+    color: #8a5200;
+  }
+  .quote-status-chip.stale {
+    background: #fee2e2;
+    color: #b91c1c;
+  }
+  .quote-status-chip.blocked {
+    background: rgba(155, 44, 44, 0.12);
+    color: var(--warn);
+  }
+  .quote-status-chip.pending {
+    background: rgba(99, 113, 124, 0.14);
+    color: var(--muted);
+  }
+  .quote-change-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 8px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .quote-change-chip.new {
+    background: #dbeafe;
+    color: #1d4ed8;
+  }
+  .quote-change-chip.up {
+    background: #dcfce7;
+    color: #15803d;
+  }
+  .quote-change-chip.down {
+    background: #fee2e2;
+    color: #b91c1c;
+  }
+  .quote-change-chip.flat {
+    background: #f1f5f9;
+    color: #475569;
+  }
+  .quote-note {
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.45;
+  }
+  .quote-age.stale {
+    color: #b91c1c;
+    font-weight: 700;
+  }
+  .quote-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: auto;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: var(--accent);
+    color: white;
+    text-decoration: none;
+    border: 1px solid var(--accent);
+  }
+  .quote-source-detail {
+    color: var(--muted);
+    display: block;
+    font-size: 12px;
+    margin-top: 3px;
+  }
+  .quote-template-help {
+    background: #f8fafc;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 12px;
+  }
+  .quote-template-help strong {
+    display: block;
+    margin-bottom: 6px;
+  }
+  .quote-modal-backdrop {
+    align-items: center;
+    background: rgba(15, 23, 42, 0.38);
+    bottom: 0;
+    display: none;
+    justify-content: center;
+    left: 0;
+    padding: 24px;
+    position: fixed;
+    right: 0;
+    top: 0;
+    z-index: 50;
+  }
+  .quote-modal-backdrop.open {
+    display: flex;
+  }
+  .quote-modal {
+    background: #ffffff;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    box-shadow: 0 20px 60px rgba(15, 23, 42, 0.25);
+    max-height: 86vh;
+    max-width: 980px;
+    overflow: auto;
+    padding: 18px;
+    width: min(980px, 100%);
+  }
+  .quote-modal-header {
+    align-items: start;
+    display: flex;
+    gap: 12px;
+    justify-content: space-between;
+    margin-bottom: 12px;
+  }
+  .quote-modal-header h2 {
+    margin: 0;
+  }
+  .quote-modal-close {
+    width: auto;
   }
   .diff-highlight {
     color: #b42318;
@@ -233,7 +451,7 @@ _STYLE = """
     justify-content: center;
     width: auto;
     padding: 10px 14px;
-    border-radius: 999px;
+    border-radius: 8px;
     background: var(--accent);
     color: white;
     text-decoration: none;
@@ -256,6 +474,10 @@ _STYLE = """
   @media (max-width: 980px) {
     .cards {
       grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .quote-metrics,
+    .quote-filter-grid {
+      grid-template-columns: 1fr;
     }
     .entry-grid,
     .subgrid {
@@ -564,6 +786,1021 @@ loadDashboard();
         title="总账中心",
         subtitle="驾驶舱先给信号，再决定进入哪个账期工作台或历史分析页。",
         active_path="/",
+        body=body,
+        script=script,
+    )
+
+
+def render_quotes_page() -> str:
+    body = """
+<section class="panel stack">
+  <div class="toolbar">
+    <div>
+      <h2>报价墙</h2>
+      <div class="muted" id="quote-board-range">当前客人报价加载中</div>
+    </div>
+    <div class="toolbar-actions">
+      <button type="button" id="quote-refresh-btn">刷新</button>
+      <a class="quote-link" href="#quote-exceptions">查看异常</a>
+    </div>
+  </div>
+  <div class="quote-metrics">
+    <article class="quote-metric">
+      <div class="label">当前可用</div>
+      <div class="value" id="quote-live-count">0</div>
+    </article>
+    <article class="quote-metric">
+      <div class="label">来源客人群</div>
+      <div class="value" id="quote-source-count">0</div>
+    </article>
+    <article class="quote-metric">
+      <div class="label">异常数量</div>
+      <div class="value" id="quote-exception-count">0</div>
+    </article>
+  </div>
+  <form id="quote-filter-form" class="quote-filter-grid">
+    <input name="search" id="quote-search" type="search" placeholder="搜卡种 / 国家 / 面额 / 形态 / 限制" autocomplete="off" />
+    <input name="card_type" id="quote-card-type" placeholder="卡种，如 Steam" />
+    <input name="country_or_currency" id="quote-country" placeholder="国家 / 币种，如 USD" />
+    <input name="source_group_key" id="quote-source-group" placeholder="客人群 Key" />
+    <select name="quote_status" id="quote-status">
+      <option value="">全部状态</option>
+      <option value="live">可用</option>
+      <option value="stale">超时</option>
+      <option value="watch">观察</option>
+      <option value="blocked">不收</option>
+      <option value="pending">待处理</option>
+    </select>
+    <select name="form_factor" id="quote-form-factor">
+      <option value="">全部形态</option>
+      <option value="card">卡图</option>
+      <option value="code">代码</option>
+      <option value="paper">纸质</option>
+      <option value="electron">电子</option>
+      <option value="horizontal">横板</option>
+      <option value="vertical">竖卡</option>
+    </select>
+    <button type="submit">筛选</button>
+    <button type="button" id="quote-filter-clear">清空</button>
+  </form>
+  <div class="muted" id="quote-filter-status">按卡种看当前最高价；点“刷新”重新拉取报价墙数据。</div>
+  <div class="table-wrap">
+    <table id="quote-board-table" class="quote-table">
+      <thead>
+        <tr><th>卡种</th><th>国家 / 币种</th><th>面额 / 条件</th><th>形态</th><th>最高价</th><th>变化</th><th>客人群</th><th>发送者ID</th><th>更新时间</th><th>已存在</th><th>状态</th><th>限制</th><th>操作</th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</section>
+<section class="panel stack" id="quote-profile-panel">
+  <div class="toolbar">
+    <div>
+      <h2>客人群模板</h2>
+      <div class="muted">先配置群默认卡种、解析模板和超时时间；实机测试时按测试群逐个补。</div>
+    </div>
+  </div>
+  <form id="quote-profile-form" class="quote-filter-grid">
+    <input name="platform" placeholder="平台，如 whatsapp" />
+    <input name="chat_id" placeholder="群ID / chat_id" required />
+    <input name="chat_name" placeholder="群名" />
+    <input name="default_card_type" placeholder="默认卡种，如 Apple" />
+    <input name="default_country_or_currency" placeholder="默认国家/币种，如 USD" />
+    <input name="default_form_factor" placeholder="默认形态，如 横白/竖卡/代码" />
+    <input name="default_multiplier" placeholder="默认倍数，可空，如 50X" />
+    <input name="parser_template" placeholder="模板，如 apple_modifier_sheet" list="quote-template-options" />
+    <datalist id="quote-template-options">
+      <option value="sectioned_group_sheet"></option>
+      <option value="group_fixed_sheet"></option>
+      <option value="apple_modifier_sheet"></option>
+      <option value="section_sheet"></option>
+      <option value="simple_sheet"></option>
+    </datalist>
+    <input name="stale_after_minutes" placeholder="超时分钟，如 30" />
+    <textarea name="template_config" placeholder="高级模板配置，可先留空"></textarea>
+    <button type="submit">保存模板</button>
+    <button type="button" id="quote-profile-clear">清空表单</button>
+  </form>
+  <div class="muted" id="quote-profile-prefill-status">可从异常区一键填充群模板。</div>
+  <div class="quote-template-help">
+    <strong>group_fixed_sheet</strong>
+    <div class="muted">群专用固定模板：建议配好默认卡种 + 默认币种；按 `100=5.55` / `300/400/500=5.55` 解析，`#...` 作为限制说明，`#竖卡-0.1` 可派生形态价。</div>
+  </div>
+  <div class="quote-template-help">
+    <strong>apple_modifier_sheet</strong>
+    <div class="muted">Apple 群模板：默认卡种 Apple；识别 US横白卡 基准价；识别 50X 倍数；#竖卡-0.1 / #电子-0.15 / #代码-0.3 按同一上下文派生价格；默认 30 分钟超时。</div>
+  </div>
+  <div class="table-wrap">
+    <table id="quote-profile-table" class="quote-table">
+      <thead>
+        <tr><th>平台</th><th>群ID</th><th>群名</th><th>默认卡种</th><th>默认币种</th><th>默认形态</th><th>默认倍数</th><th>模板</th><th>超时</th><th>备注</th></tr>
+      </thead>
+      <tbody><tr><td colspan="10" class="muted">暂无模板配置</td></tr></tbody>
+    </table>
+  </div>
+</section>
+<section class="panel stack" id="quote-inquiry-panel">
+  <div class="toolbar">
+    <div>
+      <h2>短回复上下文</h2>
+      <div class="muted">供应商或同事问完价格后，先建上下文；同一个客人群下一条短回复如 6.25 才能补成完整报价。</div>
+    </div>
+  </div>
+  <form id="quote-inquiry-form" class="quote-filter-grid">
+    <input name="chat_id" placeholder="回复客人群ID / chat_id" required />
+    <input name="chat_name" placeholder="回复客人群名" />
+    <input name="card_type" placeholder="卡种，如 Apple" required />
+    <input name="country_or_currency" placeholder="国家 / 币种，如 UK" required />
+    <input name="amount_range" placeholder="面额，如 10" required />
+    <input name="form_factor" placeholder="形态，如 不限 / 代码" />
+    <input name="multiplier" placeholder="倍数，可空" />
+    <input name="prompt_text" placeholder="原始询价，如 Apple UK 10 现在什么价" />
+    <button type="submit">创建上下文</button>
+  </form>
+  <div class="table-wrap">
+    <table id="quote-inquiry-table" class="quote-table">
+      <thead>
+        <tr><th>状态</th><th>客人群</th><th>卡种</th><th>国家 / 币种</th><th>面额</th><th>形态</th><th>有效到</th><th>来源询价</th></tr>
+      </thead>
+      <tbody><tr><td colspan="8" class="muted">暂无短回复上下文</td></tr></tbody>
+    </table>
+  </div>
+</section>
+<section class="panel stack" id="quote-exceptions">
+  <div class="toolbar">
+    <div>
+      <h2>异常区</h2>
+      <div class="muted" id="quote-exception-range">低置信、缺上下文、模板不匹配会先放在这里。</div>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table id="quote-exception-table" class="quote-table">
+      <thead>
+        <tr><th>时间</th><th>来源客人群</th><th>发送者ID</th><th>异常行</th><th>原因</th><th>建议处理</th><th>模板</th><th>置信度</th><th>状态</th><th>操作</th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</section>
+<div class="quote-modal-backdrop" id="quote-ranking-modal" aria-hidden="true">
+  <div class="quote-modal" role="dialog" aria-modal="true" aria-labelledby="quote-ranking-title">
+    <div class="quote-modal-header">
+      <div>
+        <h2>报价排名</h2>
+        <div class="muted" id="quote-ranking-title">点击报价墙任意一行查看同 SKU 客人排名。</div>
+      </div>
+      <button class="quote-modal-close" type="button" id="quote-ranking-close">关闭</button>
+    </div>
+    <div class="table-wrap">
+      <table id="quote-ranking-table" class="quote-table">
+        <thead>
+          <tr><th>排名</th><th>客人群</th><th>价格</th><th>变化</th><th>更新时间</th><th>已存在</th><th>限制</th></tr>
+        </thead>
+        <tbody><tr><td colspan="7" class="muted">未选择报价行</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+"""
+    script = """
+const QUOTE_STALE_MINUTES = 30;
+
+function compactNumber(value) {
+  if (value === null || value === undefined || value === '') {
+    return '';
+  }
+  return Number(value).toFixed(2).replace(/\\.00$/, '');
+}
+
+function textValue(value, fallback = '—') {
+  const text = String(value ?? '').trim();
+  return text || fallback;
+}
+
+function formatQuoteTime(value) {
+  const text = String(value || '').trim();
+  if (!text) return '—';
+  const date = parseQuoteDate(text);
+  if (!date) return text;
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, '0');
+  const hh = String(date.getHours()).padStart(2, '0');
+  const mi = String(date.getMinutes()).padStart(2, '0');
+  const ss = String(date.getSeconds()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}`;
+}
+
+function quoteStatusClass(status) {
+  const normalized = String(status || '').toLowerCase();
+  if (normalized === 'live' || normalized === 'active' || normalized === 'available') return 'live';
+  if (normalized === 'watch' || normalized === 'attention') return 'watch';
+  if (normalized === 'blocked' || normalized === 'disabled' || normalized === 'rejected') return 'blocked';
+  if (normalized === 'ignored' || normalized === 'resolved') return 'watch';
+  return 'pending';
+}
+
+function quoteStatusText(status) {
+  const normalized = String(status || '').toLowerCase();
+  if (normalized === 'live' || normalized === 'active' || normalized === 'available') return '可用';
+  if (normalized === 'watch' || normalized === 'attention') return '观察';
+  if (normalized === 'blocked' || normalized === 'disabled' || normalized === 'rejected') return '不收';
+  if (normalized === 'ignored') return '已忽略';
+  if (normalized === 'resolved') return '已处理';
+  if (normalized === 'open') return '等待回复';
+  if (normalized === 'pending' || normalized === 'review') return '待处理';
+  return textValue(status);
+}
+
+function quoteDisplayStatusClass(row) {
+  if (quoteIsStale(row) && quoteStatusClass(row.quote_status || row.status) === 'live') {
+    return 'stale';
+  }
+  return quoteStatusClass(row.quote_status || row.status);
+}
+
+function quoteDisplayStatusText(row) {
+  if (quoteIsStale(row) && quoteStatusClass(row.quote_status || row.status) === 'live') {
+    return '超时';
+  }
+  return quoteStatusText(row.quote_status || row.status);
+}
+
+function quoteChangeClass(status) {
+  const normalized = String(status || '').toLowerCase();
+  if (normalized === 'new') return 'new';
+  if (normalized === 'up' || normalized === 'rise') return 'up';
+  if (normalized === 'down' || normalized === 'drop') return 'down';
+  return 'flat';
+}
+
+function quoteChangeText(row) {
+  const status = quoteChangeClass(row.change_status);
+  const delta = row.price_change;
+  if (status === 'new') return '新增';
+  if (status === 'up') return `涨价 +${compactNumber(delta)}`;
+  if (status === 'down') return `跌价 ${compactNumber(delta)}`;
+  return '持平';
+}
+
+function quoteFormFactorText(value) {
+  const normalized = normalizeFormFactorText(value);
+  if (!normalized) return '—';
+  return normalized;
+}
+
+function normalizeFormFactorText(value) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  const lowered = text.toLowerCase();
+  if (
+    text.includes('横白')
+    || text.includes('横卡')
+    || text.includes('横板')
+    || text.includes('卡图')
+    || text.includes('图片')
+    || lowered === 'horizontal'
+    || lowered === 'photo'
+    || lowered === 'image'
+    || lowered === 'card'
+  ) return '横白';
+  if (text.includes('竖卡') || text.includes('竖板') || lowered === 'vertical') return '竖卡';
+  if (text.includes('代码') || lowered === 'code') return '代码';
+  if (text.includes('电子') || lowered === 'electron' || lowered === 'electronic') return '电子';
+  if (text.includes('纸质') || lowered === 'paper') return '纸质';
+  return text;
+}
+
+function quoteCountryText(row) {
+  return textValue(row.country_or_currency || row.currency || row.country || row.region);
+}
+
+function quoteAmountText(row) {
+  return textValue(
+    row.amount_label
+      || row.amount_display
+      || row.amount_range
+      || row.face_value_range
+      || row.condition_text
+      || row.amount
+  );
+}
+
+function quoteSourceText(row) {
+  return textValue(row.source_group_name || row.chat_name || row.source_group_key || row.group_key);
+}
+
+function quoteSourceDetailText(row) {
+  return textValue(row.chat_id || row.source_group_key || row.group_key);
+}
+
+function quoteRestrictionText(row) {
+  return textValue(row.restriction_text || row.note || row.remark);
+}
+
+function quoteExceptionActions(row) {
+  const status = String(row.resolution_status || row.status || 'open').toLowerCase();
+  if (status !== 'open') {
+    return '<span class="muted">已处理</span>';
+  }
+  const actions = [];
+  if (String(row.reason || '') === 'blocked_or_question_line') {
+    actions.push(`<button type="button" data-quote-exception-attach="${row.id}">附加限制</button>`);
+  }
+  actions.push(`<button type="button" data-quote-template-prefill="${row.id}">一键建模板</button>`);
+  if (String(row.reason || '').includes('unknown')) {
+    actions.push(`<button type="button" data-quote-dictionary-prefill="${row.id}">添加到字典</button>`);
+  }
+  actions.push(`<button type="button" data-quote-exception-ignore="${row.id}">忽略</button>`);
+  return actions.join('');
+}
+
+function parseQuoteDate(value) {
+  const text = String(value || '').trim();
+  if (!text) return null;
+  let normalized = text.includes('T') ? text : text.replace(' ', 'T');
+  if (!/(Z|[+-]\\d{2}:?\\d{2})$/.test(normalized)) {
+    normalized = `${normalized}Z`;
+  }
+  const date = new Date(normalized);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function quoteAgeMinutes(value) {
+  const date = parseQuoteDate(value);
+  if (!date) return null;
+  const diffSeconds = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000));
+  return Math.floor(diffSeconds / 60);
+}
+
+function quoteAgeText(value) {
+  const date = parseQuoteDate(value);
+  if (!date) return '—';
+  const diffSeconds = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000));
+  if (diffSeconds < 60) return '刚刚';
+  const minutes = Math.floor(diffSeconds / 60);
+  if (minutes < 60) return `${minutes}分钟`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) {
+    const restMinutes = minutes % 60;
+    return restMinutes ? `${hours}小时${restMinutes}分钟` : `${hours}小时`;
+  }
+  const days = Math.floor(hours / 24);
+  const restHours = hours % 24;
+  return restHours ? `${days}天${restHours}小时` : `${days}天`;
+}
+
+function quoteIsStale(row) {
+  const minutes = quoteAgeMinutes(row.effective_at || row.message_time || row.created_at || row.updated_at || row.received_at);
+  const threshold = Number(row.stale_after_minutes || QUOTE_STALE_MINUTES);
+  return minutes !== null && minutes >= threshold;
+}
+
+function quoteAgeClass(row) {
+  return quoteIsStale(row) ? 'quote-age stale' : 'quote-age';
+}
+
+function quoteSearchText(row) {
+  return [
+    row.card_type,
+    row.country_or_currency,
+    row.currency,
+    row.country,
+    row.region,
+    row.amount_label,
+    row.amount_range,
+    row.face_value_range,
+    row.condition_text,
+    row.form_factor,
+    row.restriction_text,
+    row.note,
+    row.remark,
+    row.source_group_name,
+    row.source_group_key,
+    row.sender_id,
+  ].map((item) => String(item || '').toLowerCase()).join(' ');
+}
+
+function quoteRowMatches(row, filters) {
+  const search = String(filters.search || '').trim().toLowerCase();
+  if (search && !quoteSearchText(row).includes(search)) {
+    return false;
+  }
+  if (filters.card_type && String(row.card_type || '').toLowerCase() !== String(filters.card_type).toLowerCase()) {
+    return false;
+  }
+  if (filters.country_or_currency) {
+    const country = String(row.country_or_currency || row.currency || row.country || row.region || '').toLowerCase();
+    if (country !== String(filters.country_or_currency).toLowerCase()) {
+      return false;
+    }
+  }
+  if (filters.source_group_key && String(row.source_group_key || row.group_key || '').toLowerCase() !== String(filters.source_group_key).toLowerCase()) {
+    return false;
+  }
+  if (filters.quote_status) {
+    if (quoteDisplayStatusClass(row) !== String(filters.quote_status).toLowerCase()) {
+      return false;
+    }
+  }
+  if (filters.form_factor) {
+    const rowForm = normalizeFormFactorText(row.form_factor || '');
+    const filterForm = normalizeFormFactorText(filters.form_factor || '');
+    if (rowForm !== filterForm) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function latestQuoteTime(rows) {
+  let latest = '';
+  for (const row of rows || []) {
+    const value = String(row.updated_at || row.effective_at || row.created_at || row.message_time || row.received_at || '');
+    if (value && value > latest) {
+      latest = value;
+    }
+  }
+  return formatQuoteTime(latest);
+}
+
+let allQuoteRows = [];
+let allQuoteExceptions = [];
+let allQuoteProfiles = [];
+let allQuoteInquiries = [];
+
+function currentQuoteFilters() {
+  const form = document.querySelector('#quote-filter-form');
+  return Object.fromEntries(new FormData(form).entries());
+}
+
+function renderQuoteBoard(rows) {
+  const filteredRows = rows.filter((row) => quoteRowMatches(row, currentQuoteFilters()));
+  document.querySelector('#quote-live-count').textContent = String(filteredRows.length);
+  document.querySelector('#quote-source-count').textContent = String(new Set(filteredRows.map((row) => quoteSourceText(row))).size);
+  document.querySelector('#quote-board-range').textContent = filteredRows.length
+    ? `已加载 ${filteredRows.length} 条可用报价，最新更新时间 ${latestQuoteTime(filteredRows) || '—'}。`
+    : '当前没有可用报价。';
+  document.querySelector('#quote-filter-status').textContent = filteredRows.length
+    ? `当前显示 ${filteredRows.length} 条报价。`
+    : '没有匹配的报价。';
+  document.querySelector('#quote-board-table tbody').innerHTML = filteredRows.length
+    ? filteredRows.map((row) => `
+      <tr>
+        <td>${textValue(row.card_type)}</td>
+        <td>${quoteCountryText(row)}</td>
+        <td>${quoteAmountText(row)}</td>
+        <td>${quoteFormFactorText(row.form_factor || row.quote_form_factor)}</td>
+        <td>${compactNumber(row.price ?? row.rate ?? row.quote_price ?? '')}</td>
+        <td><span class="quote-change-chip ${quoteChangeClass(row.change_status)}">${quoteChangeText(row)}</span></td>
+        <td>${quoteSourceText(row)}<span class="quote-source-detail">${quoteSourceDetailText(row)}</span></td>
+        <td>${textValue(row.sender_id)}</td>
+        <td>${formatQuoteTime(row.updated_at || row.effective_at || row.created_at || row.message_time || row.received_at)}</td>
+        <td class="${quoteAgeClass(row)}">${quoteAgeText(row.effective_at || row.message_time || row.created_at || row.updated_at || row.received_at)}</td>
+        <td><span class="quote-status-chip ${quoteDisplayStatusClass(row)}">${quoteDisplayStatusText(row)}</span></td>
+        <td class="quote-note">${quoteRestrictionText(row)}</td>
+        <td><button type="button" data-quote-ranking-id="${row.id}">排名</button> <button type="button" class="quote-delete-btn" data-quote-delete-id="${row.id}" style="color:#c0392b;border-color:#c0392b">删除</button></td>
+      </tr>
+    `).join('')
+    : '<tr><td colspan="13" class="muted">暂无可用报价</td></tr>';
+  bindQuoteRankingButtons();
+  bindQuoteDeleteButtons();
+}
+
+function bindQuoteDeleteButtons() {
+  document.querySelectorAll('[data-quote-delete-id]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const id = button.dataset.quoteDeleteId;
+      if (!confirm('确定删除这条报价？')) return;
+      button.disabled = true;
+      button.textContent = '删除中...';
+      try {
+        const resp = await fetch('/api/quotes/delete', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({id: Number(id)})
+        });
+        const data = await resp.json();
+        if (data.deleted) {
+          button.closest('tr').remove();
+        } else {
+          alert('删除失败: ' + (data.error || '未知错误'));
+          button.disabled = false;
+          button.textContent = '删除';
+        }
+      } catch (e) {
+        alert('删除失败: ' + e.message);
+        button.disabled = false;
+        button.textContent = '删除';
+      }
+    });
+  });
+}
+
+function bindQuoteRankingButtons() {
+  document.querySelectorAll('[data-quote-ranking-id]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const row = allQuoteRows.find((item) => String(item.id) === String(button.dataset.quoteRankingId));
+      if (row) {
+        await loadQuoteRanking(row);
+      }
+    });
+  });
+}
+
+async function loadQuoteRanking(row) {
+  document.querySelector('#quote-ranking-modal').classList.add('open');
+  document.querySelector('#quote-ranking-modal').setAttribute('aria-hidden', 'false');
+  document.querySelector('#quote-ranking-title').textContent = `${textValue(row.card_type)} / ${quoteCountryText(row)} / ${quoteAmountText(row)} / ${quoteFormFactorText(row.form_factor)}：加载中`;
+  document.querySelector('#quote-ranking-table tbody').innerHTML = '<tr><td colspan="7" class="muted">正在加载排名</td></tr>';
+  const params = new URLSearchParams({
+    card_type: row.card_type || '',
+    country_or_currency: row.country_or_currency || '',
+    amount_range: row.amount_range || '',
+    form_factor: row.form_factor || '',
+  });
+  if (row.multiplier) {
+    params.set('multiplier', row.multiplier);
+  }
+  const response = await fetch(`/api/quotes/rankings?${params.toString()}`);
+  const payload = await response.json();
+  const rankingRows = Array.isArray(payload.rows) ? payload.rows : [];
+  document.querySelector('#quote-ranking-title').textContent = `${textValue(row.card_type)} / ${quoteCountryText(row)} / ${quoteAmountText(row)} / ${quoteFormFactorText(row.form_factor)}：共 ${rankingRows.length} 个来源`;
+  document.querySelector('#quote-ranking-table tbody').innerHTML = rankingRows.length
+    ? rankingRows.map((item, index) => `
+      <tr>
+        <td>${index + 1}</td>
+        <td>${quoteSourceText(item)}<span class="quote-source-detail">${quoteSourceDetailText(item)}</span></td>
+        <td>${compactNumber(item.price)}</td>
+        <td><span class="quote-change-chip ${quoteChangeClass(item.change_status)}">${quoteChangeText(item)}</span></td>
+        <td>${formatQuoteTime(item.effective_at || item.message_time || item.created_at)}</td>
+        <td class="${quoteAgeClass(item)}">${quoteAgeText(item.effective_at || item.message_time || item.created_at)}</td>
+        <td class="quote-note">${quoteRestrictionText(item)}</td>
+      </tr>
+    `).join('')
+    : '<tr><td colspan="7" class="muted">没有同 SKU 排名数据</td></tr>';
+}
+
+function closeQuoteRankingModal() {
+  document.querySelector('#quote-ranking-modal').classList.remove('open');
+  document.querySelector('#quote-ranking-modal').setAttribute('aria-hidden', 'true');
+}
+
+function renderQuoteProfiles(rows) {
+  allQuoteProfiles = rows || [];
+  document.querySelector('#quote-profile-table tbody').innerHTML = allQuoteProfiles.length
+    ? allQuoteProfiles.map((row) => `
+      <tr>
+        <td>${textValue(row.platform)}</td>
+        <td>${textValue(row.chat_id)}</td>
+        <td>${textValue(row.chat_name)}</td>
+        <td>${textValue(row.default_card_type)}</td>
+        <td>${textValue(row.default_country_or_currency)}</td>
+        <td>${textValue(row.default_form_factor)}</td>
+        <td>${textValue(row.default_multiplier)}</td>
+        <td>${textValue(row.parser_template)}</td>
+        <td>${textValue(row.stale_after_minutes)}分钟</td>
+        <td class="quote-note">${textValue(row.note)}</td>
+      </tr>
+    `).join('')
+    : '<tr><td colspan="10" class="muted">暂无模板配置</td></tr>';
+}
+
+function renderQuoteInquiries(rows) {
+  allQuoteInquiries = rows || [];
+  document.querySelector('#quote-inquiry-table tbody').innerHTML = allQuoteInquiries.length
+    ? allQuoteInquiries.map((row) => `
+      <tr>
+        <td><span class="quote-status-chip ${quoteStatusClass(row.status)}">${quoteStatusText(row.status)}</span></td>
+        <td>${textValue(row.chat_name || row.chat_id)}<span class="quote-source-detail">${textValue(row.chat_id)}</span></td>
+        <td>${textValue(row.card_type)}</td>
+        <td>${textValue(row.country_or_currency)}</td>
+        <td>${textValue(row.amount_range)}${row.multiplier ? ` / ${textValue(row.multiplier)}` : ''}</td>
+        <td>${quoteFormFactorText(row.form_factor)}</td>
+        <td>${formatQuoteTime(row.expires_at)}</td>
+        <td class="quote-note">${textValue(row.prompt_text)}</td>
+      </tr>
+    `).join('')
+    : '<tr><td colspan="8" class="muted">暂无短回复上下文</td></tr>';
+}
+
+function renderQuoteExceptions(rows) {
+  const filteredRows = rows;
+  document.querySelector('#quote-exception-count').textContent = String(filteredRows.length);
+  document.querySelector('#quote-exception-range').textContent = filteredRows.length
+    ? `已收集 ${filteredRows.length} 条异常，优先处理模板不匹配和缺上下文短报价。`
+    : '当前没有异常。';
+  document.querySelector('#quote-exception-table tbody').innerHTML = filteredRows.length
+    ? filteredRows.map((row) => `
+      <tr>
+        <td>${formatQuoteTime(row.message_time || row.created_at || row.updated_at || row.received_at)}</td>
+        <td>${textValue(row.source_group_name || row.chat_name || row.source_group_key || row.group_key)}<span class="quote-source-detail">${quoteSourceDetailText(row)}</span></td>
+        <td>${textValue(row.sender_id)}</td>
+        <td class="quote-note">${textValue(row.source_line || row.line || row.text)}</td>
+        <td>${textValue(row.reason_label || row.reason || row.error_reason || row.status)}</td>
+        <td class="quote-note">${textValue(row.suggested_action || row.resolution_note)}</td>
+        <td>${textValue(row.template_version || row.template_name || row.parser_version)}</td>
+        <td>${textValue(row.confidence)}</td>
+        <td><span class="quote-status-chip ${quoteStatusClass(row.resolution_status || row.status)}">${quoteStatusText(row.resolution_status || row.status)}</span></td>
+        <td>${quoteExceptionActions(row)}</td>
+      </tr>
+    `).join('')
+    : '<tr><td colspan="10" class="muted">暂无异常</td></tr>';
+  bindQuoteExceptionButtons();
+}
+
+function bindQuoteExceptionButtons() {
+  document.querySelectorAll('[data-quote-exception-ignore]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      await fetch('/api/quotes/exceptions/resolve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          exception_id: Number(button.dataset.quoteExceptionIgnore),
+          resolution_status: 'ignored',
+          resolution_note: 'web ignored',
+        }),
+      });
+      await loadQuotesData();
+    });
+  });
+  document.querySelectorAll('[data-quote-exception-attach]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const response = await fetch('/api/quotes/exceptions/resolve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          exception_id: Number(button.dataset.quoteExceptionAttach),
+          resolution_status: 'attached',
+        }),
+      });
+      const payload = await response.json();
+      if (payload.status && payload.status !== 'attached') {
+        alert(`暂时不能自动附加：${payload.status}`);
+      }
+      await loadQuotesData();
+    });
+  });
+  document.querySelectorAll('[data-quote-template-prefill]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const row = allQuoteExceptions.find((item) => String(item.id) === String(button.dataset.quoteTemplatePrefill));
+      if (row) fillQuoteProfileFromException(row);
+    });
+  });
+  document.querySelectorAll('[data-quote-dictionary-prefill]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const row = allQuoteExceptions.find((item) => String(item.id) === String(button.dataset.quoteDictionaryPrefill));
+      if (row) openDictionaryPrefill(row);
+    });
+  });
+}
+
+function sourcePlatform(row) {
+  if (row.platform) return row.platform;
+  const source = String(row.source_group_key || row.group_key || '');
+  return source.includes(':') ? source.split(':', 1)[0] : 'whatsapp';
+}
+
+function fillQuoteProfileFromException(row) {
+  const form = document.querySelector('#quote-profile-form');
+  const existing = allQuoteProfiles.find((item) =>
+    String(item.platform || 'whatsapp') === sourcePlatform(row)
+    && String(item.chat_id || '') === String(row.chat_id || '')
+  );
+  form.platform.value = existing?.platform || sourcePlatform(row);
+  form.chat_id.value = existing?.chat_id || row.chat_id || '';
+  form.chat_name.value = existing?.chat_name || row.chat_name || row.source_group_name || row.chat_id || '';
+  form.default_card_type.value = existing?.default_card_type || 'Apple';
+  form.default_country_or_currency.value = existing?.default_country_or_currency || 'USD';
+  form.default_form_factor.value = existing?.default_form_factor || '横白';
+  form.default_multiplier.value = existing?.default_multiplier || '';
+  form.parser_template.value = existing?.parser_template || 'sectioned_group_sheet';
+  form.stale_after_minutes.value = existing?.stale_after_minutes || '30';
+  form.template_config.value = existing?.template_config || '';
+  document.querySelector('#quote-profile-prefill-status').textContent =
+    `已从异常填充：${row.chat_name || row.chat_id || '未知群'} / ${row.chat_id || ''} / ${row.source_line || ''}`;
+  document.querySelector('#quote-profile-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function guessDictionaryAlias(row) {
+  const source = String(row.source_line || '').trim();
+  const beforePrice = source.split(/[0-9=：:]/, 1)[0].trim();
+  return beforePrice.replace(/[【】\\[\\]#（）()，,、]/g, '').trim() || source;
+}
+
+function openDictionaryPrefill(row) {
+  const params = new URLSearchParams({
+    category: String(row.reason || '').includes('card') ? 'card_type' : 'country_currency',
+    alias: guessDictionaryAlias(row),
+    scope_platform: sourcePlatform(row),
+    scope_chat_id: row.chat_id || '',
+    note: `${row.chat_name || ''} ${row.source_line || ''}`.trim(),
+  });
+  window.location.href = `/quote-dictionary?${params.toString()}`;
+}
+
+async function loadQuotesData() {
+  const [boardResponse, exceptionResponse, profileResponse, inquiryResponse] = await Promise.all([
+    fetch('/api/quotes/board'),
+    fetch('/api/quotes/exceptions'),
+    fetch('/api/quotes/group-profiles'),
+    fetch('/api/quotes/inquiries'),
+  ]);
+  const boardPayload = await boardResponse.json();
+  const exceptionPayload = await exceptionResponse.json();
+  const profilePayload = await profileResponse.json();
+  const inquiryPayload = await inquiryResponse.json();
+  allQuoteRows = Array.isArray(boardPayload.rows) ? boardPayload.rows : [];
+  allQuoteExceptions = Array.isArray(exceptionPayload.rows) ? exceptionPayload.rows : [];
+  renderQuoteBoard(allQuoteRows);
+  renderQuoteExceptions(allQuoteExceptions);
+  renderQuoteProfiles(Array.isArray(profilePayload.rows) ? profilePayload.rows : []);
+  renderQuoteInquiries(Array.isArray(inquiryPayload.rows) ? inquiryPayload.rows : []);
+}
+
+function syncQuoteUrl() {
+  const form = document.querySelector('#quote-filter-form');
+  const params = new URLSearchParams(new FormData(form));
+  Array.from(params.entries()).forEach(([key, value]) => {
+    if (!String(value || '').trim()) {
+      params.delete(key);
+    }
+  });
+  const query = params.toString();
+  history.replaceState({}, '', query ? `/quotes?${query}` : '/quotes');
+}
+
+document.querySelector('#quote-filter-form').addEventListener('submit', (event) => {
+  event.preventDefault();
+  syncQuoteUrl();
+  renderQuoteBoard(allQuoteRows);
+});
+
+document.querySelector('#quote-filter-form').addEventListener('input', () => {
+  syncQuoteUrl();
+  renderQuoteBoard(allQuoteRows);
+});
+
+document.querySelector('#quote-filter-clear').addEventListener('click', () => {
+  document.querySelector('#quote-filter-form').reset();
+  syncQuoteUrl();
+  renderQuoteBoard(allQuoteRows);
+});
+
+document.querySelector('#quote-refresh-btn').addEventListener('click', async () => {
+  await loadQuotesData();
+});
+
+document.querySelector('#quote-profile-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const payload = Object.fromEntries(new FormData(event.currentTarget).entries());
+  await fetch('/api/quotes/group-profiles', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  await loadQuotesData();
+});
+
+document.querySelector('#quote-profile-clear').addEventListener('click', () => {
+  document.querySelector('#quote-profile-form').reset();
+  document.querySelector('#quote-profile-prefill-status').textContent = '可从异常区一键填充群模板。';
+});
+
+document.querySelector('#quote-inquiry-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const payload = Object.fromEntries(new FormData(event.currentTarget).entries());
+  await fetch('/api/quotes/inquiries', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  event.currentTarget.reset();
+  await loadQuotesData();
+});
+
+document.querySelector('#quote-ranking-close').addEventListener('click', closeQuoteRankingModal);
+document.querySelector('#quote-ranking-modal').addEventListener('click', (event) => {
+  if (event.target === event.currentTarget) {
+    closeQuoteRankingModal();
+  }
+});
+
+const quoteQuery = new URLSearchParams(window.location.search);
+const quoteFieldIds = {
+  search: 'quote-search',
+  card_type: 'quote-card-type',
+  country_or_currency: 'quote-country',
+  source_group_key: 'quote-source-group',
+  quote_status: 'quote-status',
+  form_factor: 'quote-form-factor',
+};
+for (const [key, id] of Object.entries(quoteFieldIds)) {
+  const node = document.querySelector(`#${id}`);
+  const value = quoteQuery.get(key);
+  if (node && value) {
+    node.value = value;
+  }
+}
+loadQuotesData();
+setInterval(() => {
+  loadQuotesData().catch(() => {});
+}, 60000);
+"""
+    return _render_layout(
+        title="报价墙",
+        subtitle="先看当前同卡最高价，再下钻到来源群、条件和异常。",
+        active_path="/quotes",
+        body=body,
+        script=script,
+    )
+
+
+def render_quote_dictionary_page() -> str:
+    body = """
+<section class="panel stack">
+  <div class="toolbar">
+    <div>
+      <h2>报价字典</h2>
+      <div class="muted">维护国家/币种、卡种和形态别名；群级别名优先于全局别名。</div>
+    </div>
+    <label>
+      <span class="muted">类别筛选</span>
+      <select id="dict-filter-category">
+        <option value="">全部</option>
+        <option value="country_currency">国家/币种</option>
+        <option value="card_type">卡种</option>
+        <option value="form_factor">形态</option>
+      </select>
+    </label>
+  </div>
+  <div class="muted">
+    使用说明：1) 表格会显示“内置+自定义”映射。2) 点“编辑/复制到表单”可回填。3) 只有“自定义”支持停用；内置项请用同名自定义覆盖。
+  </div>
+  <form id="quote-dictionary-form" class="quote-filter-grid">
+    <select name="category" id="dict-category" required>
+      <option value="country_currency">国家/币种</option>
+      <option value="card_type">卡种</option>
+      <option value="form_factor">形态</option>
+    </select>
+    <input name="alias" id="dict-alias" placeholder="别名，如 香港 / iTunes / 白卡图" required />
+    <input name="canonical_value" id="dict-canonical" placeholder="标准值，如 HKD / Apple / 横白" required />
+    <input name="scope_platform" id="dict-platform" placeholder="平台，可空，如 whatsapp" />
+    <input name="scope_chat_id" id="dict-chat-id" placeholder="群ID，可空；填了表示仅该群生效" />
+    <input name="note" id="dict-note" placeholder="备注，可空" />
+    <button type="submit">保存别名</button>
+    <button type="button" id="dict-clear">清空</button>
+  </form>
+  <div class="muted" id="dict-prefill-status">修改会要求输入管理口令。</div>
+  <div class="table-wrap">
+    <table id="quote-dictionary-table" class="quote-table">
+      <thead>
+        <tr><th>类别</th><th>别名</th><th>你输入</th><th>内部标准值</th><th>范围</th><th>来源</th><th>状态</th><th>备注</th><th>更新时间</th><th>操作</th></tr>
+      </thead>
+      <tbody><tr><td colspan="10" class="muted">加载中</td></tr></tbody>
+    </table>
+  </div>
+</section>
+"""
+    script = r"""
+const categoryText = {
+  country_currency: '国家/币种',
+  card_type: '卡种',
+  form_factor: '形态',
+};
+let dictionaryRows = [];
+
+function textValue(value) {
+  const text = String(value ?? '').trim();
+  return text || '—';
+}
+
+function formatTime(value) {
+  const text = String(value || '').trim();
+  if (!text) return '—';
+  const normalized = text.includes('T') ? text : text.replace(' ', 'T');
+  const date = new Date(normalized);
+  if (Number.isNaN(date.getTime())) return text;
+  return date.toLocaleString('zh-CN', { hour12: false });
+}
+
+function renderDictionary(rows) {
+  dictionaryRows = rows || [];
+  const selectedCategory = document.querySelector('#dict-filter-category')?.value || '';
+  const visibleRows = selectedCategory
+    ? dictionaryRows.filter((row) => String(row.category || '') === selectedCategory)
+    : dictionaryRows;
+  const customCount = dictionaryRows.filter((row) => row.source === 'custom').length;
+  const builtinCount = dictionaryRows.filter((row) => row.source === 'builtin').length;
+  document.querySelector('#dict-prefill-status').textContent = `已加载 ${dictionaryRows.length} 条映射（自定义 ${customCount}，内置 ${builtinCount}）；当前显示 ${visibleRows.length} 条。修改会要求输入管理口令。`;
+  document.querySelector('#quote-dictionary-table tbody').innerHTML = visibleRows.length
+    ? visibleRows.map((row) => `
+      <tr>
+        <td>${categoryText[row.category] || textValue(row.category)}</td>
+        <td>${textValue(row.alias)}</td>
+        <td>${textValue(row.canonical_input || row.canonical_value)}</td>
+        <td>${textValue(row.canonical_value)}</td>
+        <td>${row.scope_chat_id ? `${textValue(row.scope_platform)} / ${textValue(row.scope_chat_id)}` : '全局'}</td>
+        <td>${row.source === 'builtin' ? '内置' : '自定义'}</td>
+        <td>${Number(row.enabled) ? '启用' : '停用'}</td>
+        <td>${textValue(row.note)}</td>
+        <td>${formatTime(row.updated_at || row.created_at)}</td>
+        <td>${row.editable ? `<button type="button" data-dict-edit="${row.id}">编辑</button> ${Number(row.enabled) ? `<button type="button" data-dict-disable="${row.id}">停用</button>` : ''}` : `<button type="button" data-dict-edit="${row.id}">复制到表单</button>`}</td>
+      </tr>
+    `).join('')
+    : '<tr><td colspan="10" class="muted">暂无字典别名</td></tr>';
+  bindDictionaryActions();
+}
+
+async function loadDictionary() {
+  const category = document.querySelector('#dict-filter-category')?.value || '';
+  const params = new URLSearchParams({ include_builtin: '1' });
+  if (category) params.set('category', category);
+  const response = await fetch(`/api/quotes/dictionary?${params.toString()}`);
+  const payload = await response.json();
+  renderDictionary(Array.isArray(payload.rows) ? payload.rows : []);
+}
+
+function fillDictionaryForm(row) {
+  const form = document.querySelector('#quote-dictionary-form');
+  form.category.value = row.category || 'country_currency';
+  form.alias.value = row.alias || '';
+  form.canonical_value.value = row.canonical_input || row.canonical_value || '';
+  form.scope_platform.value = row.scope_platform || '';
+  form.scope_chat_id.value = row.scope_chat_id || '';
+  form.note.value = row.note || '';
+}
+
+function bindDictionaryActions() {
+  document.querySelectorAll('[data-dict-edit]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const row = dictionaryRows.find((item) => String(item.id) === String(button.dataset.dictEdit));
+      if (row) fillDictionaryForm(row);
+    });
+  });
+  document.querySelectorAll('[data-dict-disable]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const adminPassword = window.prompt('请输入管理口令以停用该别名');
+      if (!adminPassword) return;
+      await fetch('/api/quotes/dictionary/disable', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: Number(button.dataset.dictDisable), admin_password: adminPassword }),
+      });
+      await loadDictionary();
+    });
+  });
+}
+
+document.querySelector('#quote-dictionary-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const payload = Object.fromEntries(new FormData(event.currentTarget).entries());
+  payload.canonical_input = String(payload.canonical_value || '').trim();
+  const adminPassword = window.prompt('请输入管理口令以保存字典');
+  if (!adminPassword) return;
+  payload.admin_password = adminPassword;
+  const response = await fetch('/api/quotes/dictionary', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const result = await response.json();
+  if (!response.ok) {
+    alert(result.error || '保存失败');
+    return;
+  }
+  await loadDictionary();
+});
+
+document.querySelector('#dict-clear').addEventListener('click', () => {
+  document.querySelector('#quote-dictionary-form').reset();
+});
+document.querySelector('#dict-filter-category').addEventListener('change', () => {
+  loadDictionary();
+});
+
+const query = new URLSearchParams(window.location.search);
+const prefill = {
+  category: query.get('category') || '',
+  alias: query.get('alias') || '',
+  canonical_value: query.get('canonical_value') || '',
+  scope_platform: query.get('scope_platform') || '',
+  scope_chat_id: query.get('scope_chat_id') || '',
+  note: query.get('note') || '',
+};
+if (Object.values(prefill).some(Boolean)) {
+  fillDictionaryForm(prefill);
+  if (prefill.category) {
+    document.querySelector('#dict-filter-category').value = prefill.category;
+  }
+  document.querySelector('#dict-prefill-status').textContent = '已从异常区带入字典草稿，确认标准值后输入管理口令保存。';
+}
+loadDictionary();
+"""
+    return _render_layout(
+        title="报价字典",
+        subtitle="把群里的叫法映射到标准卡种、币种和形态。",
+        active_path="/quote-dictionary",
         body=body,
         script=script,
     )
@@ -1688,6 +2925,48 @@ def render_reconciliation_page() -> str:
     </table>
   </div>
 </section>
+<section class="panel stack" id="reconciliation-trace-panel">
+  <div class="toolbar">
+    <div>
+      <h2>差额追踪</h2>
+      <div class="muted" id="reconciliation-trace-status">点击上方逐笔台账里的“追踪”，直接查看这笔交易从原始消息到记账结果的只读链路。</div>
+    </div>
+  </div>
+  <div class="subgrid">
+    <section class="subpanel">
+      <h3>交易摘要</h3>
+      <dl class="detail-list" id="reconciliation-trace-transaction">
+        <div><dt>状态</dt><dd class="muted">尚未选择交易</dd></div>
+      </dl>
+    </section>
+    <section class="subpanel">
+      <h3>链路状态</h3>
+      <ul class="trace-status-list" id="reconciliation-trace-flow">
+        <li><span>captured</span><span class="muted">待加载</span></li>
+        <li><span>parsed</span><span class="muted">待加载</span></li>
+        <li><span>posted</span><span class="muted">待加载</span></li>
+        <li><span>edited</span><span class="muted">待加载</span></li>
+        <li><span>flagged</span><span class="muted">待加载</span></li>
+      </ul>
+    </section>
+    <section class="subpanel full">
+      <h3>原始消息 / 解析 / 修改</h3>
+      <div class="subgrid">
+        <dl class="detail-list" id="reconciliation-trace-message">
+          <div><dt>原始消息</dt><dd class="muted">尚未选择交易</dd></div>
+        </dl>
+        <dl class="detail-list" id="reconciliation-trace-parse">
+          <div><dt>解析结果</dt><dd class="muted">尚未选择交易</dd></div>
+        </dl>
+      </div>
+      <div class="table-note">
+        <dl class="detail-list" id="reconciliation-trace-edit">
+          <div><dt>最近修改</dt><dd class="muted">尚未选择交易</dd></div>
+        </dl>
+      </div>
+    </section>
+  </div>
+</section>
 """
     script = """
 function money(value) {
@@ -1699,6 +2978,15 @@ function compactNumber(value) {
     return '';
   }
   return Number(value).toFixed(4).replace(/0+$/, '').replace(/\\.$/, '');
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 function roleText(role) {
@@ -1848,6 +3136,107 @@ function noteCell(row) {
   return lines.length ? lines.join('<br>') : '<span class="muted">—</span>';
 }
 
+function traceFlagText(flag) {
+  return flag ? '已命中' : '未命中';
+}
+
+function traceFlagClass(flag) {
+  return flag ? 'diff-highlight' : 'diff-safe';
+}
+
+function renderDetailList(nodeId, items, emptyTitle, emptyText) {
+  const node = document.querySelector(`#${nodeId}`);
+  if (!items.length) {
+    node.innerHTML = `<div><dt>${escapeHtml(emptyTitle)}</dt><dd class="muted">${escapeHtml(emptyText)}</dd></div>`;
+    return;
+  }
+  node.innerHTML = items.map((item) => `
+    <div>
+      <dt>${escapeHtml(item.label)}</dt>
+      <dd>${item.html ?? escapeHtml(item.value ?? '—')}</dd>
+    </div>
+  `).join('');
+}
+
+function renderTracePlaceholder(text = '尚未选择交易') {
+  renderDetailList('reconciliation-trace-transaction', [], '状态', text);
+  document.querySelector('#reconciliation-trace-flow').innerHTML = ['captured', 'parsed', 'posted', 'edited', 'flagged']
+    .map((item) => `<li><span>${item}</span><span class="muted">待加载</span></li>`)
+    .join('');
+  renderDetailList('reconciliation-trace-message', [], '原始消息', text);
+  renderDetailList('reconciliation-trace-parse', [], '解析结果', text);
+  renderDetailList('reconciliation-trace-edit', [], '最近修改', text);
+}
+
+function renderDifferenceTrace(payload) {
+  const tx = payload.transaction || {};
+  const message = payload.message;
+  const parseResult = payload.parse_result;
+  const latestEdit = payload.latest_edit;
+  const issueFlags = payload.issue_flags || [];
+  const traceStatus = payload.trace_status || {};
+
+  renderDetailList('reconciliation-trace-transaction', [
+    { label: '交易 ID', value: tx.id ?? '—' },
+    { label: '群', value: tx.chat_name || tx.group_key || '—' },
+    { label: '角色', value: roleText(tx.business_role) },
+    { label: '卡种', value: tx.category || '—' },
+    { label: '刀数', value: tx.usd_amount === null || tx.usd_amount === undefined ? '—' : money(tx.usd_amount) },
+    { label: '汇率', value: tx.rate === null || tx.rate === undefined ? '—' : compactNumber(tx.rate) },
+    { label: '人民币', value: tx.rmb_value === null || tx.rmb_value === undefined ? '—' : money(tx.rmb_value) },
+    { label: '异常', html: issueFlags.length ? escapeHtml(issueFlags.map((item) => issueText(item)).join(' / ')) : '<span class="muted">无</span>' },
+    { label: '创建时间', value: tx.created_at || '—' },
+  ], '交易摘要', '暂无交易数据');
+
+  document.querySelector('#reconciliation-trace-flow').innerHTML = [
+    ['captured', '已录到原始消息'],
+    ['parsed', '已形成解析结果'],
+    ['posted', '已写入交易'],
+    ['edited', '已被人工修改'],
+    ['flagged', '已命中异常标记'],
+  ].map(([key, label]) => `
+    <li>
+      <span>${escapeHtml(label)}</span>
+      <span class="${traceFlagClass(Boolean(traceStatus[key]))}">${traceFlagText(Boolean(traceStatus[key]))}</span>
+    </li>
+  `).join('');
+
+  renderDetailList('reconciliation-trace-message', message ? [
+    { label: '消息 ID', value: message.message_id || '—' },
+    { label: '发送人', value: message.sender_name || message.sender_id || '—' },
+    { label: '收到时间', value: message.received_at || message.created_at || '—' },
+    { label: '正文', html: message.text ? `<span class="mono">${escapeHtml(message.text)}</span>` : '<span class="muted">—</span>' },
+  ] : [], '原始消息', '这笔交易没有关联到原始消息');
+
+  renderDetailList('reconciliation-trace-parse', parseResult ? [
+    { label: '分类', value: parseResult.classification || '—' },
+    { label: '状态', value: parseResult.parse_status || '—' },
+    { label: '原始文本', html: parseResult.raw_text ? `<span class="mono">${escapeHtml(parseResult.raw_text)}</span>` : '<span class="muted">—</span>' },
+  ] : [], '解析结果', '这笔交易当前没有对应的 parse result');
+
+  renderDetailList('reconciliation-trace-edit', latestEdit ? [
+    { label: '编辑人', value: latestEdit.edited_by || '—' },
+    { label: '编辑时间', value: latestEdit.edited_at || '—' },
+    { label: '说明', value: latestEdit.note || '—' },
+  ] : [], '最近修改', '这笔交易目前没有人工修改痕迹');
+}
+
+async function loadDifferenceTrace(transactionId) {
+  document.querySelector('#reconciliation-trace-status').className = 'muted';
+  document.querySelector('#reconciliation-trace-status').textContent = `正在加载交易 ${transactionId} 的差额追踪...`;
+  const response = await fetch(`/api/reconciliation/difference-trace?transaction_id=${transactionId}`);
+  const payload = await response.json();
+  if (!response.ok) {
+    document.querySelector('#reconciliation-trace-status').className = 'error';
+    document.querySelector('#reconciliation-trace-status').textContent = payload.error || '加载差额追踪失败。';
+    renderTracePlaceholder('加载失败');
+    return;
+  }
+  document.querySelector('#reconciliation-trace-status').className = 'muted';
+  document.querySelector('#reconciliation-trace-status').textContent = `已加载交易 ${transactionId} 的只读追踪链路，可直接对照原始消息、解析结果和人工修改痕迹。`;
+  renderDifferenceTrace(payload);
+}
+
 function fillAdjustmentForm(row) {
   document.querySelector('#reconciliation-linked-transaction-id').value = row.row_type === 'transaction' ? String(row.row_id) : '';
   document.querySelector('#reconciliation-adjustment-period-id').value = row.period_id || '';
@@ -1951,7 +3340,12 @@ function renderLedgerRows(rows) {
         <td>${money(row.rmb_value)}</td>
         <td>${issueCell(row)}</td>
         <td>${noteCell(row)}</td>
-        <td><button type="button" data-action="quote-row" data-row-id="${row.row_id}" data-row-type="${row.row_type}">引用</button></td>
+        <td>
+          <div class="action-stack">
+            <button type="button" data-action="quote-row" data-row-id="${row.row_id}" data-row-type="${row.row_type}">引用</button>
+            ${row.row_type === 'transaction' ? `<button type="button" data-action="trace-row" data-row-id="${row.row_id}">追踪</button>` : ''}
+          </div>
+        </td>
       </tr>
     `).join('')
     : '<tr><td colspan="12" class="muted">当前筛选下暂无逐笔台账</td></tr>';
@@ -2018,6 +3412,18 @@ async function loadLedger(pushUrl = false) {
         return;
       }
       fillAdjustmentForm(row);
+    });
+  });
+  document.querySelectorAll('[data-action="trace-row"]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const transactionId = Number(button.getAttribute('data-row-id'));
+      if (!transactionId) {
+        document.querySelector('#reconciliation-trace-status').className = 'error';
+        document.querySelector('#reconciliation-trace-status').textContent = '这行没有有效的 transaction_id，无法追踪。';
+        renderTracePlaceholder('无法追踪');
+        return;
+      }
+      await loadDifferenceTrace(transactionId);
     });
   });
   setLedgerStatus(`已加载 ${scopeText(scope)} / ${filterTrailText(data)} 下的逐笔台账。`);
@@ -2103,6 +3509,7 @@ document.querySelector('#reconciliation-group-num').dataset.pendingValue = query
 document.querySelector('#reconciliation-group-key').dataset.pendingValue = query.get('group_key') || '';
 document.querySelector('#reconciliation-card-type').dataset.pendingValue = query.get('card_type') || '';
 updateScopeControls();
+renderTracePlaceholder();
 loadLedger(false);
 """
     return _render_layout(
@@ -2320,6 +3727,8 @@ def _render_layout(*, title: str, subtitle: str, active_path: str, body: str, sc
 <nav>
   <a href="/" class="%s">首页驾驶舱</a>
   <a href="/workbench" class="%s">账期工作台</a>
+  <a href="/quotes" class="%s">报价墙</a>
+  <a href="/quote-dictionary" class="%s">报价字典</a>
   <a href="/reconciliation" class="%s">对账中心</a>
   <a href="/role-mapping" class="%s">角色映射</a>
   <a href="/history" class="%s">跑账历史</a>
@@ -2327,6 +3736,8 @@ def _render_layout(*, title: str, subtitle: str, active_path: str, body: str, sc
 """ % (
         "active" if active_path == "/" else "",
         "active" if active_path == "/workbench" else "",
+        "active" if active_path == "/quotes" else "",
+        "active" if active_path == "/quote-dictionary" else "",
         "active" if active_path == "/reconciliation" else "",
         "active" if active_path == "/role-mapping" else "",
         "active" if active_path == "/history" else "",

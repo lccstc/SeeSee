@@ -726,6 +726,99 @@ class UnifiedRuntimeTests(PostgresTestCase):
         self.assertEqual(actions[0]["chat_id"], "room-tx")
         self.assertEqual(actions[0]["text"], "✅ +100.00\n📊 Balance: +100.00")
 
+        incoming = self.db.get_incoming_message(
+            platform="wechat",
+            chat_id="room-tx",
+            message_id="msg-tx-1",
+        )
+        self.assertIsNotNone(incoming)
+        assert incoming is not None
+        self.assertEqual(str(incoming["group_key"]), "wechat:room-tx")
+        self.assertEqual(str(incoming["sender_name"]), "Master")
+        self.assertEqual(str(incoming["text"]), "+100rmb")
+        self.assertEqual(json.loads(str(incoming["raw_json"]))["message_id"], "msg-tx-1")
+
+        rows, total = self.db.query_parse_results(platform="wechat", chat_id="room-tx", limit=10, offset=0)
+        self.assertEqual(total, 1)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["message_id"], "msg-tx-1")
+        self.assertEqual(rows[0]["classification"], "transaction_like")
+        self.assertEqual(rows[0]["parse_status"], "parsed")
+
+    def test_command_message_records_parse_result(self) -> None:
+        self.db.set_group(
+            platform="wechat",
+            group_key="wechat:room-parse-cmd",
+            chat_id="room-parse-cmd",
+            chat_name="解析命令群",
+            group_num=3,
+        )
+
+        self.runtime.process_envelope(
+            self._message(
+                platform="wechat",
+                message_id="msg-parse-cmd-1",
+                chat_id="room-parse-cmd",
+                chat_name="解析命令群",
+                text="/bal",
+            )
+        )
+
+        rows, total = self.db.query_parse_results(platform="wechat", chat_id="room-parse-cmd", limit=10, offset=0)
+        self.assertEqual(total, 1)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["message_id"], "msg-parse-cmd-1")
+        self.assertEqual(rows[0]["classification"], "command")
+        self.assertEqual(rows[0]["parse_status"], "parsed")
+
+    def test_duplicate_message_is_deduplicated_across_runtime_restarts(self) -> None:
+        self.db.set_group(
+            platform="wechat",
+            group_key="wechat:room-dedupe",
+            chat_id="room-dedupe",
+            chat_name="去重群",
+            group_num=3,
+        )
+        message = self._message(
+            platform="wechat",
+            message_id="msg-dedupe-1",
+            chat_id="room-dedupe",
+            chat_name="去重群",
+            text="+100rmb",
+        )
+
+        first_actions = self.runtime.process_envelope(message)
+        restarted_runtime = UnifiedBookkeepingRuntime(
+            db=self.db,
+            master_users=["master-user"],
+            export_dir=self.export_dir,
+        )
+        second_actions = restarted_runtime.process_envelope(message)
+
+        self.assertEqual(len(first_actions), 1)
+        self.assertEqual(second_actions, [])
+        self.assertEqual(self.db.get_total_transaction_count(), 1)
+        self.assertEqual(self.db.count_incoming_messages(), 1)
+
+    def test_command_message_is_still_captured_before_business_filters(self) -> None:
+        actions = self.runtime.process_envelope(
+            self._message(
+                platform="wechat",
+                message_id="msg-capture-cmd-1",
+                chat_id="room-capture-cmd",
+                chat_name="命令群",
+                text="/whoami",
+            )
+        )
+
+        self.assertTrue(actions)
+        incoming = self.db.get_incoming_message(
+            platform="wechat",
+            chat_id="room-capture-cmd",
+            message_id="msg-capture-cmd-1",
+        )
+        self.assertIsNotNone(incoming)
+
     def test_history_without_transactions_returns_legacy_empty_text(self) -> None:
         self.db.set_group(
             platform="wechat",

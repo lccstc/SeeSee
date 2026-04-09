@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HERMES-AGENT // 赛博修仙执行终端</title>
+    <style>
+        :root {
+            --neon-green: #00ff41;
+            --dark-bg: #0a0a0a;
+            --alert-red: #ff003c;
+            --warning-yellow: #f3e600;
+        }
+
+        body {
+            background-color: var(--dark-bg);
+            color: var(--neon-green);
+            font-family: 'Courier New', Courier, monospace;
+            margin: 0;
+            overflow: hidden;
+            display: flex;
+            height: 100vh;
+        }
+
+        /* CRT 扫描线特效 */
+        body::before {
+            content: " ";
+            display: block;
+            position: absolute;
+            top: 0; left: 0; bottom: 0; right: 0;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), 
+                        linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+            z-index: 2;
+            background-size: 100% 2px, 3px 100%;
+            pointer-events: none;
+        }
+
+        #ui-container {
+            display: flex;
+            width: 100%;
+            padding: 20px;
+            box-sizing: border-box;
+            z-index: 1;
+        }
+
+        #inventory {
+            width: 250px;
+            border-right: 2px solid var(--neon-green);
+            padding-right: 20px;
+        }
+
+        #main-terminal {
+            flex-grow: 1;
+            padding: 0 40px;
+            overflow-y: auto;
+            position: relative;
+        }
+
+        .implant-slot {
+            margin: 10px 0;
+            padding: 10px;
+            border: 1px dashed var(--neon-green);
+            font-size: 0.8em;
+            opacity: 0.3;
+        }
+
+        .implant-slot.unlocked {
+            opacity: 1;
+            border-style: solid;
+            background: rgba(0, 255, 65, 0.1);
+            box-shadow: 0 0 10px var(--neon-green);
+        }
+
+        h1, h2 { text-transform: uppercase; letter-spacing: 2px; }
+        .node-card {
+            border: 1px solid var(--neon-green);
+            padding: 20px;
+            margin-bottom: 20px;
+            display: none;
+        }
+        .node-card.active { display: block; animation: flicker 0.2s infinite alternate; }
+
+        @keyframes flicker {
+            0% { opacity: 0.97; }
+            100% { opacity: 1; }
+        }
+
+        .btn {
+            background: transparent;
+            color: var(--neon-green);
+            border: 1px solid var(--neon-green);
+            padding: 10px 20px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+
+        .btn:hover { background: var(--neon-green); color: black; }
+        .locked { color: #555; border-color: #555; pointer-events: none; }
+
+        .red-alert {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(255, 0, 60, 0.5);
+            display: none;
+            z-index: 100;
+        }
+
+        .sos-btn { position: absolute; top: 10px; right: 10px; font-size: 0.7em; }
+        .quiz-option { display: block; margin: 10px 0; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+<div id="ui-container">
+    <div id="inventory">
+        <h2>义体状态 (IMPLANTS)</h2>
+        <div id="implant-list"></div>
+    </div>
+
+    <div id="main-terminal">
+        <button class="btn sos-btn" onclick="game.triggerSOS()">[HELP_SOS]</button>
+        <div id="game-header">
+            <h1 id="act-title">LOADING...</h1>
+            <p id="system-log">System initializing...</p>
+        </div>
+        <hr>
+        <div id="quest-area"></div>
+    </div>
+</div>
+
+<div id="red-alert" class="red-alert"></div>
+
+<script>
+    // 核心数据结构注入
+    const questData = [
+        {
+            id: "q1",
+            act: "ACT I: 神经引导",
+            title: "Node 1: 底层注入 (Enviroment)",
+            url: "https://hermes-agent.nousresearch.com/docs/quickstart",
+            story: "你漂浮在比特之海的边缘。为了解析 Nous 的加密协议，你必须在本地神经中枢（Terminal）部署 Hermes 运行环境。Python 环境是你的氧气...",
+            req: [],
+            loot: "SYS_ROOT",
+            tasks: [
+                "执行 `pip install hermes-agent` 获取基础包",
+                "配置你的 `.env` 文件，注入 OPENAI_API_KEY 或自定义 Endpoint"
+            ],
+            quiz: [
+                {
+                    q: "Hermes-Agent 的基础运行环境依赖哪个核心库来处理 Agent 逻辑？",
+                    options: ["Flask", "LangChain/Pydantic", "FastAPI"],
+                    ans: 1
+                }
+            ]
+        },
+        {
+            id: "q2",
+            act: "ACT I: 神经引导",
+            title: "Node 2: 初代意识 (The Agent)",
+            url: "https://hermes-agent.nousresearch.com/docs/agents",
+            story: "服务器风扇发出哀鸣，你必须注入依赖。Hermes 正在你的内存区苏醒，它需要一个 System Prompt 来定义它的灵魂偏见...",
+            req: ["SYS_ROOT"],
+            loot: "NEURAL_LINK",
+            tasks: [
+                "实例化一个 `HermesAgent` 对象",
+                "编写一个简单的 System Prompt 令其承认自己是赛博实体"
+            ],
+            quiz: [
+                {
+                    q: "在 Hermes-Agent 中，哪个类负责维护 Agent 的状态和对话轮次？",
+                    options: ["AgentManager", "ChatSession", "HermesAgent"],
+                    ans: 2
+                }
+            ]
+        },
+        {
+            id: "q3",
+            act: "ACT II: 逻辑义体",
+            title: "Node 3: 函数手术 (Function Calling)",
+            url: "https://hermes-agent.nousresearch.com/docs/tools",
+            story: "肉体凡胎无法触碰网络深处的数据。你需要为 Hermes 安装义体（Tools），让它学会如何调用外部 API...",
+            req: ["NEURAL_LINK"],
+            loot: "TOOL_INTERFACE",
+            tasks: [
+                "定义一个带有 Pydantic Schema 的 Python 函数",
+                "将函数绑定到 Agent 的 tools 列表中"
+            ],
+            quiz: [
+                {
+                    q: "Hermes 模型在进行函数调用时，默认期望哪种格式的输出？",
+                    options: ["XML", "Markdown Table", "JSON Block"],
+                    ans: 2
+                }
+            ]
+        }
+    ];
+
+    // 游戏引擎逻辑
+    const game = {
+        unlockedLoot: JSON.parse(localStorage.getItem('hermes_loot') || '[]'),
+        currentIdx: 0,
+        audioCtx: new (window.AudioContext || window.webkitAudioContext)(),
+
+        init() {
+            this.renderInventory();
+            this.renderQuest();
+            this.log("SYSTEM READY. WAITING FOR INPUT...");
+        },
+
+        playSound(freq, type, duration) {
+            const osc = this.audioCtx.createOscillator();
+            const gain = this.audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(this.audioCtx.destination);
+            osc.type = type;
+            osc.frequency.value = freq;
+            gain.gain.setValueAtTime(0.1, this.audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, this.audioCtx.currentTime + duration);
+            osc.start();
+            osc.stop(this.audioCtx.currentTime + duration);
+        },
+
+        log(msg) {
+            const logEl = document.getElementById('system-log');
+            logEl.innerText = `> ${msg}`;
+        },
+
+        renderInventory() {
+            const list = document.getElementById('implant-list');
+            list.innerHTML = '';
+            const allLoots = ["SYS_ROOT", "NEURAL_LINK", "TOOL_INTERFACE", "SCHEMA_SHIELD", "MEMORY_VOD", "SWARM_SYNC"];
+            allLoots.forEach(loot => {
+                const div = document.createElement('div');
+                div.className = `implant-slot ${this.unlockedLoot.includes(loot) ? 'unlocked' : ''}`;
+                div.innerHTML = `[${loot}]<br>${this.unlockedLoot.includes(loot) ? 'ACTIVE' : 'LOCKED'}`;
+                list.appendChild(div);
+            });
+        },
+
+        renderQuest() {
+            const quest = questData[this.currentIdx];
+            const area = document.getElementById('quest-area');
+            document.getElementById('act-title').innerText = quest.act;
+
+            // 检查锁
+            const isLocked = quest.req.some(r => !this.unlockedLoot.includes(r));
+
+            area.innerHTML = `
+                <div class="node-card active">
+                    <h2>${quest.title}</h2>
+                    <p><i>${quest.story}</i></p>
+                    <p><b>[目标文档]:</b> <a href="${quest.url}" target="_blank" style="color:white">${quest.url}</a></p>
+                    <ul>${quest.tasks.map(t => `<li>[ ] ${t}</li>`).join('')}</ul>
+                    <hr>
+                    <div id="quiz-box">
+                        <p><b>防作弊安全验证：</b> ${quest.quiz[0].q}</p>
+                        ${quest.quiz[0].options.map((opt, i) => `
+                            <label class="quiz-option">
+                                <input type="radio" name="quiz" value="${i}"> ${opt}
+                            </label>
+                        `).join('')}
+                        <button class="btn" onclick="game.checkQuiz(${i = 0})">执行同步 (UPLOAD)</button>
+                    </div>
+                </div>
+            `;
+            if(isLocked) {
+                area.innerHTML = `<div class="node-card active" style="color:#555">核心义体缺失：需要 [${quest.req.join(',')}] 才能解锁此节点。</div>`;
+            }
+        },
+
+        checkQuiz() {
+            const selected = document.querySelector('input[name="quiz"]:checked');
+            if(!selected) return;
+
+            const quest = questData[this.currentIdx];
+            if (parseInt(selected.value) === quest.quiz[0].ans) {
+                this.playSound(880, 'sine', 0.2);
+                this.log("验证通过。正在安装义体：" + quest.loot);
+                if(!this.unlockedLoot.includes(quest.loot)) {
+                    this.unlockedLoot.push(quest.loot);
+                    localStorage.setItem('hermes_loot', JSON.stringify(this.unlockedLoot));
+                }
+                this.renderInventory();
+                if(this.currentIdx < questData.length - 1) {
+                    this.currentIdx++;
+                    setTimeout(() => this.renderQuest(), 1000);
+                } else {
+                    alert("恭喜！你已完成所有 Hermes 协议注入！你现在是 Nous Swarm 的一部分。");
+                }
+            } else {
+                this.triggerFailure();
+            }
+        },
+
+        triggerFailure() {
+            this.playSound(100, 'sawtooth', 0.5);
+            const alertBg = document.getElementById('red-alert');
+            alertBg.style.display = 'block';
+            this.log("SECURITY BREACH!! 答题错误，进度重置...");
+            setTimeout(() => {
+                alertBg.style.display = 'none';
+                this.renderQuest();
+            }, 500);
+        },
+
+        triggerSOS() {
+            const quest = questData[this.currentIdx];
+            const prompt = `我正在学习 Hermes-Agent 文档的 ${quest.title} 环节。目前的题目是：“${quest.quiz[0].q}”，我卡住了。请基于文档链接 ${quest.url} 给我一点提示。`;
+            navigator.clipboard.writeText(prompt);
+            this.log("SOS 协议已复制到剪贴板。请前往 GPT 求助。");
+            alert("求助 Prompt 已复制！");
+        }
+    };
+
+    window.onload = () => game.init();
+</script>
+</body>
+</html>
