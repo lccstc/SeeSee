@@ -1900,6 +1900,18 @@ class _BookkeepingStoreBase:
         ).fetchone()
         return self._serialize_quote_db_row(row) if row else None
 
+    def get_quote_group_profile_by_name(self, *, platform: str, chat_name: str) -> DBRow | None:
+        row = self.conn.execute(
+            """
+            SELECT *
+            FROM quote_group_profiles
+            WHERE platform = ? AND chat_name = ?
+            LIMIT 1
+            """,
+            (platform, chat_name),
+        ).fetchone()
+        return self._serialize_quote_db_row(row) if row else None
+
     def list_quote_group_profiles(self, *, limit: int = 200) -> list[DBRow]:
         rows = self.conn.execute(
             """
@@ -1911,6 +1923,33 @@ class _BookkeepingStoreBase:
             (limit,),
         ).fetchall()
         return [self._serialize_quote_db_row(row) for row in rows]
+
+    def append_rule_to_group_profile(self, *, platform: str, chat_id: str, new_rule: dict) -> bool:
+        row = self.get_quote_group_profile(platform=platform, chat_id=chat_id)
+        if not row:
+            return False
+        
+        import json
+        from .template_engine import TemplateConfig
+        
+        raw_config = str(row.get("template_config") or "")
+        try:
+            config = TemplateConfig.from_json(raw_config) if raw_config.strip() else TemplateConfig()
+        except ValueError:
+            config = TemplateConfig()
+            
+        config.rules.append(new_rule)
+        
+        self.conn.execute(
+            """
+            UPDATE quote_group_profiles 
+            SET template_config = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE platform = ? AND chat_id = ?
+            """,
+            (config.to_json(), platform, chat_id)
+        )
+        self.conn.commit()
+        return True
 
     def list_quote_board(self, *, limit: int = 500) -> list[DBRow]:
         rows = self.conn.execute(
