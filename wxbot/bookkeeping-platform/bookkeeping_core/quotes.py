@@ -622,9 +622,28 @@ class QuoteCaptureService:
             dictionary_aliases = quote_dictionary_aliases_from_rows(
                 alias_method(platform=envelope.platform, chat_id=envelope.chat_id)
             )
+        # 先通过 chat_id 查找
         method = getattr(self.db, "get_quote_group_profile", None)
         if callable(method):
             row = method(platform=envelope.platform, chat_id=envelope.chat_id)
+            if row:
+                return QuoteGroupProfile(
+                    key=f"{envelope.platform}:{envelope.chat_id}",
+                    default_card_type=str(row.get("default_card_type") or "") or None,
+                    default_country_or_currency=str(row.get("default_country_or_currency") or "")
+                    or None,
+                    default_form_factor=str(row.get("default_form_factor") or "") or None,
+                    default_multiplier=str(row.get("default_multiplier") or "") or None,
+                    parser_template=str(row.get("parser_template") or "") or None,
+                    stale_after_minutes=int(row.get("stale_after_minutes") or DEFAULT_STALE_AFTER_MINUTES),
+                    note=str(row.get("note") or ""),
+                    template_config=str(row.get("template_config") or ""),
+                    dictionary_aliases=dictionary_aliases,
+                )
+        # 如果通过 chat_id 找不到，再通过 chat_name 查找
+        method_by_name = getattr(self.db, "get_quote_group_profile_by_name", None)
+        if callable(method_by_name):
+            row = method_by_name(platform=envelope.platform, chat_name=envelope.chat_name)
             if row:
                 return QuoteGroupProfile(
                     key=f"{envelope.platform}:{envelope.chat_id}",
