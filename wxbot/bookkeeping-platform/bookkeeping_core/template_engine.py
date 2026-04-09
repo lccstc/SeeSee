@@ -316,3 +316,27 @@ def _generate_price_pattern(line: str) -> str | None:
         parts.append(re.escape(tail))
 
     return "".join(parts)
+
+
+def generate_strict_pattern_from_annotations(line: str, annotations: list[dict[str, str | int]]) -> str:
+    """根据标注的变量位置，将整行替换为带 {变量} 的 strict pattern。"""
+    # Sort annotations by start index
+    sorted_anns = sorted(annotations, key=lambda x: int(x["start"]))
+    
+    result = ""
+    last_idx = 0
+    for ann in sorted_anns:
+        start = int(ann["start"])
+        end = int(ann["end"])
+        ann_type = str(ann["type"])
+        
+        if start > last_idx:
+            result += line[last_idx:start]
+            
+        result += f"{{{ann_type}}}"
+        last_idx = end
+        
+    if last_idx < len(line):
+        result += line[last_idx:]
+        
+    return result

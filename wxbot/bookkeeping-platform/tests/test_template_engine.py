@@ -49,3 +49,15 @@ def test_parse_message_strict():
     
     assert len(doc.exceptions) == 1
     assert doc.exceptions[0].source_line == "未知格式=1.0"
+
+def test_generate_strict_pattern():
+    from bookkeeping_core.template_engine import generate_strict_pattern_from_annotations
+    
+    line = "加拿大=3.4(代码批量问)"
+    annotations = [
+        {"type": "country", "value": "加拿大", "start": 0, "end": 3},
+        {"type": "price", "value": "3.4", "start": 4, "end": 7},
+        {"type": "restriction", "value": "代码批量问", "start": 8, "end": 13}
+    ]
+    pattern = generate_strict_pattern_from_annotations(line, annotations)
+    assert pattern == "{country}={price}({restriction})"
