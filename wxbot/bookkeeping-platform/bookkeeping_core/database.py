@@ -7,6 +7,11 @@ from pathlib import Path
 from typing import Any
 
 from .models import ReminderPayload
+from .quotes import (
+    normalize_quote_amount_range,
+    normalize_quote_form_factor,
+    normalize_quote_multiplier,
+)
 
 
 DBRow = dict[str, Any]
@@ -1474,6 +1479,131 @@ class _BookkeepingStoreBase:
         self.conn.commit()
         return self._last_insert_id(cur)
 
+    def list_quote_dictionary_aliases(
+        self,
+        *,
+        category: str | None = None,
+        include_disabled: bool = True,
+        limit: int = 1000,
+    ) -> list[DBRow]:
+        where_parts: list[str] = []
+        params: list[Any] = []
+        if category:
+            where_parts.append("category = ?")
+            params.append(category)
+        if not include_disabled:
+            where_parts.append("enabled = 1")
+        where_clause = f"WHERE {' AND '.join(where_parts)}" if where_parts else ""
+        params.append(limit)
+        rows = self.conn.execute(
+            f"""
+            SELECT *
+            FROM quote_dictionary_aliases
+            {where_clause}
+            ORDER BY category ASC,
+                     CASE WHEN scope_chat_id = '' THEN 1 ELSE 0 END ASC,
+                     alias ASC,
+                     id DESC
+            LIMIT ?
+            """,
+            params,
+        ).fetchall()
+        return [self._serialize_quote_db_row(row) for row in rows]
+
+    def list_quote_dictionary_aliases_for_scope(
+        self,
+        *,
+        platform: str,
+        chat_id: str,
+    ) -> list[DBRow]:
+        rows = self.conn.execute(
+            """
+            SELECT *
+            FROM quote_dictionary_aliases
+            WHERE enabled = 1
+              AND (
+                (scope_platform = '' AND scope_chat_id = '')
+                OR (scope_platform = ? AND scope_chat_id = ?)
+              )
+            ORDER BY
+              CASE WHEN scope_chat_id = '' THEN 1 ELSE 0 END ASC,
+              category ASC,
+              alias ASC,
+              id DESC
+            """,
+            (platform, chat_id),
+        ).fetchall()
+        return [self._serialize_quote_db_row(row) for row in rows]
+
+    def upsert_quote_dictionary_alias(
+        self,
+        *,
+        category: str,
+        alias: str,
+        canonical_value: str,
+        canonical_input: str = "",
+        scope_platform: str = "",
+        scope_chat_id: str = "",
+        note: str = "",
+        enabled: bool = True,
+    ) -> int:
+        cur = self.conn.execute(
+            """
+            INSERT INTO quote_dictionary_aliases (
+              category, alias, canonical_value, canonical_input, scope_platform,
+              scope_chat_id, note, enabled, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(category, alias, scope_platform, scope_chat_id) DO UPDATE SET
+              canonical_value = excluded.canonical_value,
+              canonical_input = excluded.canonical_input,
+              note = excluded.note,
+              enabled = excluded.enabled,
+              updated_at = CURRENT_TIMESTAMP
+            """,
+            (
+                category,
+                alias,
+                canonical_value,
+                canonical_input,
+                scope_platform,
+                scope_chat_id,
+                note,
+                1 if enabled else 0,
+            ),
+        )
+        self.conn.commit()
+        row = self.conn.execute(
+            """
+            SELECT id
+            FROM quote_dictionary_aliases
+            WHERE category = ?
+              AND alias = ?
+              AND scope_platform = ?
+              AND scope_chat_id = ?
+            LIMIT 1
+            """,
+            (category, alias, scope_platform, scope_chat_id),
+        ).fetchone()
+        return int(row["id"]) if row else self._last_insert_id(cur)
+
+    def set_quote_dictionary_alias_enabled(
+        self,
+        *,
+        alias_id: int,
+        enabled: bool,
+    ) -> int:
+        cur = self.conn.execute(
+            """
+            UPDATE quote_dictionary_aliases
+            SET enabled = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (1 if enabled else 0, alias_id),
+        )
+        self.conn.commit()
+        return int(getattr(cur, "rowcount", 0) or 0)
+
     def resolve_quote_exception(
         self,
         *,
@@ -1704,22 +1834,31 @@ class _BookkeepingStoreBase:
         chat_id: str,
         chat_name: str,
         default_card_type: str = "",
+        default_country_or_currency: str = "",
+        default_form_factor: str = "不限",
+        default_multiplier: str = "",
         parser_template: str = "",
         stale_after_minutes: int = 120,
         note: str = "",
+        template_config: str = "",
     ) -> int:
         cur = self.conn.execute(
             """
             INSERT INTO quote_group_profiles (
               platform, chat_id, chat_name, default_card_type,
-              parser_template, stale_after_minutes, note, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+              default_country_or_currency, default_form_factor, default_multiplier,
+              parser_template, stale_after_minutes, note, template_config, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             ON CONFLICT(platform, chat_id) DO UPDATE SET
               chat_name = excluded.chat_name,
               default_card_type = excluded.default_card_type,
+              default_country_or_currency = excluded.default_country_or_currency,
+              default_form_factor = excluded.default_form_factor,
+              default_multiplier = excluded.default_multiplier,
               parser_template = excluded.parser_template,
               stale_after_minutes = excluded.stale_after_minutes,
               note = excluded.note,
+              template_config = excluded.template_config,
               updated_at = CURRENT_TIMESTAMP
             """,
             (
@@ -1727,9 +1866,13 @@ class _BookkeepingStoreBase:
                 chat_id,
                 chat_name,
                 default_card_type,
+                default_country_or_currency,
+                default_form_factor,
+                default_multiplier,
                 parser_template,
                 stale_after_minutes,
                 note,
+                template_config,
             ),
         )
         self.conn.commit()
@@ -1773,18 +1916,25 @@ class _BookkeepingStoreBase:
             """,
             (limit,),
         ).fetchall()
-        grouped: dict[tuple[str, str, str, str, str], DBRow] = {}
+        grouped: dict[tuple[str, str, str, str, str], Any] = {}
         for row in rows:
+            normalized_amount = normalize_quote_amount_range(str(row["amount_range"] or "不限"))
+            normalized_form_factor = normalize_quote_form_factor(
+                str(row["form_factor"] or "不限")
+            )
+            normalized_multiplier = normalize_quote_multiplier(
+                str(row["multiplier"] or "")
+            )
             key = (
                 str(row["card_type"] or ""),
                 str(row["country_or_currency"] or ""),
-                str(row["amount_range"] or ""),
-                str(row["multiplier"] or ""),
-                str(row["form_factor"] or ""),
+                normalized_amount,
+                normalized_multiplier,
+                normalized_form_factor,
             )
             current = grouped.get(key)
             if current is None:
-                grouped[key] = self._serialize_quote_db_row(row)
+                grouped[key] = row
                 continue
             current_price = float(current["price"])
             next_price = float(row["price"])
@@ -1792,9 +1942,24 @@ class _BookkeepingStoreBase:
                 next_price == current_price
                 and str(row["effective_at"] or "") > str(current["effective_at"] or "")
             ):
-                grouped[key] = self._serialize_quote_db_row(row)
+                grouped[key] = row
+        normalized_rows: list[DBRow] = []
+        for row in grouped.values():
+            item = self._quote_row_with_change(self._serialize_quote_db_row(row))
+            item["amount_range"] = normalize_quote_amount_range(
+                str(item.get("amount_range") or "不限")
+            )
+            item["form_factor"] = normalize_quote_form_factor(
+                str(item.get("form_factor") or "不限")
+            )
+            item["multiplier"] = normalize_quote_multiplier(
+                str(item.get("multiplier") or "")
+            ) or None
+            item["amount_display"] = self._quote_amount_display(item)
+            normalized_rows.append(item)
+        normalized_rows = self._prune_dominated_quote_rows(normalized_rows)
         return sorted(
-            [self._quote_row_with_change(row) for row in grouped.values()],
+            normalized_rows,
             key=lambda row: (
                 str(row["card_type"] or ""),
                 str(row["country_or_currency"] or ""),
@@ -1870,10 +2035,83 @@ class _BookkeepingStoreBase:
     @staticmethod
     def _quote_amount_display(row: DBRow) -> str:
         amount = str(row.get("amount_range") or "")
-        multiplier = str(row.get("multiplier") or "")
+        multiplier = normalize_quote_multiplier(str(row.get("multiplier") or ""))
         if multiplier:
             return f"{amount} / {multiplier}" if amount else multiplier
         return amount
+
+    def _prune_dominated_quote_rows(self, rows: list[DBRow]) -> list[DBRow]:
+        grouped: dict[tuple[str, str, str], list[DBRow]] = {}
+        for row in rows:
+            key = (
+                str(row.get("card_type") or ""),
+                str(row.get("country_or_currency") or ""),
+                normalize_quote_form_factor(str(row.get("form_factor") or "不限")),
+            )
+            grouped.setdefault(key, []).append(row)
+
+        result: list[DBRow] = []
+        for items in grouped.values():
+            for candidate in items:
+                if self._quote_row_is_dominated(candidate, items):
+                    continue
+                result.append(candidate)
+        return result
+
+    def _quote_row_is_dominated(self, candidate: DBRow, peers: list[DBRow]) -> bool:
+        candidate_range = self._quote_amount_bounds(str(candidate.get("amount_range") or ""))
+        if candidate_range is None:
+            return False
+        candidate_price = float(candidate.get("price") or 0)
+        candidate_multiplier = normalize_quote_multiplier(
+            str(candidate.get("multiplier") or "")
+        )
+        for other in peers:
+            if other is candidate:
+                continue
+            other_multiplier = normalize_quote_multiplier(str(other.get("multiplier") or ""))
+            if candidate_multiplier:
+                # Generic rows (no multiplier) are stronger conditions and can dominate
+                # multiplier-specific lower prices; specific multipliers only compare
+                # within the same multiplier bucket.
+                if other_multiplier not in ("", candidate_multiplier):
+                    continue
+            elif other_multiplier:
+                continue
+            other_range = self._quote_amount_bounds(str(other.get("amount_range") or ""))
+            if other_range is None:
+                continue
+            if not self._range_contains(other_range, candidate_range):
+                continue
+            other_price = float(other.get("price") or 0)
+            if other_price < candidate_price:
+                continue
+            if other_price == candidate_price:
+                if str(other.get("effective_at") or "") < str(candidate.get("effective_at") or ""):
+                    continue
+                if int(other.get("id") or 0) < int(candidate.get("id") or 0):
+                    continue
+            return True
+        return False
+
+    @staticmethod
+    def _quote_amount_bounds(amount_range: str) -> tuple[float, float] | None:
+        text = normalize_quote_amount_range(amount_range)
+        if not text or text == "不限":
+            return None
+        numeric_tokens = re.findall(r"\d+(?:\.\d+)?", text)
+        if not numeric_tokens:
+            return None
+        values = [float(token) for token in numeric_tokens]
+        start = min(values)
+        end = max(values)
+        if end < start:
+            start, end = end, start
+        return start, end
+
+    @staticmethod
+    def _range_contains(outer: tuple[float, float], inner: tuple[float, float]) -> bool:
+        return outer[0] <= inner[0] and outer[1] >= inner[1]
 
     def list_quote_matches(
         self,
@@ -1891,9 +2129,6 @@ class _BookkeepingStoreBase:
             "country_or_currency = ?",
         ]
         params: list = [card_type, country_or_currency]
-        if form_factor:
-            where_parts.append("form_factor = ?")
-            params.append(form_factor)
         where_clause = " AND ".join(where_parts)
         rows = self.conn.execute(
             f"""
@@ -1909,6 +2144,11 @@ class _BookkeepingStoreBase:
             self._quote_row_with_change(self._serialize_quote_db_row(row))
             for row in rows
             if self._quote_row_matches_amount(row, amount)
+            and (
+                not form_factor
+                or normalize_quote_form_factor(str(row["form_factor"] or "不限"))
+                == normalize_quote_form_factor(form_factor)
+            )
         ]
         return matched[:limit], len(matched)
 
@@ -1991,29 +2231,10 @@ class _BookkeepingStoreBase:
         form_factor: str,
         limit: int = 50,
     ) -> tuple[list[DBRow], int]:
-        params: list = [
-            card_type,
-            country_or_currency,
-            amount_range,
-            form_factor,
-            multiplier,
-        ]
-        count_row = self.conn.execute(
-            """
-            SELECT COUNT(*) AS cnt
-            FROM quote_price_rows
-            WHERE quote_status = 'active'
-              AND expires_at IS NULL
-              AND card_type = ?
-              AND country_or_currency = ?
-              AND amount_range = ?
-              AND form_factor = ?
-              AND COALESCE(multiplier, '') = COALESCE(?, '')
-            """,
-            params,
-        ).fetchone()
-        total = int(count_row["cnt"])
-        params.append(limit)
+        normalized_form_factor = normalize_quote_form_factor(form_factor)
+        normalized_amount_range = normalize_quote_amount_range(amount_range)
+        normalized_multiplier = normalize_quote_multiplier(str(multiplier or ""))
+        params: list = [card_type, country_or_currency]
         rows = self.conn.execute(
             """
             SELECT *
@@ -2022,15 +2243,24 @@ class _BookkeepingStoreBase:
               AND expires_at IS NULL
               AND card_type = ?
               AND country_or_currency = ?
-              AND amount_range = ?
-              AND form_factor = ?
-              AND COALESCE(multiplier, '') = COALESCE(?, '')
             ORDER BY price DESC, effective_at DESC, id DESC
-            LIMIT ?
             """,
             params,
         ).fetchall()
-        return [self._quote_row_with_change(self._serialize_quote_db_row(row)) for row in rows], total
+        filtered = [
+            row
+            for row in rows
+            if normalize_quote_form_factor(str(row["form_factor"] or "不限")) == normalized_form_factor
+            and normalize_quote_amount_range(str(row["amount_range"] or "不限"))
+            == normalized_amount_range
+            and normalize_quote_multiplier(str(row["multiplier"] or ""))
+            == normalized_multiplier
+        ]
+        total = len(filtered)
+        return [
+            self._quote_row_with_change(self._serialize_quote_db_row(row))
+            for row in filtered[:limit]
+        ], total
 
     def list_quote_exceptions(
         self,
@@ -2554,13 +2784,41 @@ class BookkeepingDB(_BookkeepingStoreBase):
               chat_id TEXT NOT NULL,
               chat_name TEXT NOT NULL,
               default_card_type TEXT NOT NULL DEFAULT '',
+              default_country_or_currency TEXT NOT NULL DEFAULT '',
+              default_form_factor TEXT NOT NULL DEFAULT '不限',
+              default_multiplier TEXT NOT NULL DEFAULT '',
               parser_template TEXT NOT NULL DEFAULT '',
               stale_after_minutes INTEGER NOT NULL DEFAULT 120,
               note TEXT NOT NULL DEFAULT '',
+              template_config TEXT NOT NULL DEFAULT '',
               created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
               updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
               UNIQUE(platform, chat_id)
             )
+            """
+        )
+        self.conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS quote_dictionary_aliases (
+              id BIGSERIAL PRIMARY KEY,
+              category TEXT NOT NULL,
+              alias TEXT NOT NULL,
+              canonical_value TEXT NOT NULL,
+              canonical_input TEXT NOT NULL DEFAULT '',
+              scope_platform TEXT NOT NULL DEFAULT '',
+              scope_chat_id TEXT NOT NULL DEFAULT '',
+              note TEXT NOT NULL DEFAULT '',
+              enabled INTEGER NOT NULL DEFAULT 1,
+              created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              UNIQUE(category, alias, scope_platform, scope_chat_id)
+            )
+            """
+        )
+        self.conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_quote_dictionary_aliases_lookup
+            ON quote_dictionary_aliases(category, scope_platform, scope_chat_id, enabled)
             """
         )
         for column_name, ddl in (
@@ -2569,6 +2827,19 @@ class BookkeepingDB(_BookkeepingStoreBase):
             ("resolved_at", "ALTER TABLE quote_parse_exceptions ADD COLUMN resolved_at TIMESTAMP"),
         ):
             if not self._table_has_column("quote_parse_exceptions", column_name):
+                self.conn.execute(ddl)
+        for column_name, ddl in (
+            ("default_country_or_currency", "ALTER TABLE quote_group_profiles ADD COLUMN default_country_or_currency TEXT NOT NULL DEFAULT ''"),
+            ("default_form_factor", "ALTER TABLE quote_group_profiles ADD COLUMN default_form_factor TEXT NOT NULL DEFAULT '不限'"),
+            ("default_multiplier", "ALTER TABLE quote_group_profiles ADD COLUMN default_multiplier TEXT NOT NULL DEFAULT ''"),
+            ("template_config", "ALTER TABLE quote_group_profiles ADD COLUMN template_config TEXT NOT NULL DEFAULT ''"),
+        ):
+            if not self._table_has_column("quote_group_profiles", column_name):
+                self.conn.execute(ddl)
+        for column_name, ddl in (
+            ("canonical_input", "ALTER TABLE quote_dictionary_aliases ADD COLUMN canonical_input TEXT NOT NULL DEFAULT ''"),
+        ):
+            if not self._table_has_column("quote_dictionary_aliases", column_name):
                 self.conn.execute(ddl)
         if not self._table_has_column("outbound_actions", "claimed_at"):
             self.conn.execute(
@@ -2913,9 +3184,26 @@ class BookkeepingDB(_BookkeepingStoreBase):
                 "chat_id",
                 "chat_name",
                 "default_card_type",
+                "default_country_or_currency",
+                "default_form_factor",
+                "default_multiplier",
                 "parser_template",
                 "stale_after_minutes",
                 "note",
+                "template_config",
+                "created_at",
+                "updated_at",
+            },
+            "quote_dictionary_aliases": {
+                "id",
+                "category",
+                "alias",
+                "canonical_value",
+                "canonical_input",
+                "scope_platform",
+                "scope_chat_id",
+                "note",
+                "enabled",
                 "created_at",
                 "updated_at",
             },

@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import os
 import unittest
 from urllib.parse import urlencode
 from wsgiref.util import setup_testing_defaults
@@ -194,6 +195,92 @@ class WebAppTests(PostgresTestCase):
         self.assertIn("异常行", body)
         self.assertIn("建议处理", body)
         self.assertIn("附加限制", body)
+        self.assertIn("一键建模板", body)
+
+    def test_quote_dictionary_page_and_api_require_admin_password_for_writes(self) -> None:
+        status, body = self._request_text("GET", "/quote-dictionary")
+        self.assertEqual(status, 200)
+        self.assertIn("报价字典", body)
+        self.assertIn('id="quote-dictionary-form"', body)
+
+        status, payload = self._request("GET", "/api/quotes/dictionary")
+        self.assertEqual(status, 200)
+        self.assertTrue(any(row["source"] == "builtin" for row in payload["rows"]))
+
+        old_password = os.environ.get("QUOTE_ADMIN_PASSWORD")
+        os.environ["QUOTE_ADMIN_PASSWORD"] = "dict-secret"
+        try:
+            status, rejected = self._request(
+                "POST",
+                "/api/quotes/dictionary",
+                {
+                    "category": "country_currency",
+                    "alias": "香港",
+                    "canonical_value": "HKD",
+                    "admin_password": "wrong",
+                },
+            )
+            self.assertEqual(status, 400)
+            self.assertIn("admin password", rejected["error"])
+
+            status, created = self._request(
+                "POST",
+                "/api/quotes/dictionary",
+                {
+                    "category": "country_currency",
+                    "alias": "香港",
+                    "canonical_value": "HKD",
+                    "admin_password": "dict-secret",
+                },
+            )
+            self.assertEqual(status, 200)
+            self.assertGreater(created["alias_id"], 0)
+
+            status, payload = self._request("GET", "/api/quotes/dictionary")
+            self.assertEqual(status, 200)
+            custom = next(
+                row
+                for row in payload["rows"]
+                if row.get("source") == "custom" and row.get("alias") == "香港"
+            )
+            self.assertEqual(custom["canonical_value"], "HKD")
+
+            status, disabled = self._request(
+                "POST",
+                "/api/quotes/dictionary/disable",
+                {"id": created["alias_id"], "admin_password": "dict-secret"},
+            )
+            self.assertEqual(status, 200)
+            self.assertEqual(disabled["updated"], 1)
+
+            status, created_form = self._request(
+                "POST",
+                "/api/quotes/dictionary",
+                {
+                    "category": "form_factor",
+                    "alias": "电子",
+                    "canonical_value": "Code",
+                    "admin_password": "dict-secret",
+                },
+            )
+            self.assertEqual(status, 200)
+            self.assertGreater(created_form["alias_id"], 0)
+
+            status, filtered = self._request(
+                "GET",
+                "/api/quotes/dictionary",
+                query_string="category=form_factor&include_builtin=0",
+            )
+            self.assertEqual(status, 200)
+            self.assertEqual(filtered["total"], 1)
+            self.assertEqual(filtered["rows"][0]["alias"], "电子")
+            self.assertEqual(filtered["rows"][0]["canonical_input"], "Code")
+            self.assertEqual(filtered["rows"][0]["canonical_value"], "代码")
+        finally:
+            if old_password is None:
+                os.environ.pop("QUOTE_ADMIN_PASSWORD", None)
+            else:
+                os.environ["QUOTE_ADMIN_PASSWORD"] = old_password
 
     def test_quote_board_endpoint_returns_empty_payload_by_default(self) -> None:
         status, payload = self._request("GET", "/api/quotes/board")

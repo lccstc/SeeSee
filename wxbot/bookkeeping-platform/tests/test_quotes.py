@@ -192,6 +192,502 @@ EUR欧元=6.09
         self.assertEqual(matches[0]["price"], 5.15)
         self.assertEqual(matches[0]["amount_display"], "100-150 / 50X")
 
+    def test_group_fixed_sheet_parses_amount_equals_price_lines(self) -> None:
+        self.db.upsert_quote_group_profile(
+            platform="wechat",
+            chat_id="g-apple-fixed",
+            chat_name="Apple固定模板群",
+            default_card_type="Apple",
+            default_country_or_currency="USD",
+            default_form_factor="横白卡",
+            parser_template="group_fixed_sheet",
+            stale_after_minutes=30,
+        )
+        self._send(
+            chat_id="g-apple-fixed",
+            message_id="apple-fixed-1",
+            text="""【US快速网单】1-10分钟
+横白卡图：50=5.3
+横白卡图：100 150 5.42 连卡问
+横白卡图：200-450 5.42
+横白卡图：300-500 5.45 250不要 连卡问
+#注：40分钟赎回/被扫扣账单，尾刀勿动，请勿盗刷！
+""",
+            received_at="2026-04-08 12:30:00",
+        )
+
+        history, total = self.db.list_quote_history(
+            card_type="Apple",
+            country_or_currency="USD",
+            form_factor="横白卡",
+        )
+        self.assertEqual(total, 4)
+        self.assertTrue(any(row["amount_range"] == "50" and row["price"] == 5.3 for row in history))
+        self.assertTrue(any(row["amount_range"] == "100-150" and row["price"] == 5.42 for row in history))
+        self.assertTrue(any(row["amount_range"] == "200-450" and row["price"] == 5.42 for row in history))
+        self.assertTrue(any(row["amount_range"] == "300-500" and row["price"] == 5.45 for row in history))
+        self.assertTrue(any("40分钟赎回" in row["restriction_text"] for row in history))
+
+    def test_sectioned_group_sheet_parses_itunes_multi_section_sample(self) -> None:
+        self.db.upsert_quote_group_profile(
+            platform="wechat",
+            chat_id="g-itunes-sectioned",
+            chat_name="iTunes固定模板群",
+            default_card_type="Apple",
+            default_country_or_currency="USD",
+            default_form_factor="横白",
+            parser_template="sectioned_group_sheet",
+            stale_after_minutes=30,
+        )
+        self._send(
+            chat_id="g-itunes-sectioned",
+            message_id="itunes-sectioned-1",
+            text="""=======[ iTunes USD 快速网单 ]=======
+白卡图：100/150=5.42
+白卡图：200-450=5.43 （250不要）
+白卡图：500=5.46  压40分钟
+白卡图：50=5.3
+#注：使用时间1-5分钟，堆卡10分钟
+==========[ iTunes 外卡 ]==========
+瑞士50-250=6.55 50倍（连卡问）
+香港200-2000= 0.835 卡图
+英国卡图 50=6.4  100-500=6.7 50倍
+----------------------------------------------
+iTS Regular类型卡片都不要
+""",
+            received_at="2026-04-08 12:32:00",
+        )
+
+        history, total = self.db.list_quote_history(card_type="Apple")
+        scoped = [
+            row for row in history
+            if row["source_group_key"] == "wechat:g-itunes-sectioned"
+        ]
+        self.assertEqual(len(scoped), 8)
+        actual = {
+            (
+                row["country_or_currency"],
+                row["amount_range"],
+                row["multiplier"] or "",
+                row["form_factor"],
+            ): float(row["price"])
+            for row in scoped
+        }
+        self.assertEqual(actual[("USD", "100-150", "", "横白卡")], 5.42)
+        self.assertEqual(actual[("USD", "200-450", "", "横白卡")], 5.43)
+        self.assertEqual(actual[("USD", "500", "", "横白卡")], 5.46)
+        self.assertEqual(actual[("USD", "50", "", "横白卡")], 5.3)
+        self.assertEqual(actual[("CHF", "50-250", "50X", "横白卡")], 6.55)
+        self.assertEqual(actual[("HKD", "200-2000", "", "横白卡")], 0.835)
+        self.assertEqual(actual[("GBP", "50", "", "横白卡")], 6.4)
+        self.assertEqual(actual[("GBP", "100-500", "50X", "横白卡")], 6.7)
+        self.assertTrue(any("250不要" in row["restriction_text"] for row in scoped))
+        self.assertTrue(any("压40分钟" in row["restriction_text"] for row in scoped))
+        exceptions, _ = self.db.list_quote_exceptions()
+        self.assertTrue(
+            any(
+                row["source_group_key"] == "wechat:g-itunes-sectioned"
+                and row["source_line"] == "iTS Regular类型卡片都不要"
+                for row in exceptions
+            )
+        )
+
+    def test_sectioned_group_sheet_parses_country_combinations(self) -> None:
+        self.db.upsert_quote_group_profile(
+            platform="wechat",
+            chat_id="g-country-combo",
+            chat_name="组合国家群",
+            default_card_type="Apple",
+            default_form_factor="横白",
+            parser_template="sectioned_group_sheet",
+            stale_after_minutes=30,
+        )
+        self._send(
+            chat_id="g-country-combo",
+            message_id="country-combo-1",
+            text="""==========[ iTunes 外卡 ]==========
+希腊/葡萄牙：15~49=5.2    50~500=5.6
+""",
+            received_at="2026-04-08 12:33:00",
+        )
+        history, _ = self.db.list_quote_history(card_type="Apple", country_or_currency="EUR")
+        scoped = [
+            row for row in history
+            if row["source_group_key"] == "wechat:g-country-combo"
+        ]
+        self.assertEqual(len(scoped), 2)
+        self.assertTrue(any(row["amount_range"] == "15-49" and row["price"] == 5.2 for row in scoped))
+        self.assertTrue(any(row["amount_range"] == "50-500" and row["price"] == 5.6 for row in scoped))
+
+    def test_sectioned_group_sheet_uses_country_combo_header_for_following_rows(self) -> None:
+        self.db.upsert_quote_group_profile(
+            platform="wechat",
+            chat_id="g-country-combo-header",
+            chat_name="组合国家标题群",
+            default_card_type="Apple",
+            default_form_factor="横白",
+            parser_template="sectioned_group_sheet",
+            stale_after_minutes=30,
+        )
+        self._send(
+            chat_id="g-country-combo-header",
+            message_id="country-combo-header-1",
+            text="""==========[ iTunes 外卡 ]==========
+斯洛伐克-斯洛文尼亚
+15~49=5.2    50~500=5.6
+德国/希腊/葡萄牙
+100=5.7
+""",
+            received_at="2026-04-08 12:34:00",
+        )
+        history, _ = self.db.list_quote_history(card_type="Apple", country_or_currency="EUR")
+        scoped = [
+            row for row in history
+            if row["source_group_key"] == "wechat:g-country-combo-header"
+        ]
+        self.assertEqual(len(scoped), 3)
+        self.assertTrue(any(row["amount_range"] == "15-49" and row["price"] == 5.2 for row in scoped))
+        self.assertTrue(any(row["amount_range"] == "50-500" and row["price"] == 5.6 for row in scoped))
+        self.assertTrue(any(row["amount_range"] == "100" and row["price"] == 5.7 for row in scoped))
+
+    def test_group_dictionary_alias_overrides_global_and_builtin_alias(self) -> None:
+        self.db.upsert_quote_dictionary_alias(
+            category="country_currency",
+            alias="香港",
+            canonical_value="ZZZ",
+        )
+        self.db.upsert_quote_dictionary_alias(
+            category="country_currency",
+            alias="香港",
+            canonical_value="YYY",
+            scope_platform="wechat",
+            scope_chat_id="g-dict-override",
+        )
+        self.db.upsert_quote_group_profile(
+            platform="wechat",
+            chat_id="g-dict-override",
+            chat_name="字典覆盖群",
+            default_card_type="Apple",
+            default_form_factor="横白",
+            parser_template="sectioned_group_sheet",
+            stale_after_minutes=30,
+        )
+        self._send(
+            chat_id="g-dict-override",
+            message_id="dict-override-1",
+            text="""==========[ iTunes 外卡 ]==========
+香港100=1.23
+""",
+            received_at="2026-04-08 12:34:00",
+        )
+        rows, total = self.db.list_quote_history(
+            card_type="Apple",
+            source_group_key="wechat:g-dict-override",
+        )
+        self.assertEqual(total, 1)
+        self.assertEqual(rows[0]["country_or_currency"], "YYY")
+        self.assertEqual(rows[0]["amount_range"], "100")
+        self.assertEqual(rows[0]["price"], 1.23)
+
+    def test_custom_template_name_uses_fixed_sheet_when_group_defaults_exist(self) -> None:
+        self.db.upsert_quote_group_profile(
+            platform="wechat",
+            chat_id="g-apple-custom-name",
+            chat_name="Apple自定义模板名群",
+            default_card_type="Apple",
+            default_country_or_currency="USD",
+            default_form_factor="横白卡",
+            parser_template="test1",
+            stale_after_minutes=30,
+        )
+        self._send(
+            chat_id="g-apple-custom-name",
+            message_id="apple-custom-1",
+            text="""【US快速网单】1-10分钟
+横白卡图：50=5.3
+横白卡图：100 150 5.42 连卡问
+""",
+            received_at="2026-04-08 12:35:00",
+        )
+        board = self.db.list_quote_board()
+        apple_rows = [
+            row
+            for row in board
+            if row["source_group_key"] == "wechat:g-apple-custom-name"
+        ]
+        self.assertGreaterEqual(len(apple_rows), 2)
+        self.assertTrue(any(row["amount_range"] == "50" and float(row["price"]) == 5.3 for row in apple_rows))
+        self.assertTrue(any(row["amount_range"] == "100-150" and float(row["price"]) == 5.42 for row in apple_rows))
+
+    def test_board_hides_dominated_lower_price_ranges(self) -> None:
+        self._send(
+            chat_id="g-prune-a",
+            message_id="prune-a-1",
+            text="""【Apple】
+USD 100-500=5.50
+""",
+            received_at="2026-04-08 12:40:00",
+        )
+        self._send(
+            chat_id="g-prune-b",
+            message_id="prune-b-1",
+            text="""【Apple】
+USD 100-150=5.20
+USD 200-300=5.30
+USD 350-450=5.40
+""",
+            received_at="2026-04-08 12:41:00",
+        )
+        board = self.db.list_quote_board()
+        apple_rows = [
+            row
+            for row in board
+            if row["card_type"] == "Apple"
+            and row["country_or_currency"] == "USD"
+            and row["source_group_key"] in {"wechat:g-prune-a", "wechat:g-prune-b"}
+        ]
+        self.assertEqual(len(apple_rows), 1)
+        self.assertEqual(apple_rows[0]["source_group_key"], "wechat:g-prune-a")
+        self.assertEqual(apple_rows[0]["amount_range"], "100-500")
+        self.assertEqual(float(apple_rows[0]["price"]), 5.5)
+
+    def test_board_normalizes_multi_token_amount_ranges_for_pruning(self) -> None:
+        self._send(
+            chat_id="g-prune-irregular-a",
+            message_id="prune-irregular-a-1",
+            text="""【Apple】
+USD 150-250-350-450=5.43
+""",
+            received_at="2026-04-08 12:42:00",
+        )
+        self._send(
+            chat_id="g-prune-irregular-b",
+            message_id="prune-irregular-b-1",
+            text="""【Apple】
+USD 200-450=5.42
+""",
+            received_at="2026-04-08 12:43:00",
+        )
+        board = self.db.list_quote_board()
+        apple_rows = [
+            row
+            for row in board
+            if row["card_type"] == "Apple"
+            and row["country_or_currency"] == "USD"
+            and row["source_group_key"] in {"wechat:g-prune-irregular-a", "wechat:g-prune-irregular-b"}
+        ]
+        self.assertEqual(len(apple_rows), 1)
+        self.assertEqual(apple_rows[0]["source_group_key"], "wechat:g-prune-irregular-a")
+        self.assertEqual(apple_rows[0]["amount_range"], "150-450")
+        self.assertEqual(float(apple_rows[0]["price"]), 5.43)
+
+    def test_board_hides_lower_multiplier_row_when_generic_condition_exists(self) -> None:
+        generic_document_id = self.db.record_quote_document(
+            platform="wechat",
+            source_group_key="wechat:g-prune-generic",
+            chat_id="g-prune-generic",
+            chat_name="通用条件群",
+            message_id="prune-generic-1",
+            source_name="通用来源",
+            sender_id="sender-generic",
+            raw_text="generic",
+            message_time="2026-04-08 12:44:00",
+            parser_template="quote-v1",
+            parser_version="quote-v1",
+            confidence=0.9,
+            parse_status="parsed",
+        )
+        self.db.upsert_quote_price_row_with_history(
+            quote_document_id=generic_document_id,
+            message_id="prune-generic-1",
+            platform="wechat",
+            source_group_key="wechat:g-prune-generic",
+            chat_id="g-prune-generic",
+            chat_name="通用条件群",
+            source_name="通用来源",
+            sender_id="sender-generic",
+            card_type="Apple",
+            country_or_currency="USD",
+            amount_range="50",
+            multiplier=None,
+            form_factor="横白卡",
+            price=5.30,
+            quote_status="active",
+            restriction_text="",
+            source_line="USD 50=5.30",
+            raw_text="generic",
+            message_time="2026-04-08 12:44:00",
+            effective_at="2026-04-08 12:44:00",
+            expires_at=None,
+            parser_template="quote-v1",
+            parser_version="quote-v1",
+            confidence=0.9,
+        )
+        specific_document_id = self.db.record_quote_document(
+            platform="wechat",
+            source_group_key="wechat:g-prune-specific",
+            chat_id="g-prune-specific",
+            chat_name="倍数条件群",
+            message_id="prune-specific-1",
+            source_name="倍数来源",
+            sender_id="sender-specific",
+            raw_text="specific",
+            message_time="2026-04-08 12:45:00",
+            parser_template="quote-v1",
+            parser_version="quote-v1",
+            confidence=0.9,
+            parse_status="parsed",
+        )
+        self.db.upsert_quote_price_row_with_history(
+            quote_document_id=specific_document_id,
+            message_id="prune-specific-1",
+            platform="wechat",
+            source_group_key="wechat:g-prune-specific",
+            chat_id="g-prune-specific",
+            chat_name="倍数条件群",
+            source_name="倍数来源",
+            sender_id="sender-specific",
+            card_type="Apple",
+            country_or_currency="USD",
+            amount_range="50",
+            multiplier="100X",
+            form_factor="横白卡",
+            price=5.20,
+            quote_status="active",
+            restriction_text="",
+            source_line="USD 50=5.20（100倍数）",
+            raw_text="specific",
+            message_time="2026-04-08 12:45:00",
+            effective_at="2026-04-08 12:45:00",
+            expires_at=None,
+            parser_template="quote-v1",
+            parser_version="quote-v1",
+            confidence=0.9,
+        )
+        board = self.db.list_quote_board()
+        apple_rows = [
+            row
+            for row in board
+            if row["card_type"] == "Apple"
+            and row["country_or_currency"] == "USD"
+            and row["source_group_key"] in {"wechat:g-prune-generic", "wechat:g-prune-specific"}
+        ]
+        self.assertEqual(len(apple_rows), 1)
+        self.assertEqual(apple_rows[0]["source_group_key"], "wechat:g-prune-generic")
+        self.assertEqual(apple_rows[0]["amount_display"], "50")
+        self.assertEqual(float(apple_rows[0]["price"]), 5.3)
+
+    def test_board_merges_card_image_and_horizontal_white_form_factor(self) -> None:
+        self._send(
+            chat_id="g-form-a",
+            message_id="form-a-1",
+            text="""【Apple】
+USD 100-150 卡图=5.40
+""",
+            received_at="2026-04-08 12:45:00",
+        )
+        self._send(
+            chat_id="g-form-b",
+            message_id="form-b-1",
+            text="""【Apple】
+USD 100-150 横白卡=5.42
+""",
+            received_at="2026-04-08 12:46:00",
+        )
+        board = self.db.list_quote_board()
+        apple_rows = [
+            row
+            for row in board
+            if row["card_type"] == "Apple"
+            and row["country_or_currency"] == "USD"
+            and row["source_group_key"] in {"wechat:g-form-a", "wechat:g-form-b"}
+        ]
+        self.assertEqual(len(apple_rows), 1)
+        self.assertEqual(apple_rows[0]["form_factor"], "横白卡")
+        self.assertEqual(float(apple_rows[0]["price"]), 5.42)
+
+    def test_rankings_match_normalized_amount_range_for_legacy_rows(self) -> None:
+        quote_document_id = self.db.record_quote_document(
+            platform="wechat",
+            source_group_key="wechat:g-legacy-range",
+            chat_id="g-legacy-range",
+            chat_name="旧区间群",
+            message_id="legacy-range-1",
+            source_name="旧区间来源",
+            sender_id="legacy-sender",
+            raw_text="legacy",
+            message_time="2026-04-08 12:46:00",
+            parser_template="quote-v1",
+            parser_version="quote-v1",
+            confidence=0.9,
+            parse_status="parsed",
+        )
+        self.db.upsert_quote_price_row_with_history(
+            quote_document_id=quote_document_id,
+            message_id="legacy-range-1",
+            platform="wechat",
+            source_group_key="wechat:g-legacy-range",
+            chat_id="g-legacy-range",
+            chat_name="旧区间群",
+            source_name="旧区间来源",
+            sender_id="legacy-sender",
+            card_type="Apple",
+            country_or_currency="USD",
+            amount_range="150-250-350-450",
+            multiplier=None,
+            form_factor="横白卡",
+            price=5.43,
+            quote_status="active",
+            restriction_text="",
+            source_line="USD 150-250-350-450=5.43",
+            raw_text="legacy",
+            message_time="2026-04-08 12:46:00",
+            effective_at="2026-04-08 12:46:00",
+            expires_at=None,
+            parser_template="quote-v1",
+            parser_version="quote-v1",
+            confidence=0.9,
+        )
+        rankings, total = self.db.list_quote_rankings(
+            card_type="Apple",
+            country_or_currency="USD",
+            amount_range="150-450",
+            multiplier=None,
+            form_factor="横白卡",
+        )
+        self.assertEqual(total, 1)
+        self.assertEqual(len(rankings), 1)
+        self.assertEqual(rankings[0]["source_group_key"], "wechat:g-legacy-range")
+
+    def test_fixed_sheet_parses_multiplier_line_price_from_tail_token(self) -> None:
+        self.db.upsert_quote_group_profile(
+            platform="wechat",
+            chat_id="g-mult-tail",
+            chat_name="倍数尾价群",
+            default_card_type="Apple",
+            default_country_or_currency="USD",
+            default_form_factor="横白卡",
+            parser_template="group_fixed_sheet",
+            stale_after_minutes=30,
+        )
+        self._send(
+            chat_id="g-mult-tail",
+            message_id="mult-tail-1",
+            text="""【US快速网单】1-10分钟
+100 - 500     100倍数    5.47
+""",
+            received_at="2026-04-08 12:42:00",
+        )
+        rows, total = self.db.list_quote_history(
+            card_type="Apple",
+            country_or_currency="USD",
+            amount_range="100-500",
+            form_factor="横白卡",
+            multiplier="100X",
+        )
+        self.assertEqual(total, 1)
+        self.assertEqual(rows[0]["price"], 5.47)
+
     def test_blocked_exception_can_attach_to_matching_card_restrictions(self) -> None:
         self._send(
             chat_id="g-restrictions",

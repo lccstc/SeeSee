@@ -334,10 +334,32 @@ CREATE TABLE IF NOT EXISTS quote_group_profiles (
   chat_id TEXT NOT NULL,
   chat_name TEXT NOT NULL,
   default_card_type TEXT NOT NULL DEFAULT '',
+  default_country_or_currency TEXT NOT NULL DEFAULT '',
+  default_form_factor TEXT NOT NULL DEFAULT '不限',
+  default_multiplier TEXT NOT NULL DEFAULT '',
   parser_template TEXT NOT NULL DEFAULT '',
   stale_after_minutes INTEGER NOT NULL DEFAULT 120,
   note TEXT NOT NULL DEFAULT '',
+  template_config TEXT NOT NULL DEFAULT '',
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   UNIQUE(platform, chat_id)
 );
+
+CREATE TABLE IF NOT EXISTS quote_dictionary_aliases (
+  id BIGSERIAL PRIMARY KEY,
+  category TEXT NOT NULL,
+  alias TEXT NOT NULL,
+  canonical_value TEXT NOT NULL,
+  canonical_input TEXT NOT NULL DEFAULT '',
+  scope_platform TEXT NOT NULL DEFAULT '',
+  scope_chat_id TEXT NOT NULL DEFAULT '',
+  note TEXT NOT NULL DEFAULT '',
+  enabled INTEGER NOT NULL DEFAULT 1,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(category, alias, scope_platform, scope_chat_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_quote_dictionary_aliases_lookup
+  ON quote_dictionary_aliases(category, scope_platform, scope_chat_id, enabled);

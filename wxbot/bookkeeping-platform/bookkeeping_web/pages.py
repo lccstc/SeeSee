@@ -847,7 +847,7 @@ def render_quotes_page() -> str:
   <div class="table-wrap">
     <table id="quote-board-table" class="quote-table">
       <thead>
-        <tr><th>卡种</th><th>国家 / 币种</th><th>面额 / 条件</th><th>形态</th><th>最高价</th><th>变化</th><th>客人群</th><th>更新时间</th><th>已存在</th><th>状态</th><th>限制</th><th>操作</th></tr>
+        <tr><th>卡种</th><th>国家 / 币种</th><th>面额 / 条件</th><th>形态</th><th>最高价</th><th>变化</th><th>客人群</th><th>发送者ID</th><th>更新时间</th><th>已存在</th><th>状态</th><th>限制</th><th>操作</th></tr>
       </thead>
       <tbody></tbody>
     </table>
@@ -861,18 +861,31 @@ def render_quotes_page() -> str:
     </div>
   </div>
   <form id="quote-profile-form" class="quote-filter-grid">
+    <input name="platform" placeholder="平台，如 whatsapp" />
     <input name="chat_id" placeholder="群ID / chat_id" required />
     <input name="chat_name" placeholder="群名" />
     <input name="default_card_type" placeholder="默认卡种，如 Apple" />
+    <input name="default_country_or_currency" placeholder="默认国家/币种，如 USD" />
+    <input name="default_form_factor" placeholder="默认形态，如 横白/竖卡/代码" />
+    <input name="default_multiplier" placeholder="默认倍数，可空，如 50X" />
     <input name="parser_template" placeholder="模板，如 apple_modifier_sheet" list="quote-template-options" />
     <datalist id="quote-template-options">
+      <option value="sectioned_group_sheet"></option>
+      <option value="group_fixed_sheet"></option>
       <option value="apple_modifier_sheet"></option>
       <option value="section_sheet"></option>
       <option value="simple_sheet"></option>
     </datalist>
     <input name="stale_after_minutes" placeholder="超时分钟，如 30" />
+    <textarea name="template_config" placeholder="高级模板配置，可先留空"></textarea>
     <button type="submit">保存模板</button>
+    <button type="button" id="quote-profile-clear">清空表单</button>
   </form>
+  <div class="muted" id="quote-profile-prefill-status">可从异常区一键填充群模板。</div>
+  <div class="quote-template-help">
+    <strong>group_fixed_sheet</strong>
+    <div class="muted">群专用固定模板：建议配好默认卡种 + 默认币种；按 `100=5.55` / `300/400/500=5.55` 解析，`#...` 作为限制说明，`#竖卡-0.1` 可派生形态价。</div>
+  </div>
   <div class="quote-template-help">
     <strong>apple_modifier_sheet</strong>
     <div class="muted">Apple 群模板：默认卡种 Apple；识别 US横白卡 基准价；识别 50X 倍数；#竖卡-0.1 / #电子-0.15 / #代码-0.3 按同一上下文派生价格；默认 30 分钟超时。</div>
@@ -880,9 +893,9 @@ def render_quotes_page() -> str:
   <div class="table-wrap">
     <table id="quote-profile-table" class="quote-table">
       <thead>
-        <tr><th>平台</th><th>群ID</th><th>群名</th><th>默认卡种</th><th>模板</th><th>超时</th><th>备注</th></tr>
+        <tr><th>平台</th><th>群ID</th><th>群名</th><th>默认卡种</th><th>默认币种</th><th>默认形态</th><th>默认倍数</th><th>模板</th><th>超时</th><th>备注</th></tr>
       </thead>
-      <tbody><tr><td colspan="7" class="muted">暂无模板配置</td></tr></tbody>
+      <tbody><tr><td colspan="10" class="muted">暂无模板配置</td></tr></tbody>
     </table>
   </div>
 </section>
@@ -923,7 +936,7 @@ def render_quotes_page() -> str:
   <div class="table-wrap">
     <table id="quote-exception-table" class="quote-table">
       <thead>
-        <tr><th>时间</th><th>来源客人群</th><th>异常行</th><th>原因</th><th>建议处理</th><th>模板</th><th>置信度</th><th>状态</th><th>操作</th></tr>
+        <tr><th>时间</th><th>来源客人群</th><th>发送者ID</th><th>异常行</th><th>原因</th><th>建议处理</th><th>模板</th><th>置信度</th><th>状态</th><th>操作</th></tr>
       </thead>
       <tbody></tbody>
     </table>
@@ -962,6 +975,20 @@ function compactNumber(value) {
 function textValue(value, fallback = '—') {
   const text = String(value ?? '').trim();
   return text || fallback;
+}
+
+function formatQuoteTime(value) {
+  const text = String(value || '').trim();
+  if (!text) return '—';
+  const date = parseQuoteDate(text);
+  if (!date) return text;
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, '0');
+  const hh = String(date.getHours()).padStart(2, '0');
+  const mi = String(date.getMinutes()).padStart(2, '0');
+  const ss = String(date.getSeconds()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}`;
 }
 
 function quoteStatusClass(status) {
@@ -1017,15 +1044,31 @@ function quoteChangeText(row) {
 }
 
 function quoteFormFactorText(value) {
-  const normalized = String(value || '').toLowerCase();
+  const normalized = normalizeFormFactorText(value);
   if (!normalized) return '—';
-  if (normalized === 'card') return '卡图';
-  if (normalized === 'code') return '代码';
-  if (normalized === 'paper') return '纸质';
-  if (normalized === 'electron' || normalized === 'electronic') return '电子';
-  if (normalized === 'horizontal') return '横板';
-  if (normalized === 'vertical') return '竖卡';
-  return textValue(value);
+  return normalized;
+}
+
+function normalizeFormFactorText(value) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  const lowered = text.toLowerCase();
+  if (
+    text.includes('横白')
+    || text.includes('横卡')
+    || text.includes('横板')
+    || text.includes('卡图')
+    || text.includes('图片')
+    || lowered === 'horizontal'
+    || lowered === 'photo'
+    || lowered === 'image'
+    || lowered === 'card'
+  ) return '横白';
+  if (text.includes('竖卡') || text.includes('竖板') || lowered === 'vertical') return '竖卡';
+  if (text.includes('代码') || lowered === 'code') return '代码';
+  if (text.includes('电子') || lowered === 'electron' || lowered === 'electronic') return '电子';
+  if (text.includes('纸质') || lowered === 'paper') return '纸质';
+  return text;
 }
 
 function quoteCountryText(row) {
@@ -1064,6 +1107,10 @@ function quoteExceptionActions(row) {
   if (String(row.reason || '') === 'blocked_or_question_line') {
     actions.push(`<button type="button" data-quote-exception-attach="${row.id}">附加限制</button>`);
   }
+  actions.push(`<button type="button" data-quote-template-prefill="${row.id}">一键建模板</button>`);
+  if (String(row.reason || '').includes('unknown')) {
+    actions.push(`<button type="button" data-quote-dictionary-prefill="${row.id}">添加到字典</button>`);
+  }
   actions.push(`<button type="button" data-quote-exception-ignore="${row.id}">忽略</button>`);
   return actions.join('');
 }
@@ -1071,7 +1118,10 @@ function quoteExceptionActions(row) {
 function parseQuoteDate(value) {
   const text = String(value || '').trim();
   if (!text) return null;
-  const normalized = text.includes('T') ? text : text.replace(' ', 'T');
+  let normalized = text.includes('T') ? text : text.replace(' ', 'T');
+  if (!/(Z|[+-]\\d{2}:?\\d{2})$/.test(normalized)) {
+    normalized = `${normalized}Z`;
+  }
   const date = new Date(normalized);
   return Number.isNaN(date.getTime()) ? null : date;
 }
@@ -1127,6 +1177,7 @@ function quoteSearchText(row) {
     row.remark,
     row.source_group_name,
     row.source_group_key,
+    row.sender_id,
   ].map((item) => String(item || '').toLowerCase()).join(' ');
 }
 
@@ -1153,7 +1204,9 @@ function quoteRowMatches(row, filters) {
     }
   }
   if (filters.form_factor) {
-    if (String(row.form_factor || '').toLowerCase() !== String(filters.form_factor).toLowerCase()) {
+    const rowForm = normalizeFormFactorText(row.form_factor || '');
+    const filterForm = normalizeFormFactorText(filters.form_factor || '');
+    if (rowForm !== filterForm) {
       return false;
     }
   }
@@ -1168,7 +1221,7 @@ function latestQuoteTime(rows) {
       latest = value;
     }
   }
-  return latest;
+  return formatQuoteTime(latest);
 }
 
 let allQuoteRows = [];
@@ -1201,15 +1254,47 @@ function renderQuoteBoard(rows) {
         <td>${compactNumber(row.price ?? row.rate ?? row.quote_price ?? '')}</td>
         <td><span class="quote-change-chip ${quoteChangeClass(row.change_status)}">${quoteChangeText(row)}</span></td>
         <td>${quoteSourceText(row)}<span class="quote-source-detail">${quoteSourceDetailText(row)}</span></td>
-        <td>${textValue(row.updated_at || row.effective_at || row.created_at || row.message_time || row.received_at)}</td>
+        <td>${textValue(row.sender_id)}</td>
+        <td>${formatQuoteTime(row.updated_at || row.effective_at || row.created_at || row.message_time || row.received_at)}</td>
         <td class="${quoteAgeClass(row)}">${quoteAgeText(row.effective_at || row.message_time || row.created_at || row.updated_at || row.received_at)}</td>
         <td><span class="quote-status-chip ${quoteDisplayStatusClass(row)}">${quoteDisplayStatusText(row)}</span></td>
         <td class="quote-note">${quoteRestrictionText(row)}</td>
-        <td><button type="button" data-quote-ranking-id="${row.id}">排名</button></td>
+        <td><button type="button" data-quote-ranking-id="${row.id}">排名</button> <button type="button" class="quote-delete-btn" data-quote-delete-id="${row.id}" style="color:#c0392b;border-color:#c0392b">删除</button></td>
       </tr>
     `).join('')
-    : '<tr><td colspan="12" class="muted">暂无可用报价</td></tr>';
+    : '<tr><td colspan="13" class="muted">暂无可用报价</td></tr>';
   bindQuoteRankingButtons();
+  bindQuoteDeleteButtons();
+}
+
+function bindQuoteDeleteButtons() {
+  document.querySelectorAll('[data-quote-delete-id]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const id = button.dataset.quoteDeleteId;
+      if (!confirm('确定删除这条报价？')) return;
+      button.disabled = true;
+      button.textContent = '删除中...';
+      try {
+        const resp = await fetch('/api/quotes/delete', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({id: Number(id)})
+        });
+        const data = await resp.json();
+        if (data.deleted) {
+          button.closest('tr').remove();
+        } else {
+          alert('删除失败: ' + (data.error || '未知错误'));
+          button.disabled = false;
+          button.textContent = '删除';
+        }
+      } catch (e) {
+        alert('删除失败: ' + e.message);
+        button.disabled = false;
+        button.textContent = '删除';
+      }
+    });
+  });
 }
 
 function bindQuoteRankingButtons() {
@@ -1248,7 +1333,7 @@ async function loadQuoteRanking(row) {
         <td>${quoteSourceText(item)}<span class="quote-source-detail">${quoteSourceDetailText(item)}</span></td>
         <td>${compactNumber(item.price)}</td>
         <td><span class="quote-change-chip ${quoteChangeClass(item.change_status)}">${quoteChangeText(item)}</span></td>
-        <td>${textValue(item.effective_at || item.message_time || item.created_at)}</td>
+        <td>${formatQuoteTime(item.effective_at || item.message_time || item.created_at)}</td>
         <td class="${quoteAgeClass(item)}">${quoteAgeText(item.effective_at || item.message_time || item.created_at)}</td>
         <td class="quote-note">${quoteRestrictionText(item)}</td>
       </tr>
@@ -1270,12 +1355,15 @@ function renderQuoteProfiles(rows) {
         <td>${textValue(row.chat_id)}</td>
         <td>${textValue(row.chat_name)}</td>
         <td>${textValue(row.default_card_type)}</td>
+        <td>${textValue(row.default_country_or_currency)}</td>
+        <td>${textValue(row.default_form_factor)}</td>
+        <td>${textValue(row.default_multiplier)}</td>
         <td>${textValue(row.parser_template)}</td>
         <td>${textValue(row.stale_after_minutes)}分钟</td>
         <td class="quote-note">${textValue(row.note)}</td>
       </tr>
     `).join('')
-    : '<tr><td colspan="7" class="muted">暂无模板配置</td></tr>';
+    : '<tr><td colspan="10" class="muted">暂无模板配置</td></tr>';
 }
 
 function renderQuoteInquiries(rows) {
@@ -1289,7 +1377,7 @@ function renderQuoteInquiries(rows) {
         <td>${textValue(row.country_or_currency)}</td>
         <td>${textValue(row.amount_range)}${row.multiplier ? ` / ${textValue(row.multiplier)}` : ''}</td>
         <td>${quoteFormFactorText(row.form_factor)}</td>
-        <td>${textValue(row.expires_at)}</td>
+        <td>${formatQuoteTime(row.expires_at)}</td>
         <td class="quote-note">${textValue(row.prompt_text)}</td>
       </tr>
     `).join('')
@@ -1305,8 +1393,9 @@ function renderQuoteExceptions(rows) {
   document.querySelector('#quote-exception-table tbody').innerHTML = filteredRows.length
     ? filteredRows.map((row) => `
       <tr>
-        <td>${textValue(row.message_time || row.created_at || row.updated_at || row.received_at)}</td>
-        <td>${textValue(row.source_group_name || row.chat_name || row.source_group_key || row.group_key)}</td>
+        <td>${formatQuoteTime(row.message_time || row.created_at || row.updated_at || row.received_at)}</td>
+        <td>${textValue(row.source_group_name || row.chat_name || row.source_group_key || row.group_key)}<span class="quote-source-detail">${quoteSourceDetailText(row)}</span></td>
+        <td>${textValue(row.sender_id)}</td>
         <td class="quote-note">${textValue(row.source_line || row.line || row.text)}</td>
         <td>${textValue(row.reason_label || row.reason || row.error_reason || row.status)}</td>
         <td class="quote-note">${textValue(row.suggested_action || row.resolution_note)}</td>
@@ -1316,7 +1405,7 @@ function renderQuoteExceptions(rows) {
         <td>${quoteExceptionActions(row)}</td>
       </tr>
     `).join('')
-    : '<tr><td colspan="9" class="muted">暂无异常</td></tr>';
+    : '<tr><td colspan="10" class="muted">暂无异常</td></tr>';
   bindQuoteExceptionButtons();
 }
 
@@ -1352,6 +1441,62 @@ function bindQuoteExceptionButtons() {
       await loadQuotesData();
     });
   });
+  document.querySelectorAll('[data-quote-template-prefill]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const row = allQuoteExceptions.find((item) => String(item.id) === String(button.dataset.quoteTemplatePrefill));
+      if (row) fillQuoteProfileFromException(row);
+    });
+  });
+  document.querySelectorAll('[data-quote-dictionary-prefill]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const row = allQuoteExceptions.find((item) => String(item.id) === String(button.dataset.quoteDictionaryPrefill));
+      if (row) openDictionaryPrefill(row);
+    });
+  });
+}
+
+function sourcePlatform(row) {
+  if (row.platform) return row.platform;
+  const source = String(row.source_group_key || row.group_key || '');
+  return source.includes(':') ? source.split(':', 1)[0] : 'whatsapp';
+}
+
+function fillQuoteProfileFromException(row) {
+  const form = document.querySelector('#quote-profile-form');
+  const existing = allQuoteProfiles.find((item) =>
+    String(item.platform || 'whatsapp') === sourcePlatform(row)
+    && String(item.chat_id || '') === String(row.chat_id || '')
+  );
+  form.platform.value = existing?.platform || sourcePlatform(row);
+  form.chat_id.value = existing?.chat_id || row.chat_id || '';
+  form.chat_name.value = existing?.chat_name || row.chat_name || row.source_group_name || row.chat_id || '';
+  form.default_card_type.value = existing?.default_card_type || 'Apple';
+  form.default_country_or_currency.value = existing?.default_country_or_currency || 'USD';
+  form.default_form_factor.value = existing?.default_form_factor || '横白';
+  form.default_multiplier.value = existing?.default_multiplier || '';
+  form.parser_template.value = existing?.parser_template || 'sectioned_group_sheet';
+  form.stale_after_minutes.value = existing?.stale_after_minutes || '30';
+  form.template_config.value = existing?.template_config || '';
+  document.querySelector('#quote-profile-prefill-status').textContent =
+    `已从异常填充：${row.chat_name || row.chat_id || '未知群'} / ${row.chat_id || ''} / ${row.source_line || ''}`;
+  document.querySelector('#quote-profile-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function guessDictionaryAlias(row) {
+  const source = String(row.source_line || '').trim();
+  const beforePrice = source.split(/[0-9=：:]/, 1)[0].trim();
+  return beforePrice.replace(/[【】\\[\\]#（）()，,、]/g, '').trim() || source;
+}
+
+function openDictionaryPrefill(row) {
+  const params = new URLSearchParams({
+    category: String(row.reason || '').includes('card') ? 'card_type' : 'country_currency',
+    alias: guessDictionaryAlias(row),
+    scope_platform: sourcePlatform(row),
+    scope_chat_id: row.chat_id || '',
+    note: `${row.chat_name || ''} ${row.source_line || ''}`.trim(),
+  });
+  window.location.href = `/quote-dictionary?${params.toString()}`;
 }
 
 async function loadQuotesData() {
@@ -1414,8 +1559,12 @@ document.querySelector('#quote-profile-form').addEventListener('submit', async (
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
-  event.currentTarget.reset();
   await loadQuotesData();
+});
+
+document.querySelector('#quote-profile-clear').addEventListener('click', () => {
+  document.querySelector('#quote-profile-form').reset();
+  document.querySelector('#quote-profile-prefill-status').textContent = '可从异常区一键填充群模板。';
 });
 
 document.querySelector('#quote-inquiry-form').addEventListener('submit', async (event) => {
@@ -1454,12 +1603,204 @@ for (const [key, id] of Object.entries(quoteFieldIds)) {
   }
 }
 loadQuotesData();
-setInterval(() => renderQuoteBoard(allQuoteRows), 60000);
+setInterval(() => {
+  loadQuotesData().catch(() => {});
+}, 60000);
 """
     return _render_layout(
         title="报价墙",
         subtitle="先看当前同卡最高价，再下钻到来源群、条件和异常。",
         active_path="/quotes",
+        body=body,
+        script=script,
+    )
+
+
+def render_quote_dictionary_page() -> str:
+    body = """
+<section class="panel stack">
+  <div class="toolbar">
+    <div>
+      <h2>报价字典</h2>
+      <div class="muted">维护国家/币种、卡种和形态别名；群级别名优先于全局别名。</div>
+    </div>
+    <label>
+      <span class="muted">类别筛选</span>
+      <select id="dict-filter-category">
+        <option value="">全部</option>
+        <option value="country_currency">国家/币种</option>
+        <option value="card_type">卡种</option>
+        <option value="form_factor">形态</option>
+      </select>
+    </label>
+  </div>
+  <div class="muted">
+    使用说明：1) 表格会显示“内置+自定义”映射。2) 点“编辑/复制到表单”可回填。3) 只有“自定义”支持停用；内置项请用同名自定义覆盖。
+  </div>
+  <form id="quote-dictionary-form" class="quote-filter-grid">
+    <select name="category" id="dict-category" required>
+      <option value="country_currency">国家/币种</option>
+      <option value="card_type">卡种</option>
+      <option value="form_factor">形态</option>
+    </select>
+    <input name="alias" id="dict-alias" placeholder="别名，如 香港 / iTunes / 白卡图" required />
+    <input name="canonical_value" id="dict-canonical" placeholder="标准值，如 HKD / Apple / 横白" required />
+    <input name="scope_platform" id="dict-platform" placeholder="平台，可空，如 whatsapp" />
+    <input name="scope_chat_id" id="dict-chat-id" placeholder="群ID，可空；填了表示仅该群生效" />
+    <input name="note" id="dict-note" placeholder="备注，可空" />
+    <button type="submit">保存别名</button>
+    <button type="button" id="dict-clear">清空</button>
+  </form>
+  <div class="muted" id="dict-prefill-status">修改会要求输入管理口令。</div>
+  <div class="table-wrap">
+    <table id="quote-dictionary-table" class="quote-table">
+      <thead>
+        <tr><th>类别</th><th>别名</th><th>你输入</th><th>内部标准值</th><th>范围</th><th>来源</th><th>状态</th><th>备注</th><th>更新时间</th><th>操作</th></tr>
+      </thead>
+      <tbody><tr><td colspan="10" class="muted">加载中</td></tr></tbody>
+    </table>
+  </div>
+</section>
+"""
+    script = r"""
+const categoryText = {
+  country_currency: '国家/币种',
+  card_type: '卡种',
+  form_factor: '形态',
+};
+let dictionaryRows = [];
+
+function textValue(value) {
+  const text = String(value ?? '').trim();
+  return text || '—';
+}
+
+function formatTime(value) {
+  const text = String(value || '').trim();
+  if (!text) return '—';
+  const normalized = text.includes('T') ? text : text.replace(' ', 'T');
+  const date = new Date(normalized);
+  if (Number.isNaN(date.getTime())) return text;
+  return date.toLocaleString('zh-CN', { hour12: false });
+}
+
+function renderDictionary(rows) {
+  dictionaryRows = rows || [];
+  const selectedCategory = document.querySelector('#dict-filter-category')?.value || '';
+  const visibleRows = selectedCategory
+    ? dictionaryRows.filter((row) => String(row.category || '') === selectedCategory)
+    : dictionaryRows;
+  const customCount = dictionaryRows.filter((row) => row.source === 'custom').length;
+  const builtinCount = dictionaryRows.filter((row) => row.source === 'builtin').length;
+  document.querySelector('#dict-prefill-status').textContent = `已加载 ${dictionaryRows.length} 条映射（自定义 ${customCount}，内置 ${builtinCount}）；当前显示 ${visibleRows.length} 条。修改会要求输入管理口令。`;
+  document.querySelector('#quote-dictionary-table tbody').innerHTML = visibleRows.length
+    ? visibleRows.map((row) => `
+      <tr>
+        <td>${categoryText[row.category] || textValue(row.category)}</td>
+        <td>${textValue(row.alias)}</td>
+        <td>${textValue(row.canonical_input || row.canonical_value)}</td>
+        <td>${textValue(row.canonical_value)}</td>
+        <td>${row.scope_chat_id ? `${textValue(row.scope_platform)} / ${textValue(row.scope_chat_id)}` : '全局'}</td>
+        <td>${row.source === 'builtin' ? '内置' : '自定义'}</td>
+        <td>${Number(row.enabled) ? '启用' : '停用'}</td>
+        <td>${textValue(row.note)}</td>
+        <td>${formatTime(row.updated_at || row.created_at)}</td>
+        <td>${row.editable ? `<button type="button" data-dict-edit="${row.id}">编辑</button> ${Number(row.enabled) ? `<button type="button" data-dict-disable="${row.id}">停用</button>` : ''}` : `<button type="button" data-dict-edit="${row.id}">复制到表单</button>`}</td>
+      </tr>
+    `).join('')
+    : '<tr><td colspan="10" class="muted">暂无字典别名</td></tr>';
+  bindDictionaryActions();
+}
+
+async function loadDictionary() {
+  const category = document.querySelector('#dict-filter-category')?.value || '';
+  const params = new URLSearchParams({ include_builtin: '1' });
+  if (category) params.set('category', category);
+  const response = await fetch(`/api/quotes/dictionary?${params.toString()}`);
+  const payload = await response.json();
+  renderDictionary(Array.isArray(payload.rows) ? payload.rows : []);
+}
+
+function fillDictionaryForm(row) {
+  const form = document.querySelector('#quote-dictionary-form');
+  form.category.value = row.category || 'country_currency';
+  form.alias.value = row.alias || '';
+  form.canonical_value.value = row.canonical_input || row.canonical_value || '';
+  form.scope_platform.value = row.scope_platform || '';
+  form.scope_chat_id.value = row.scope_chat_id || '';
+  form.note.value = row.note || '';
+}
+
+function bindDictionaryActions() {
+  document.querySelectorAll('[data-dict-edit]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const row = dictionaryRows.find((item) => String(item.id) === String(button.dataset.dictEdit));
+      if (row) fillDictionaryForm(row);
+    });
+  });
+  document.querySelectorAll('[data-dict-disable]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const adminPassword = window.prompt('请输入管理口令以停用该别名');
+      if (!adminPassword) return;
+      await fetch('/api/quotes/dictionary/disable', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: Number(button.dataset.dictDisable), admin_password: adminPassword }),
+      });
+      await loadDictionary();
+    });
+  });
+}
+
+document.querySelector('#quote-dictionary-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const payload = Object.fromEntries(new FormData(event.currentTarget).entries());
+  payload.canonical_input = String(payload.canonical_value || '').trim();
+  const adminPassword = window.prompt('请输入管理口令以保存字典');
+  if (!adminPassword) return;
+  payload.admin_password = adminPassword;
+  const response = await fetch('/api/quotes/dictionary', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const result = await response.json();
+  if (!response.ok) {
+    alert(result.error || '保存失败');
+    return;
+  }
+  await loadDictionary();
+});
+
+document.querySelector('#dict-clear').addEventListener('click', () => {
+  document.querySelector('#quote-dictionary-form').reset();
+});
+document.querySelector('#dict-filter-category').addEventListener('change', () => {
+  loadDictionary();
+});
+
+const query = new URLSearchParams(window.location.search);
+const prefill = {
+  category: query.get('category') || '',
+  alias: query.get('alias') || '',
+  canonical_value: query.get('canonical_value') || '',
+  scope_platform: query.get('scope_platform') || '',
+  scope_chat_id: query.get('scope_chat_id') || '',
+  note: query.get('note') || '',
+};
+if (Object.values(prefill).some(Boolean)) {
+  fillDictionaryForm(prefill);
+  if (prefill.category) {
+    document.querySelector('#dict-filter-category').value = prefill.category;
+  }
+  document.querySelector('#dict-prefill-status').textContent = '已从异常区带入字典草稿，确认标准值后输入管理口令保存。';
+}
+loadDictionary();
+"""
+    return _render_layout(
+        title="报价字典",
+        subtitle="把群里的叫法映射到标准卡种、币种和形态。",
+        active_path="/quote-dictionary",
         body=body,
         script=script,
     )
@@ -3387,6 +3728,7 @@ def _render_layout(*, title: str, subtitle: str, active_path: str, body: str, sc
   <a href="/" class="%s">首页驾驶舱</a>
   <a href="/workbench" class="%s">账期工作台</a>
   <a href="/quotes" class="%s">报价墙</a>
+  <a href="/quote-dictionary" class="%s">报价字典</a>
   <a href="/reconciliation" class="%s">对账中心</a>
   <a href="/role-mapping" class="%s">角色映射</a>
   <a href="/history" class="%s">跑账历史</a>
@@ -3395,6 +3737,7 @@ def _render_layout(*, title: str, subtitle: str, active_path: str, body: str, sc
         "active" if active_path == "/" else "",
         "active" if active_path == "/workbench" else "",
         "active" if active_path == "/quotes" else "",
+        "active" if active_path == "/quote-dictionary" else "",
         "active" if active_path == "/reconciliation" else "",
         "active" if active_path == "/role-mapping" else "",
         "active" if active_path == "/history" else "",

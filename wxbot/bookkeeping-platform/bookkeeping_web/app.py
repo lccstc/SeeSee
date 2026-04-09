@@ -3,6 +3,7 @@ from __future__ import annotations
 import inspect
 import json
 import logging
+import os
 from datetime import date, datetime
 from pathlib import Path
 from urllib.parse import parse_qs
@@ -11,13 +12,20 @@ from bookkeeping_core.analytics import AnalyticsService
 from bookkeeping_core.contracts import core_action_to_dict
 from bookkeeping_core.database import BookkeepingDB, require_postgres_dsn
 from bookkeeping_core.periods import AccountingPeriodService
-from bookkeeping_core.quotes import normalize_quote_card_type, normalize_quote_country_or_currency
+from bookkeeping_core.quotes import (
+    list_builtin_quote_dictionary_aliases,
+    normalize_quote_card_type,
+    normalize_quote_country_or_currency,
+    normalize_quote_form_factor,
+    normalize_quote_multiplier,
+)
 from bookkeeping_core.reconciliation import ReconciliationService
 from bookkeeping_core.reporting import ReportingService
 from bookkeeping_core.runtime import UnifiedBookkeepingRuntime
 from bookkeeping_web.pages import (
     render_dashboard_page,
     render_history_page,
+    render_quote_dictionary_page,
     render_quotes_page,
     render_reconciliation_page,
     render_role_mapping_page,
@@ -66,6 +74,8 @@ def create_app(
             return _respond_html(start_response, render_workbench_page())
         if path == "/quotes":
             return _respond_html(start_response, render_quotes_page())
+        if path == "/quote-dictionary":
+            return _respond_html(start_response, render_quote_dictionary_page())
         if path == "/role-mapping":
             return _respond_html(start_response, render_role_mapping_page())
         if path == "/history":
@@ -94,6 +104,10 @@ def create_app(
             return _with_db(db_file, start_response, _handle_quotes_matches, environ)
         if path == "/api/quotes/group-profiles":
             return _with_db(db_file, start_response, _handle_quotes_group_profiles, environ)
+        if path == "/api/quotes/dictionary":
+            return _with_db(db_file, start_response, _handle_quotes_dictionary, environ)
+        if path == "/api/quotes/dictionary/disable" and method == "POST":
+            return _with_db(db_file, start_response, _handle_quotes_dictionary_disable, environ)
         if path == "/api/quotes/exceptions" and method == "GET":
             return _with_db(
                 db_file, start_response, _handle_quotes_exceptions, environ
@@ -104,6 +118,8 @@ def create_app(
             )
         if path == "/api/quotes/inquiries":
             return _with_db(db_file, start_response, _handle_quotes_inquiries, environ)
+        if path == "/api/quotes/delete" and method == "POST":
+            return _with_db(db_file, start_response, _handle_quotes_delete, environ)
         if path == "/api/reconciliation/ledger" and method == "GET":
             return _with_db(
                 db_file, start_response, _handle_reconciliation_ledger, environ
@@ -275,6 +291,19 @@ def _handle_quotes_board(db: BookkeepingDB, start_response, environ):
     params = _read_query_params(environ)
     payload = _call_optional_db_method(db, "list_quote_board", default={"rows": []})
     normalized = _normalize_quote_payload(payload)
+    # 只展示客人组（组号 5/6/7/8）的报价
+    rows = normalized.get("rows", [])
+    customer_keys = set()
+    try:
+        for num in (5, 6, 7, 8):
+            for g in db.get_groups_by_num(num):
+                customer_keys.add(g["group_key"])
+    except Exception:
+        pass
+    if customer_keys:
+        rows = [r for r in rows if r.get("source_group_key") in customer_keys]
+        normalized["rows"] = rows
+        normalized["total"] = len(rows)
     if params:
         normalized["filters"] = {key: value for key, value in params.items() if value}
     return _respond_json(start_response, 200, normalized)
@@ -341,7 +370,7 @@ def _handle_quotes_rankings(db: BookkeepingDB, start_response, environ):
         country_or_currency=params["country_or_currency"],
         amount_range=params["amount_range"],
         multiplier=params.get("multiplier") or None,
-        form_factor=params["form_factor"],
+        form_factor=normalize_quote_form_factor(params["form_factor"]),
         limit=limit,
     )
     normalized = _normalize_quote_payload(payload)
@@ -364,6 +393,11 @@ def _handle_quotes_matches(db: BookkeepingDB, start_response, environ):
         country_or_currency = normalize_quote_country_or_currency(
             params["country_or_currency"]
         )
+        form_factor = (
+            normalize_quote_form_factor(params.get("form_factor") or "")
+            if params.get("form_factor")
+            else None
+        )
         if not card_type or not country_or_currency:
             raise ValueError("card_type and country_or_currency are required")
     except (KeyError, ValueError) as exc:
@@ -375,7 +409,7 @@ def _handle_quotes_matches(db: BookkeepingDB, start_response, environ):
         card_type=card_type,
         country_or_currency=country_or_currency,
         amount=amount,
-        form_factor=params.get("form_factor") or None,
+        form_factor=form_factor,
         limit=limit,
     )
     normalized = _normalize_quote_payload(payload)
@@ -401,19 +435,139 @@ def _handle_quotes_group_profiles(db: BookkeepingDB, start_response, environ):
     try:
         payload = _read_json_body(environ)
         profile_id = db.upsert_quote_group_profile(
-            platform=str(payload.get("platform") or "wechat").strip(),
+            platform=str(payload.get("platform") or "whatsapp").strip(),
             chat_id=str(payload["chat_id"]).strip(),
             chat_name=str(payload.get("chat_name") or payload["chat_id"]).strip(),
             default_card_type=normalize_quote_card_type(
                 str(payload.get("default_card_type") or "")
             ),
+            default_country_or_currency=normalize_quote_country_or_currency(
+                str(payload.get("default_country_or_currency") or "")
+            ),
+            default_form_factor=normalize_quote_form_factor(
+                str(payload.get("default_form_factor") or "不限").strip() or "不限"
+            ),
+            default_multiplier=normalize_quote_multiplier(
+                str(payload.get("default_multiplier") or "").strip()
+            ),
             parser_template=str(payload.get("parser_template") or "").strip(),
             stale_after_minutes=int(payload.get("stale_after_minutes") or 120),
             note=str(payload.get("note") or ""),
+            template_config=str(payload.get("template_config") or ""),
         )
     except (KeyError, TypeError, ValueError) as exc:
         return _respond_json(start_response, 400, {"error": f"Bad payload: {exc}"})
     return _respond_json(start_response, 200, {"profile_id": profile_id})
+
+
+def _handle_quotes_dictionary(db: BookkeepingDB, start_response, environ):
+    method = environ.get("REQUEST_METHOD", "GET").upper()
+    if method == "GET":
+        params = _read_query_params(environ)
+        category = params.get("category") or None
+        include_disabled = str(params.get("include_disabled") or "1") != "0"
+        include_builtin = str(params.get("include_builtin") or "1") != "0"
+        db_rows = db.list_quote_dictionary_aliases(
+            category=category,
+            include_disabled=include_disabled,
+        )
+        rows: list[dict] = []
+        existing_global_keys: set[str] = set()
+        for row in db_rows:
+            row = dict(row)
+            row["canonical_input"] = str(
+                row.get("canonical_input") or row.get("canonical_value") or ""
+            )
+            row["source"] = "custom"
+            row["editable"] = True
+            rows.append(row)
+            if not str(row.get("scope_chat_id") or "").strip():
+                existing_global_keys.add(
+                    f'{row.get("category")}:{str(row.get("alias") or "").strip().lower()}'
+                )
+        builtin_total = 0
+        if include_builtin:
+            for row in list_builtin_quote_dictionary_aliases(category=category):
+                global_key = (
+                    f'{row.get("category")}:{str(row.get("alias") or "").strip().lower()}'
+                )
+                if global_key in existing_global_keys:
+                    continue
+                rows.append(row)
+                builtin_total += 1
+        return _respond_json(
+            start_response,
+            200,
+            {
+                "rows": rows,
+                "total": len(rows),
+                "custom_total": len(db_rows),
+                "builtin_total": builtin_total,
+            },
+        )
+    if method != "POST":
+        return _respond_json(start_response, 405, {"error": "Method not allowed"})
+    try:
+        payload = _read_json_body(environ)
+        _require_quote_admin_password(payload)
+        category = _normalize_dictionary_category(str(payload["category"]).strip())
+        alias = str(payload["alias"]).strip()
+        canonical_value = _normalize_dictionary_canonical(
+            category,
+            str(payload["canonical_value"]).strip(),
+        )
+        if not alias or not canonical_value:
+            raise ValueError("alias and canonical_value are required")
+        alias_id = db.upsert_quote_dictionary_alias(
+            category=category,
+            alias=alias,
+            canonical_value=canonical_value,
+            canonical_input=str(payload.get("canonical_input") or payload["canonical_value"]).strip(),
+            scope_platform=str(payload.get("scope_platform") or "").strip(),
+            scope_chat_id=str(payload.get("scope_chat_id") or "").strip(),
+            note=str(payload.get("note") or ""),
+            enabled=bool(payload.get("enabled", True)),
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        return _respond_json(start_response, 400, {"error": f"Bad payload: {exc}"})
+    return _respond_json(start_response, 200, {"alias_id": alias_id})
+
+
+def _handle_quotes_dictionary_disable(db: BookkeepingDB, start_response, environ):
+    try:
+        payload = _read_json_body(environ)
+        _require_quote_admin_password(payload)
+        updated = db.set_quote_dictionary_alias_enabled(
+            alias_id=int(payload["id"]),
+            enabled=False,
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        return _respond_json(start_response, 400, {"error": f"Bad payload: {exc}"})
+    return _respond_json(start_response, 200, {"updated": updated})
+
+
+def _normalize_dictionary_category(category: str) -> str:
+    allowed = {"country_currency", "card_type", "form_factor"}
+    if category not in allowed:
+        raise ValueError("category must be country_currency, card_type, or form_factor")
+    return category
+
+
+def _normalize_dictionary_canonical(category: str, value: str) -> str:
+    if category == "card_type":
+        return normalize_quote_card_type(value)
+    if category == "form_factor":
+        return normalize_quote_form_factor(value)
+    return normalize_quote_country_or_currency(value)
+
+
+def _require_quote_admin_password(payload: dict) -> None:
+    expected = os.environ.get("QUOTE_ADMIN_PASSWORD", "")
+    if not expected:
+        raise ValueError("QUOTE_ADMIN_PASSWORD is not configured")
+    provided = str(payload.get("admin_password") or "")
+    if provided != expected:
+        raise ValueError("admin password is invalid")
 
 
 def _handle_quotes_exceptions(db: BookkeepingDB, start_response, environ):
@@ -498,7 +652,9 @@ def _handle_quotes_inquiries(db: BookkeepingDB, start_response, environ):
             ),
             amount_range=str(payload["amount_range"]).strip(),
             multiplier=str(payload.get("multiplier") or "").strip() or None,
-            form_factor=str(payload.get("form_factor") or "不限").strip() or "不限",
+            form_factor=normalize_quote_form_factor(
+                str(payload.get("form_factor") or "不限").strip() or "不限"
+            ),
             requested_by=str(payload.get("requested_by") or "web"),
             prompt_text=str(payload.get("prompt_text") or ""),
             expires_at=str(payload.get("expires_at") or "").strip() or None,
@@ -506,6 +662,29 @@ def _handle_quotes_inquiries(db: BookkeepingDB, start_response, environ):
     except (KeyError, TypeError, ValueError) as exc:
         return _respond_json(start_response, 400, {"error": f"Bad payload: {exc}"})
     return _respond_json(start_response, 200, {"inquiry_id": inquiry_id})
+
+
+def _handle_quotes_delete(db: BookkeepingDB, start_response, environ):
+    try:
+        payload = _read_json_body(environ)
+        quote_id = int(payload["id"])
+    except (KeyError, TypeError, ValueError) as exc:
+        return _respond_json(start_response, 400, {"error": f"需要报价 id: {exc}"})
+    conn = getattr(db, "conn", None)
+    if conn is None:
+        return _respond_json(start_response, 500, {"error": "数据库连接不可用"})
+    try:
+        conn.execute("DELETE FROM quote_price_rows WHERE id = ?", (quote_id,))
+        if hasattr(conn, "commit"):
+            conn.commit()
+    except Exception:
+        try:
+            conn.execute("DELETE FROM quote_price_rows WHERE id = %s", (quote_id,))
+            if hasattr(conn, "commit"):
+                conn.commit()
+        except Exception as exc:
+            return _respond_json(start_response, 500, {"error": str(exc)})
+    return _respond_json(start_response, 200, {"deleted": True, "id": quote_id})
 
 
 def _handle_reconciliation_ledger(db: BookkeepingDB, start_response, environ):
