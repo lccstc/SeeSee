@@ -5,6 +5,7 @@ import unittest
 
 from bookkeeping_core.template_engine import (
     TemplateConfig,
+    auto_generate_template,
     match_pattern,
     parse_message_with_template,
 )
@@ -162,6 +163,31 @@ class TemplateConfigTests(unittest.TestCase):
     def test_from_json_invalid(self) -> None:
         with self.assertRaises(ValueError):
             TemplateConfig.from_json("{bad json")
+
+
+class AutoGenerateTests(unittest.TestCase):
+    """T7: 从真实消息自动生成模板"""
+
+    def test_generates_from_simple_message(self) -> None:
+        text = "卡图：100/150=5.35\n卡图：200-450=5.38\n#250面值不拿"
+        tpl = auto_generate_template(text, defaults={"card_type": "Apple", "country": "USD"})
+        # 两行格式相同，去重后只保留 1 个 pattern
+        self.assertTrue(len(tpl.price_lines) >= 1)
+        self.assertTrue(len(tpl.restriction_lines) >= 1)
+        # 生成的模板应该能解析同一条消息的两行
+        doc = parse_message_with_template(text, tpl)
+        self.assertEqual(len(doc.rows), 2)
+
+    def test_generates_with_restrictions_and_skips(self) -> None:
+        text = "【US快速网单】\n横白卡图：50=5.3\n横白卡图：100=5.4\n#尾刀勿动\n[左哼哼]"
+        tpl = auto_generate_template(text, defaults={"card_type": "Apple", "country": "USD"})
+        doc = parse_message_with_template(text, tpl)
+        self.assertEqual(len(doc.rows), 2)
+        self.assertIn("尾刀勿动", doc.rows[0].restriction_text)
+
+    def test_empty_text_raises(self) -> None:
+        with self.assertRaises(ValueError):
+            auto_generate_template("")
 
 
 if __name__ == "__main__":
