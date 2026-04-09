@@ -62,6 +62,72 @@ class MatchPatternTests(unittest.TestCase):
         self.assertEqual(result["price"], "5.25")
 
 
+class ParseMessageTests(unittest.TestCase):
+    """T3: 完整消息模板解析"""
+
+    def _make_apple_template(self) -> TemplateConfig:
+        return TemplateConfig(
+            defaults={"card_type": "Apple", "country": "USD", "form_factor": "横白卡"},
+            price_lines=[
+                {"pattern": "卡图：{amount}={price}", "form_factor": "横白卡"},
+                {"pattern": "横白卡图：{amount}={price}", "form_factor": "横白卡"},
+                {"pattern": "{amount}={price}", "form_factor": None},
+            ],
+            restriction_lines=["^#"],
+            section_lines=["^———"],
+            skip_lines=["^\\s*$"],
+        )
+
+    def test_simple_price_line(self) -> None:
+        tpl = self._make_apple_template()
+        doc = parse_message_with_template("卡图：100=5.35", tpl)
+        self.assertEqual(len(doc.rows), 1)
+        row = doc.rows[0]
+        self.assertEqual(row.card_type, "Apple")
+        self.assertEqual(row.country_or_currency, "USD")
+        self.assertEqual(row.amount_range, "100")
+        self.assertEqual(row.price, 5.35)
+        self.assertEqual(row.form_factor, "横白卡")
+        self.assertEqual(len(doc.exceptions), 0)
+
+    def test_multiline_with_restrictions(self) -> None:
+        tpl = self._make_apple_template()
+        text = "卡图：100/150=5.35\n卡图：200-450=5.38\n#250面值不拿\n#尾刀勿动"
+        doc = parse_message_with_template(text, tpl)
+        self.assertEqual(len(doc.rows), 2)
+        self.assertEqual(len(doc.exceptions), 0)
+        # 限制文字消息级共享
+        self.assertIn("250面值不拿", doc.rows[0].restriction_text)
+        self.assertIn("尾刀勿动", doc.rows[0].restriction_text)
+        self.assertIn("250面值不拿", doc.rows[1].restriction_text)
+
+    def test_unmatched_lines_are_silent(self) -> None:
+        tpl = self._make_apple_template()
+        text = "随便说句话\n卡图：100=5.35\n[左哼哼]"
+        doc = parse_message_with_template(text, tpl)
+        self.assertEqual(len(doc.rows), 1)
+        self.assertEqual(len(doc.exceptions), 0)
+
+    def test_empty_text(self) -> None:
+        tpl = self._make_apple_template()
+        doc = parse_message_with_template("", tpl)
+        self.assertEqual(len(doc.rows), 0)
+        self.assertEqual(len(doc.exceptions), 0)
+
+    def test_amount_range_normalized(self) -> None:
+        tpl = self._make_apple_template()
+        doc = parse_message_with_template("卡图：100/150=5.35", tpl)
+        # normalize_quote_amount_range 会把 / 转成 -
+        self.assertEqual(doc.rows[0].amount_range, "100-150")
+
+    def test_parse_status(self) -> None:
+        tpl = self._make_apple_template()
+        doc = parse_message_with_template("卡图：100=5.35", tpl)
+        self.assertEqual(doc.parse_status, "parsed")
+        doc_empty = parse_message_with_template("没有价格", tpl)
+        self.assertEqual(doc_empty.parse_status, "empty")
+
+
 class TemplateConfigTests(unittest.TestCase):
     """T2: 模板数据类 JSON 序列化"""
 
