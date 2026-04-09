@@ -43,13 +43,8 @@ class TemplateConfig:
 
 
 def match_pattern(line: str, pattern: str) -> dict[str, str] | None:
-    """将 pattern 中的 {name} 插槽替换为正则，匹配 line 并提取变量。
-
-    固定文字做字面量匹配，{name} 匹配数字/区间/浮点数。
-    返回提取的变量字典，不匹配则返回 None。
-    """
-    # 把 pattern 转成正则：固定文字转义，{name} 变捕获组
-    parts = re.split(r"\{(\\w+)\}", pattern)
+    """将 pattern 中的 {name} 插槽替换为正则，进行绝对严格的字面量匹配。"""
+    parts = re.split(r"\{(\w+)\}", pattern)
     if not parts:
         return None
 
@@ -57,18 +52,21 @@ def match_pattern(line: str, pattern: str) -> dict[str, str] | None:
     names: list[str] = []
     for i, part in enumerate(parts):
         if i % 2 == 0:
-            # 固定文字 — 转义正则特殊字符
-            regex_parts.append(re.escape(part))
+            if part:
+                regex_parts.append(re.escape(part))
         else:
-            # 变量插槽
             names.append(part)
-            # {country} 匹配文本（国家/货币名称，支持中英文混合），其他匹配数字
-            if part == "country":
-                regex_parts.append(r"([A-Za-z\u4e00-\u9fff\s]+)")
+            # 严格匹配内容：任何非空字符，除了边界符号
+            if part == "price":
+                regex_parts.append(r"(\d+(?:\.\d+)?)")
+            elif part == "country":
+                regex_parts.append(r"([A-Za-z\u4e00-\u9fff]+)")
+            elif part == "amount":
+                regex_parts.append(r"([\d]+(?:[.\-/][\d]+)*)")
             else:
-                regex_parts.append(r"([\d]+(?:[.\-/ ][\d]+)*)")
+                regex_parts.append(r"(.+?)")
 
-    regex = "^" + "".join(regex_parts)
+    regex = "^" + "".join(regex_parts) + "$"
     m = re.match(regex, line.strip())
     if m is None:
         return None
