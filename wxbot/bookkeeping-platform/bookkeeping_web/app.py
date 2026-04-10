@@ -604,22 +604,40 @@ def _handle_quotes_exception_resolve(db: BookkeepingDB, start_response, environ)
         # New resolution mode: "annotate"
         resolution_status = str(payload.get("resolution_status") or "ignored").strip()
         if resolution_status == "annotate":
-            annotations = payload.get("annotations", [])
+            fields = payload.get("fields", {})
+            if not fields:
+                return _respond_json(start_response, 400, {"error": "fields is required for annotate"})
             exc_row = db.get_quote_exception(exception_id=exception_id)
             if not exc_row:
                 return _respond_json(start_response, 404, {"error": "exception not found"})
-                
+
             source_line = str(exc_row["source_line"])
             platform = str(exc_row["platform"])
             chat_id = str(exc_row["chat_id"])
-            
-            # Generate new strict pattern
+
+            # 构建 annotations
+            from bookkeeping_core.template_engine import build_annotations_from_fields
+            annotations = build_annotations_from_fields(source_line, fields)
+
+            # 尾部 (...) 自动追加 restriction
+            import re as _re
+            restriction_match = _re.search(r'\([^)]*\)\s*$', source_line)
+            if restriction_match and "restriction" not in fields:
+                ann_start = restriction_match.start()
+                annotations.append({
+                    "type": "restriction",
+                    "value": source_line[ann_start:],
+                    "start": ann_start,
+                    "end": len(source_line),
+                })
+                annotations.sort(key=lambda a: a["start"])
+
             pattern = generate_strict_pattern_from_annotations(source_line, annotations)
             new_rule = {"pattern": pattern, "type": "price"}
-            
+
             # Append rule to DB
             db.append_rule_to_group_profile(platform=platform, chat_id=chat_id, new_rule=new_rule)
-            
+
             # Mark exception as resolved
             updated = db.resolve_quote_exception(
                 exception_id=exception_id,
