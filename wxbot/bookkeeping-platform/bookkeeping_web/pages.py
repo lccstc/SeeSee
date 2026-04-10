@@ -961,6 +961,32 @@ def render_quotes_page() -> str:
     </div>
   </div>
 </div>
+<div class="quote-modal-backdrop" id="quote-annotate-modal" aria-hidden="true">
+  <div class="quote-modal" role="dialog" aria-modal="true">
+    <div class="quote-modal-header">
+      <div><h2>标注异常行</h2></div>
+      <button class="quote-modal-close" type="button" id="quote-annotate-close">关闭</button>
+    </div>
+    <div style="padding: 12px 0;">
+      <div class="muted" style="margin-bottom:8px;">原文</div>
+      <div id="quote-annotate-source" style="background:#f5f5f5;padding:8px;border-radius:4px;font-family:monospace;word-break:break-all;"></div>
+      <form id="quote-annotate-form" style="margin-top:12px;display:flex;flex-direction:column;gap:8px;">
+        <input type="hidden" name="exception_id" value="">
+        <label>卡种 <input type="text" name="card_type" placeholder="如：XBOX、FT"></label>
+        <label>国家 <input type="text" name="country" placeholder="如：加拿大、美国"></label>
+        <label>面额 <input type="text" name="amount" placeholder="如：10-1000"></label>
+        <label>形态 <input type="text" name="form_factor" placeholder="如：实卡、代码"></label>
+        <label>价格 <input type="text" name="price" placeholder="如：3.4"></label>
+      </form>
+      <div class="muted" style="margin-top:8px;">预览 pattern</div>
+      <div id="quote-annotate-preview" style="font-family:monospace;color:#0a0;"></div>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button type="button" id="quote-annotate-cancel">取消</button>
+      <button type="button" id="quote-annotate-submit" style="font-weight:bold;">确认并保存</button>
+    </div>
+  </div>
+</div>
 """
     script = """
 const QUOTE_STALE_MINUTES = 30;
