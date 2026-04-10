@@ -105,7 +105,6 @@ def parse_message_with_template(
     current_country = template.defaults.get("country") or ""
     current_form_factor = template.defaults.get("form_factor") or "不限"
 
-    import re
     has_digits = re.compile(r"\d")
     
     for line in lines:
@@ -203,121 +202,6 @@ def parse_message_with_template(
     )
 
 
-def _matches_any(line: str, patterns: list[str]) -> bool:
-    for pat in patterns:
-        if re.search(pat, line):
-            return True
-    return False
-
-
-# --- 模板自动生成 ---
-
-_PRICE_SEPARATORS = re.compile(r"[:：=]")
-_HAS_DIGITS = re.compile(r"\d")
-_RESTRICTION_PREFIX = re.compile(r"^#|^注[：:]|^注意|^为避免")
-_SECTION_MARKER = re.compile(r"^【|^———|^---|^===|^═══")
-_SKIP_MARKER = re.compile(r"^\s*$|^[😀-🙏😀-🚀]|^\[左|^\[右|^\[中")
-
-
-def auto_generate_template(
-    text: str,
-    *,
-    defaults: dict[str, str | None] | None = None,
-) -> TemplateConfig:
-    """从一条真实报价消息自动生成 TemplateConfig。
-
-    算法：
-    1. 包含数字+分隔符的行 → 候选价格行，生成 pattern
-    2. 以 # 或注： 开头的行 → 限制行
-    3. 以 【 或分隔线 开头 → 分节行
-    4. 其他 → 跳过行
-    """
-    if not text or not text.strip():
-        raise ValueError("empty text")
-
-    lines = [line.strip() for line in text.splitlines() if line.strip()]
-    price_patterns: list[dict[str, str | None]] = []
-    restriction_pats: list[str] = []
-    section_pats: list[str] = []
-
-    for line in lines:
-        if _RESTRICTION_PREFIX.search(line):
-            restriction_pats.append(r"^#|^注[：:]")
-            continue
-        if _SECTION_MARKER.search(line):
-            section_pats.append(re.escape(line[:3]))
-            continue
-        if _SKIP_MARKER.search(line):
-            continue
-        if not _HAS_DIGITS.search(line):
-            continue
-
-        # 尝试生成价格行 pattern
-        pattern = _generate_price_pattern(line)
-        if pattern:
-            price_patterns.append({"pattern": pattern, "form_factor": None})
-
-    # 去重
-    seen_patterns: set[str] = set()
-    unique_price: list[dict[str, str | None]] = []
-    for pp in price_patterns:
-        p = pp["pattern"]
-        if p not in seen_patterns:
-            seen_patterns.add(p)
-            unique_price.append(pp)
-
-    seen_restrictions: set[str] = set()
-    unique_restrictions: list[str] = []
-    for r in restriction_pats:
-        if r not in seen_restrictions:
-            seen_restrictions.add(r)
-            unique_restrictions.append(r)
-
-    return TemplateConfig(
-        defaults=defaults or {},
-        price_lines=unique_price,
-        restriction_lines=unique_restrictions,
-        section_lines=list(set(section_pats)),
-        skip_lines=[r"^\s*$", r"^[😀-🙏]"],
-    )
-
-
-def _generate_price_pattern(line: str) -> str | None:
-    """从一行消息中提取 pattern。固定文字做锚点，数字做 {amount}/{price}。"""
-    # 找所有数字 token（含小数、区间）
-    tokens = list(re.finditer(r"[\d]+(?:[.\-/][\d]+)*", line))
-    if not tokens:
-        return None
-
-    # 至少需要一个数字
-    if len(tokens) < 1:
-        return None
-
-    parts: list[str] = []
-    prev_end = 0
-    for i, token in enumerate(tokens):
-        # 固定文字部分
-        fixed = line[prev_end:token.start()]
-        if fixed:
-            parts.append(re.escape(fixed))
-        # 变量部分：最后一个数字 = price，其他 = amount
-        if i == len(tokens) - 1 and len(tokens) > 1:
-            parts.append("{price}")
-        elif len(tokens) == 1:
-            # 只有一个数字，可能是 amount（后面可能还有价格在别的位置）
-            parts.append("{amount}")
-        else:
-            parts.append("{amount}")
-        prev_end = token.end()
-
-    # 尾部固定文字（如果有的话）
-    tail = line[prev_end:]
-    if tail:
-        parts.append(re.escape(tail))
-
-    return "".join(parts)
-
-
 def generate_strict_pattern_from_annotations(line: str, annotations: list[dict[str, str | int]]) -> str:
     """根据标注的变量位置，将整行替换为带 {变量} 的 strict pattern。"""
     # Sort annotations by start index
@@ -338,5 +222,27 @@ def generate_strict_pattern_from_annotations(line: str, annotations: list[dict[s
         
     if last_idx < len(line):
         result += line[last_idx:]
-        
+
     return result
+
+
+def build_annotations_from_fields(
+    source_line: str, fields: dict[str, str]
+) -> list[dict[str, str | int]]:
+    """将 {变量名: 值} 字典转为带 start/end 的 annotations，按位置排序。"""
+    annotations: list[dict[str, str | int]] = []
+    for field_type, value in fields.items():
+        value = value.strip()
+        if not value:
+            continue
+        start = source_line.find(value)
+        if start == -1:
+            continue
+        annotations.append({
+            "type": field_type,
+            "value": value,
+            "start": start,
+            "end": start + len(value),
+        })
+    annotations.sort(key=lambda a: a["start"])
+    return annotations
