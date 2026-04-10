@@ -1613,6 +1613,18 @@ class _BookkeepingStoreBase:
         self.conn.commit()
         return int(getattr(cur, "rowcount", 0) or 0)
 
+    def get_quote_exception(self, *, exception_id: int) -> DBRow | None:
+        row = self.conn.execute(
+            """
+            SELECT *
+            FROM quote_parse_exceptions
+            WHERE id = ?
+            LIMIT 1
+            """,
+            (exception_id,),
+        ).fetchone()
+        return self._serialize_quote_db_row(row) if row else None
+
     def resolve_quote_exception(
         self,
         *,

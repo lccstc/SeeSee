@@ -116,6 +116,14 @@ def create_app(
             return _with_db(
                 db_file, start_response, _handle_quotes_exception_resolve, environ
             )
+        if path == "/api/quotes/exceptions/suggest-template" and method == "POST":
+            return _with_db(
+                db_file, start_response, _handle_quotes_suggest_template, environ
+            )
+        if path == "/api/quotes/exceptions/batch-rules" and method == "POST":
+            return _with_db(
+                db_file, start_response, _handle_quotes_batch_rules, environ
+            )
         if path == "/api/quotes/inquiries":
             return _with_db(db_file, start_response, _handle_quotes_inquiries, environ)
         if path == "/api/quotes/delete" and method == "POST":
@@ -611,7 +619,9 @@ def _handle_quotes_exception_resolve(db: BookkeepingDB, start_response, environ)
             if not exc_row:
                 return _respond_json(start_response, 404, {"error": "exception not found"})
 
-            source_line = str(exc_row["source_line"])
+            # 支持对消息级异常中的单行进行标注
+            annotate_line = str(payload.get("annotate_line", "")).strip()
+            source_line = annotate_line if annotate_line else str(exc_row["source_line"])
             platform = str(exc_row["platform"])
             chat_id = str(exc_row["chat_id"])
 
@@ -638,11 +648,13 @@ def _handle_quotes_exception_resolve(db: BookkeepingDB, start_response, environ)
             # Append rule to DB
             db.append_rule_to_group_profile(platform=platform, chat_id=chat_id, new_rule=new_rule)
 
-            # Mark exception as resolved
+            # 消息级异常：标注单行后保持 open，追加 note 记录已生成的规则
+            existing_note = str(exc_row.get("resolution_note") or "")
+            new_note = f"{existing_note}\n生成规则: {pattern}".strip()
             updated = db.resolve_quote_exception(
                 exception_id=exception_id,
-                resolution_status="resolved",
-                resolution_note=f"auto-generated strict rule: {pattern}"
+                resolution_status="open",
+                resolution_note=new_note,
             )
             return _respond_json(start_response, 200, {"updated": updated, "new_pattern": pattern})
             
@@ -661,6 +673,61 @@ def _handle_quotes_exception_resolve(db: BookkeepingDB, start_response, environ)
     except (KeyError, TypeError, ValueError) as exc:
         return _respond_json(start_response, 400, {"error": f"Bad payload: {exc}"})
     return _respond_json(start_response, 200, {"updated": updated})
+
+
+def _handle_quotes_suggest_template(db: BookkeepingDB, start_response, environ):
+    """Auto-detect template rules from an exception's source text."""
+    from bookkeeping_core.template_engine import suggest_template_rules, deduplicate_rules
+    try:
+        payload = _read_json_body(environ)
+        exception_id = int(payload["exception_id"])
+        exc_row = db.get_quote_exception(exception_id=exception_id)
+        if not exc_row:
+            return _respond_json(start_response, 404, {"error": "exception not found"})
+        source_text = str(exc_row.get("source_line") or "")
+        detections = suggest_template_rules(source_text)
+        rules = deduplicate_rules(detections)
+        return _respond_json(start_response, 200, {
+            "detections": detections,
+            "suggested_rules": rules,
+            "source_group_key": str(exc_row.get("source_group_key") or ""),
+        })
+    except (KeyError, TypeError, ValueError) as exc:
+        return _respond_json(start_response, 400, {"error": f"Bad payload: {exc}"})
+
+
+def _handle_quotes_batch_rules(db: BookkeepingDB, start_response, environ):
+    """Save multiple template rules to a group's config at once."""
+    try:
+        payload = _read_json_body(environ)
+        exception_id = int(payload["exception_id"])
+        rules = payload.get("rules", [])
+        if not rules:
+            return _respond_json(start_response, 400, {"error": "rules is required"})
+        exc_row = db.get_quote_exception(exception_id=exception_id)
+        if not exc_row:
+            return _respond_json(start_response, 404, {"error": "exception not found"})
+        platform = str(exc_row["platform"])
+        chat_id = str(exc_row["chat_id"])
+        added = 0
+        for rule in rules:
+            pattern = str(rule.get("pattern", "")).strip()
+            rule_type = str(rule.get("type", "price")).strip()
+            if not pattern:
+                continue
+            db.append_rule_to_group_profile(
+                platform=platform, chat_id=chat_id,
+                new_rule={"pattern": pattern, "type": rule_type},
+            )
+            added += 1
+        db.resolve_quote_exception(
+            exception_id=exception_id,
+            resolution_status="resolved",
+            resolution_note=f"batch: {added} rules generated",
+        )
+        return _respond_json(start_response, 200, {"added": added})
+    except (KeyError, TypeError, ValueError) as exc:
+        return _respond_json(start_response, 400, {"error": f"Bad payload: {exc}"})
 
 
 def _handle_quotes_inquiries(db: BookkeepingDB, start_response, environ):

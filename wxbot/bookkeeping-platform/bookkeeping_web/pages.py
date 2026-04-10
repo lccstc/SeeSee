@@ -930,17 +930,10 @@ def render_quotes_page() -> str:
   <div class="toolbar">
     <div>
       <h2>异常区</h2>
-      <div class="muted" id="quote-exception-range">低置信、缺上下文、模板不匹配会先放在这里。</div>
+      <div class="muted" id="quote-exception-range">每条消息一张卡片，点击未匹配行可标注生成模板。</div>
     </div>
   </div>
-  <div class="table-wrap">
-    <table id="quote-exception-table" class="quote-table">
-      <thead>
-        <tr><th>时间</th><th>来源客人群</th><th>发送者ID</th><th>异常行</th><th>原因</th><th>建议处理</th><th>模板</th><th>置信度</th><th>状态</th><th>操作</th></tr>
-      </thead>
-      <tbody></tbody>
-    </table>
-  </div>
+  <div id="quote-exception-cards" style="display:flex;flex-direction:column;gap:12px;padding:4px 0;"></div>
 </section>
 <div class="quote-modal-backdrop" id="quote-ranking-modal" aria-hidden="true">
   <div class="quote-modal" role="dialog" aria-modal="true" aria-labelledby="quote-ranking-title">
@@ -961,29 +954,24 @@ def render_quotes_page() -> str:
     </div>
   </div>
 </div>
-<div class="quote-modal-backdrop" id="quote-annotate-modal" aria-hidden="true">
-  <div class="quote-modal" role="dialog" aria-modal="true">
+<div class="quote-modal-backdrop" id="quote-tpl-gen-modal" aria-hidden="true">
+  <div class="quote-modal" role="dialog" aria-modal="true" style="max-width:800px;max-height:90vh;overflow-y:auto;">
     <div class="quote-modal-header">
-      <div><h2>标注异常行</h2></div>
-      <button class="quote-modal-close" type="button" id="quote-annotate-close">关闭</button>
+      <div>
+        <h2>模板生成器</h2>
+        <div class="muted" id="quote-tpl-gen-subtitle">自动识别报价行，一键生成模板规则</div>
+      </div>
+      <button class="quote-modal-close" type="button" id="quote-tpl-gen-close">关闭</button>
     </div>
-    <div style="padding: 12px 0;">
-      <div class="muted" style="margin-bottom:8px;">原文</div>
-      <div id="quote-annotate-source" style="background:#f5f5f5;padding:8px;border-radius:4px;font-family:monospace;word-break:break-all;"></div>
-      <form id="quote-annotate-form" style="margin-top:12px;display:flex;flex-direction:column;gap:8px;">
-        <input type="hidden" name="exception_id" value="">
-        <label>卡种 <input type="text" name="card_type" placeholder="如：XBOX、FT"></label>
-        <label>国家 <input type="text" name="country" placeholder="如：加拿大、美国"></label>
-        <label>面额 <input type="text" name="amount" placeholder="如：10-1000"></label>
-        <label>形态 <input type="text" name="form_factor" placeholder="如：实卡、代码"></label>
-        <label>价格 <input type="text" name="price" placeholder="如：3.4"></label>
-      </form>
-      <div class="muted" style="margin-top:8px;">预览 pattern</div>
-      <div id="quote-annotate-preview" style="font-family:monospace;color:#0a0;"></div>
+    <div id="quote-tpl-gen-body" style="padding:12px 0;">
+      <div class="muted">加载中...</div>
     </div>
-    <div style="display:flex;gap:8px;justify-content:flex-end;">
-      <button type="button" id="quote-annotate-cancel">取消</button>
-      <button type="button" id="quote-annotate-submit" style="font-weight:bold;">确认并保存</button>
+    <div style="display:flex;gap:8px;justify-content:space-between;align-items:center;padding-top:8px;border-top:1px solid #eee;">
+      <div id="quote-tpl-gen-summary" class="muted" style="font-size:13px;"></div>
+      <div style="display:flex;gap:8px;">
+        <button type="button" id="quote-tpl-gen-cancel">取消</button>
+        <button type="button" id="quote-tpl-gen-save" style="font-weight:bold;background:#00897b;color:#fff;border:none;padding:8px 20px;border-radius:4px;cursor:pointer;">保存模板规则</button>
+      </div>
     </div>
   </div>
 </div>
@@ -1134,7 +1122,7 @@ function quoteExceptionActions(row) {
     actions.push(`<button type="button" data-quote-exception-attach="${row.id}">附加限制</button>`);
   }
   actions.push(`<button type="button" data-quote-template-prefill="${row.id}">一键建模板</button>`);
-  actions.push(`<button type="button" data-quote-exception-annotate="${row.id}">标注</button>`);
+  actions.push(`<button type="button" data-quote-exception-annotate="${row.id}">生成模板</button>`);
   if (String(row.reason || '').includes('unknown')) {
     actions.push(`<button type="button" data-quote-dictionary-prefill="${row.id}">添加到字典</button>`);
   }
@@ -1415,25 +1403,51 @@ function renderQuoteExceptions(rows) {
   const filteredRows = rows;
   document.querySelector('#quote-exception-count').textContent = String(filteredRows.length);
   document.querySelector('#quote-exception-range').textContent = filteredRows.length
-    ? `已收集 ${filteredRows.length} 条异常，优先处理模板不匹配和缺上下文短报价。`
+    ? `已收集 ${filteredRows.length} 条消息级异常，点击行可标注。`
     : '当前没有异常。';
-  document.querySelector('#quote-exception-table tbody').innerHTML = filteredRows.length
-    ? filteredRows.map((row) => `
-      <tr>
-        <td>${formatQuoteTime(row.message_time || row.created_at || row.updated_at || row.received_at)}</td>
-        <td>${textValue(row.source_group_name || row.chat_name || row.source_group_key || row.group_key)}<span class="quote-source-detail">${quoteSourceDetailText(row)}</span></td>
-        <td>${textValue(row.sender_id)}</td>
-        <td class="quote-note">${textValue(row.source_line || row.line || row.text)}</td>
-        <td>${textValue(row.reason_label || row.reason || row.error_reason || row.status)}</td>
-        <td class="quote-note">${textValue(row.suggested_action || row.resolution_note)}</td>
-        <td>${textValue(row.template_version || row.template_name || row.parser_version)}</td>
-        <td>${textValue(row.confidence)}</td>
-        <td><span class="quote-status-chip ${quoteStatusClass(row.resolution_status || row.status)}">${quoteStatusText(row.resolution_status || row.status)}</span></td>
-        <td>${quoteExceptionActions(row)}</td>
-      </tr>
-    `).join('')
-    : '<tr><td colspan="10" class="muted">暂无异常</td></tr>';
+  const container = document.querySelector('#quote-exception-cards');
+  if (!filteredRows.length) {
+    container.innerHTML = '<div class="muted" style="padding:12px;">当前没有异常。</div>';
+    return;
+  }
+  container.innerHTML = filteredRows.map((row) => {
+    const status = String(row.resolution_status || row.status || 'open').toLowerCase();
+    const sourceLines = String(row.source_line || '').split('\\n').filter(Boolean);
+    const linesHtml = sourceLines.map((line, idx) => {
+      const escaped = line.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      return `<div class="exc-line" data-exc-id="${row.id}" data-line-idx="${idx}" style="padding:4px 8px;cursor:pointer;border-radius:3px;font-family:monospace;font-size:13px;" onmouseover="this.style.background='#e3f2fd'" onmouseout="this.style.background=''">${escaped}</div>`;
+    }).join('');
+    const noteHtml = row.resolution_note ? `<div class="muted" style="font-size:12px;margin-top:4px;white-space:pre-wrap;">${textValue(row.resolution_note)}</div>` : '';
+    return `<div class="exc-card" data-exc-row-id="${row.id}" style="border:1px solid #ddd;border-radius:6px;padding:12px;background:#fafafa;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <div>
+          <strong>${textValue(row.source_group_name || row.chat_name || row.source_group_key)}</strong>
+          <span class="muted" style="margin-left:8px;">${textValue(row.sender_id)}</span>
+          <span class="muted" style="margin-left:8px;">${formatQuoteTime(row.message_time || row.created_at)}</span>
+          <span class="quote-status-chip ${quoteStatusClass(status)}" style="margin-left:8px;">${quoteStatusText(status)}</span>
+        </div>
+        <div style="display:flex;gap:4px;">
+          <button type="button" data-quote-exception-annotate="${row.id}" style="font-size:12px;font-weight:bold;background:#00897b;color:#fff;border:none;padding:4px 12px;border-radius:3px;cursor:pointer;">生成模板</button>
+          <button type="button" data-quote-exception-ignore="${row.id}" style="font-size:12px;">忽略</button>
+        </div>
+      </div>
+      <div style="margin-bottom:4px;font-size:12px;color:#888;">点击任意行开始标注 ↓</div>
+      <div class="exc-lines">${linesHtml}</div>
+      ${noteHtml}
+    </div>`;
+  }).join('');
   bindQuoteExceptionButtons();
+  bindExcLineClicks();
+}
+
+function bindExcLineClicks() {
+  document.querySelectorAll('.exc-line').forEach((el) => {
+    el.addEventListener('click', () => {
+      const excId = el.dataset.excId;
+      const row = allQuoteExceptions.find((item) => String(item.id) === excId);
+      if (row) openTplGenModal(row);
+    });
+  });
 }
 
 function bindQuoteExceptionButtons() {
@@ -1483,95 +1497,130 @@ function bindQuoteExceptionButtons() {
   document.querySelectorAll('[data-quote-exception-annotate]').forEach((button) => {
     button.addEventListener('click', () => {
       const row = allQuoteExceptions.find((item) => String(item.id) === String(button.dataset.quoteExceptionAnnotate));
-      if (row) openAnnotateModal(row);
+      if (row) openTplGenModal(row);
     });
   });
 }
 
-function openAnnotateModal(row) {
-  const modal = document.querySelector('#quote-annotate-modal');
-  const form = document.querySelector('#quote-annotate-form');
-  form.reset();
-  form.exception_id.value = row.id;
-  document.querySelector('#quote-annotate-source').textContent = row.source_line || '';
-  updateAnnotatePreview();
+// ---------------------------------------------------------------------------
+// Template Generator Modal
+// ---------------------------------------------------------------------------
+let _tplGenExcId = null;
+let _tplGenDetections = [];
+
+function closeTplGenModal() {
+  const modal = document.querySelector('#quote-tpl-gen-modal');
+  modal.classList.remove('open');
+  modal.setAttribute('aria-hidden', 'true');
+}
+
+async function openTplGenModal(row) {
+  _tplGenExcId = row.id;
+  const modal = document.querySelector('#quote-tpl-gen-modal');
+  const body = document.querySelector('#quote-tpl-gen-body');
+  body.innerHTML = '<div class="muted" style="padding:12px;">分析中...</div>';
+  modal.classList.add('open');
   modal.setAttribute('aria-hidden', 'false');
-}
 
-function closeAnnotateModal() {
-  document.querySelector('#quote-annotate-modal').setAttribute('aria-hidden', 'true');
-}
-
-function updateAnnotatePreview() {
-  const form = document.querySelector('#quote-annotate-form');
-  const source = document.querySelector('#quote-annotate-source').textContent;
-  const fields = {
-    card_type: form.card_type.value.trim(),
-    country: form.country.value.trim(),
-    amount: form.amount.value.trim(),
-    form_factor: form.form_factor.value.trim(),
-    price: form.price.value.trim(),
-  };
-  const parts = [];
-  const items = Object.entries(fields).filter(([, v]) => v);
-  items.sort((a, b) => {
-    const ia = source.indexOf(a[1]);
-    const ib = source.indexOf(b[1]);
-    if (ia === -1 || ib === -1) return 0;
-    return ia - ib;
-  });
-  let lastEnd = 0;
-  for (const [name, value] of items) {
-    const idx = source.indexOf(value, lastEnd);
-    if (idx === -1) continue;
-    if (idx > lastEnd) {
-      parts.push(source.slice(lastEnd, idx));
-    }
-    parts.push('{' + name + '}');
-    lastEnd = idx + value.length;
-  }
-  if (lastEnd < source.length) {
-    const tail = source.slice(lastEnd);
-    if (/\\([^)]*\\)\\s*$/.test(tail)) {
-      parts.push('{restriction}');
-    } else {
-      parts.push(tail);
-    }
-  }
-  document.querySelector('#quote-annotate-preview').textContent = parts.join('') || '（填写字段后预览）';
-}
-
-document.querySelector('#quote-annotate-close').addEventListener('click', closeAnnotateModal);
-document.querySelector('#quote-annotate-cancel').addEventListener('click', closeAnnotateModal);
-document.querySelector('#quote-annotate-form').addEventListener('input', updateAnnotatePreview);
-
-document.querySelector('#quote-annotate-submit').addEventListener('click', async () => {
-  const form = document.querySelector('#quote-annotate-form');
-  const fields = {};
-  if (form.card_type.value.trim()) fields.card_type = form.card_type.value.trim();
-  if (form.country.value.trim()) fields.country = form.country.value.trim();
-  if (form.amount.value.trim()) fields.amount = form.amount.value.trim();
-  if (form.form_factor.value.trim()) fields.form_factor = form.form_factor.value.trim();
-  if (form.price.value.trim()) fields.price = form.price.value.trim();
-  if (Object.keys(fields).length === 0) {
-    alert('至少填写一个字段');
-    return;
-  }
-  const response = await fetch('/api/quotes/exceptions/resolve', {
+  const resp = await fetch('/api/quotes/exceptions/suggest-template', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      exception_id: Number(form.exception_id.value),
-      resolution_status: 'annotate',
-      fields: fields,
-    }),
+    body: JSON.stringify({ exception_id: row.id }),
   });
-  const payload = await response.json();
-  if (payload.error) {
-    alert(`标注失败：${payload.error}`);
+  const data = await resp.json();
+  if (data.error) {
+    body.innerHTML = `<div style="color:red;padding:12px;">${data.error}</div>`;
     return;
   }
-  closeAnnotateModal();
+  _tplGenDetections = data.detections || [];
+  document.querySelector('#quote-tpl-gen-subtitle').textContent =
+    `来源: ${data.source_group_key || ''}`;
+  renderTplGenLines();
+}
+
+function renderTplGenLines() {
+  const body = document.querySelector('#quote-tpl-gen-body');
+  if (!_tplGenDetections.length) {
+    body.innerHTML = '<div class="muted" style="padding:12px;">没有检测到内容行。</div>';
+    updateTplGenSummary();
+    return;
+  }
+  body.innerHTML = _tplGenDetections.map((d, idx) => {
+    const escaped = (d.line || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const patternEsc = (d.pattern || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    if (d.type === 'section') {
+      return `<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-bottom:1px solid #eee;">
+        <span style="font-size:11px;padding:2px 6px;border-radius:3px;background:#e8f5e9;color:#2e7d32;white-space:nowrap;">段头</span>
+        <code style="flex:1;font-size:13px;">${escaped}</code>
+        <code style="color:#888;font-size:12px;">${patternEsc}</code>
+      </div>`;
+    }
+    if (d.type === 'price') {
+      return `<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-bottom:1px solid #eee;">
+        <span style="font-size:11px;padding:2px 6px;border-radius:3px;background:#e3f2fd;color:#1565c0;white-space:nowrap;cursor:pointer;" data-tpl-toggle="${idx}">报价</span>
+        <code style="flex:1;font-size:13px;">${escaped}</code>
+        <code style="color:#0a0;font-size:12px;font-weight:bold;">${patternEsc}</code>
+      </div>`;
+    }
+    // skip
+    return `<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-bottom:1px solid #eee;opacity:0.45;">
+      <span style="font-size:11px;padding:2px 6px;border-radius:3px;background:#f5f5f5;color:#999;white-space:nowrap;cursor:pointer;" data-tpl-toggle="${idx}">跳过</span>
+      <code style="flex:1;font-size:13px;">${escaped}</code>
+    </div>`;
+  }).join('');
+  // Toggle click: switch between price/skip
+  body.querySelectorAll('[data-tpl-toggle]').forEach((el) => {
+    el.addEventListener('click', () => {
+      const i = Number(el.dataset.tplToggle);
+      const d = _tplGenDetections[i];
+      if (d.type === 'skip') d.type = 'price';
+      else if (d.type === 'price') d.type = 'skip';
+      renderTplGenLines();
+    });
+  });
+  updateTplGenSummary();
+}
+
+function updateTplGenSummary() {
+  const rules = tplGenCollectRules();
+  document.querySelector('#quote-tpl-gen-summary').textContent =
+    `将生成 ${rules.length} 条新模板规则（去重后）`;
+}
+
+function tplGenCollectRules() {
+  const seen = new Set();
+  const rules = [];
+  for (const d of _tplGenDetections) {
+    if (!d.pattern || d.type === 'skip') continue;
+    if (!seen.has(d.pattern)) {
+      seen.add(d.pattern);
+      rules.push({ pattern: d.pattern, type: d.type });
+    }
+  }
+  return rules;
+}
+
+document.querySelector('#quote-tpl-gen-close').addEventListener('click', closeTplGenModal);
+document.querySelector('#quote-tpl-gen-cancel').addEventListener('click', closeTplGenModal);
+
+document.querySelector('#quote-tpl-gen-save').addEventListener('click', async () => {
+  const rules = tplGenCollectRules();
+  if (!rules.length) {
+    alert('没有可保存的规则');
+    return;
+  }
+  const resp = await fetch('/api/quotes/exceptions/batch-rules', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ exception_id: _tplGenExcId, rules }),
+  });
+  const data = await resp.json();
+  if (data.error) {
+    alert(`保存失败: ${data.error}`);
+    return;
+  }
+  alert(`已保存 ${data.added} 条模板规则`);
+  closeTplGenModal();
   await loadQuotesData();
 });
 
