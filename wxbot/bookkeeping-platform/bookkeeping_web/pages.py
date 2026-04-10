@@ -1108,6 +1108,7 @@ function quoteExceptionActions(row) {
     actions.push(`<button type="button" data-quote-exception-attach="${row.id}">附加限制</button>`);
   }
   actions.push(`<button type="button" data-quote-template-prefill="${row.id}">一键建模板</button>`);
+  actions.push(`<button type="button" data-quote-exception-annotate="${row.id}">标注</button>`);
   if (String(row.reason || '').includes('unknown')) {
     actions.push(`<button type="button" data-quote-dictionary-prefill="${row.id}">添加到字典</button>`);
   }
