@@ -1480,7 +1480,100 @@ function bindQuoteExceptionButtons() {
       if (row) openDictionaryPrefill(row);
     });
   });
+  document.querySelectorAll('[data-quote-exception-annotate]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const row = allQuoteExceptions.find((item) => String(item.id) === String(button.dataset.quoteExceptionAnnotate));
+      if (row) openAnnotateModal(row);
+    });
+  });
 }
+
+function openAnnotateModal(row) {
+  const modal = document.querySelector('#quote-annotate-modal');
+  const form = document.querySelector('#quote-annotate-form');
+  form.reset();
+  form.exception_id.value = row.id;
+  document.querySelector('#quote-annotate-source').textContent = row.source_line || '';
+  updateAnnotatePreview();
+  modal.setAttribute('aria-hidden', 'false');
+}
+
+function closeAnnotateModal() {
+  document.querySelector('#quote-annotate-modal').setAttribute('aria-hidden', 'true');
+}
+
+function updateAnnotatePreview() {
+  const form = document.querySelector('#quote-annotate-form');
+  const source = document.querySelector('#quote-annotate-source').textContent;
+  const fields = {
+    card_type: form.card_type.value.trim(),
+    country: form.country.value.trim(),
+    amount: form.amount.value.trim(),
+    form_factor: form.form_factor.value.trim(),
+    price: form.price.value.trim(),
+  };
+  const parts = [];
+  const items = Object.entries(fields).filter(([, v]) => v);
+  items.sort((a, b) => {
+    const ia = source.indexOf(a[1]);
+    const ib = source.indexOf(b[1]);
+    if (ia === -1 || ib === -1) return 0;
+    return ia - ib;
+  });
+  let lastEnd = 0;
+  for (const [name, value] of items) {
+    const idx = source.indexOf(value, lastEnd);
+    if (idx === -1) continue;
+    if (idx > lastEnd) {
+      parts.push(source.slice(lastEnd, idx));
+    }
+    parts.push('{' + name + '}');
+    lastEnd = idx + value.length;
+  }
+  if (lastEnd < source.length) {
+    const tail = source.slice(lastEnd);
+    if (/\\([^)]*\\)\\s*$/.test(tail)) {
+      parts.push('{restriction}');
+    } else {
+      parts.push(tail);
+    }
+  }
+  document.querySelector('#quote-annotate-preview').textContent = parts.join('') || '（填写字段后预览）';
+}
+
+document.querySelector('#quote-annotate-close').addEventListener('click', closeAnnotateModal);
+document.querySelector('#quote-annotate-cancel').addEventListener('click', closeAnnotateModal);
+document.querySelector('#quote-annotate-form').addEventListener('input', updateAnnotatePreview);
+
+document.querySelector('#quote-annotate-submit').addEventListener('click', async () => {
+  const form = document.querySelector('#quote-annotate-form');
+  const fields = {};
+  if (form.card_type.value.trim()) fields.card_type = form.card_type.value.trim();
+  if (form.country.value.trim()) fields.country = form.country.value.trim();
+  if (form.amount.value.trim()) fields.amount = form.amount.value.trim();
+  if (form.form_factor.value.trim()) fields.form_factor = form.form_factor.value.trim();
+  if (form.price.value.trim()) fields.price = form.price.value.trim();
+  if (Object.keys(fields).length === 0) {
+    alert('至少填写一个字段');
+    return;
+  }
+  const response = await fetch('/api/quotes/exceptions/resolve', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      exception_id: Number(form.exception_id.value),
+      resolution_status: 'annotate',
+      fields: fields,
+    }),
+  });
+  const payload = await response.json();
+  if (payload.error) {
+    alert(`标注失败：${payload.error}`);
+    return;
+  }
+  closeAnnotateModal();
+  await loadQuotesData();
+});
 
 function sourcePlatform(row) {
   if (row.platform) return row.platform;
