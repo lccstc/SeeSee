@@ -843,11 +843,11 @@ def render_quotes_page() -> str:
     <button type="submit">筛选</button>
     <button type="button" id="quote-filter-clear">清空</button>
   </form>
-  <div class="muted" id="quote-filter-status">按卡种看当前最高价；点“刷新”重新拉取报价墙数据。</div>
+  <div class="muted" id="quote-filter-status">按精确 SKU 看当前最高价；离散面额和区间分开显示，点“排名”看更低价格。</div>
   <div class="table-wrap">
     <table id="quote-board-table" class="quote-table">
       <thead>
-        <tr><th>卡种</th><th>国家 / 币种</th><th>面额 / 条件</th><th>形态</th><th>最高价</th><th>变化</th><th>客人群</th><th>发送者ID</th><th>更新时间</th><th>已存在</th><th>状态</th><th>限制</th><th>操作</th></tr>
+        <tr><th>卡种</th><th>国家 / 币种</th><th>面额 / 条件</th><th>形态</th><th>当前最高价</th><th>组实时</th><th>来源</th><th>更新时间</th><th>已存在</th><th>状态</th><th>限制</th><th>操作</th></tr>
       </thead>
       <tbody></tbody>
     </table>
@@ -875,6 +875,7 @@ def render_quotes_page() -> str:
       <option value="apple_modifier_sheet"></option>
       <option value="section_sheet"></option>
       <option value="simple_sheet"></option>
+      <option value="supermarket-card"></option>
     </datalist>
     <input name="stale_after_minutes" placeholder="超时分钟，如 30" />
     <textarea name="template_config" placeholder="高级模板配置，可先留空"></textarea>
@@ -893,9 +894,9 @@ def render_quotes_page() -> str:
   <div class="table-wrap">
     <table id="quote-profile-table" class="quote-table">
       <thead>
-        <tr><th>平台</th><th>群ID</th><th>群名</th><th>默认卡种</th><th>默认币种</th><th>默认形态</th><th>默认倍数</th><th>模板</th><th>超时</th><th>备注</th></tr>
+        <tr><th>平台</th><th>群ID</th><th>群名</th><th>默认卡种</th><th>默认币种</th><th>默认形态</th><th>默认倍数</th><th>模板</th><th>超时</th><th>备注</th><th>操作</th></tr>
       </thead>
-      <tbody><tr><td colspan="10" class="muted">暂无模板配置</td></tr></tbody>
+      <tbody><tr><td colspan="11" class="muted">暂无模板配置</td></tr></tbody>
     </table>
   </div>
 </section>
@@ -930,9 +931,15 @@ def render_quotes_page() -> str:
   <div class="toolbar">
     <div>
       <h2>异常区</h2>
-      <div class="muted" id="quote-exception-range">每条消息一张卡片，点击未匹配行可标注生成模板。</div>
+      <div class="muted" id="quote-exception-range">默认只看待处理异常，每页 10 条；已处理异常可切换查看。</div>
+    </div>
+    <div class="toolbar-actions">
+      <button type="button" id="quote-exception-toggle">查看已处理</button>
+      <button type="button" id="quote-exception-prev">上一页</button>
+      <button type="button" id="quote-exception-next">下一页</button>
     </div>
   </div>
+  <div class="muted" id="quote-exception-page-status">第 1 页</div>
   <div id="quote-exception-cards" style="display:flex;flex-direction:column;gap:12px;padding:4px 0;"></div>
 </section>
 <div class="quote-modal-backdrop" id="quote-ranking-modal" aria-hidden="true">
@@ -954,23 +961,46 @@ def render_quotes_page() -> str:
     </div>
   </div>
 </div>
-<div class="quote-modal-backdrop" id="quote-tpl-gen-modal" aria-hidden="true">
-  <div class="quote-modal" role="dialog" aria-modal="true" style="max-width:800px;max-height:90vh;overflow-y:auto;">
+<div class="quote-modal-backdrop" id="quote-harvest-modal" aria-hidden="true">
+  <div class="quote-modal" role="dialog" aria-modal="true" style="max-width:1280px;max-height:92vh;overflow-y:auto;">
     <div class="quote-modal-header">
       <div>
-        <h2>模板生成器</h2>
-        <div class="muted" id="quote-tpl-gen-subtitle">自动识别报价行，一键生成模板规则</div>
+        <h2>异常整理台</h2>
+        <div class="muted" id="quote-harvest-subtitle">默认先用标准模板整理；复杂混合原文可切换到分段收割，逐段预览并保存。</div>
       </div>
-      <button class="quote-modal-close" type="button" id="quote-tpl-gen-close">关闭</button>
+      <button class="quote-modal-close" type="button" id="quote-harvest-close">关闭</button>
     </div>
-    <div id="quote-tpl-gen-body" style="padding:12px 0;">
+    <div id="quote-harvest-body" style="padding:12px 0;">
       <div class="muted">加载中...</div>
     </div>
     <div style="display:flex;gap:8px;justify-content:space-between;align-items:center;padding-top:8px;border-top:1px solid #eee;">
-      <div id="quote-tpl-gen-summary" class="muted" style="font-size:13px;"></div>
-      <div style="display:flex;gap:8px;">
-        <button type="button" id="quote-tpl-gen-cancel">取消</button>
-        <button type="button" id="quote-tpl-gen-save" style="font-weight:bold;background:#00897b;color:#fff;border:none;padding:8px 20px;border-radius:4px;cursor:pointer;">保存模板规则</button>
+      <div id="quote-harvest-summary" class="muted" style="font-size:13px;"></div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <input type="password" id="quote-harvest-admin-password" placeholder="管理口令" style="min-width:180px;" />
+        <button type="button" id="quote-harvest-preview">生成预览</button>
+        <button type="button" id="quote-harvest-cancel">取消</button>
+        <button type="button" id="quote-harvest-save" style="font-weight:bold;background:#00897b;color:#fff;border:none;padding:8px 20px;border-radius:4px;cursor:pointer;">保存模板</button>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="quote-modal-backdrop" id="quote-profile-edit-modal" aria-hidden="true">
+  <div class="quote-modal" role="dialog" aria-modal="true" style="max-width:980px;max-height:90vh;overflow-y:auto;">
+    <div class="quote-modal-header">
+      <div>
+        <h2>编辑模板</h2>
+        <div class="muted" id="quote-profile-edit-subtitle">直接编辑当前群模板并保存。</div>
+      </div>
+      <button class="quote-modal-close" type="button" id="quote-profile-edit-close">关闭</button>
+    </div>
+    <div id="quote-profile-edit-body" style="padding:12px 0;">
+      <div class="muted">加载中...</div>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:space-between;align-items:center;padding-top:8px;border-top:1px solid #eee;">
+      <div id="quote-profile-edit-summary" class="muted" style="font-size:13px;"></div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <button type="button" id="quote-profile-edit-cancel">取消</button>
+        <button type="button" id="quote-profile-edit-save" style="font-weight:bold;background:#00897b;color:#fff;border:none;padding:8px 20px;border-radius:4px;cursor:pointer;">保存模板</button>
       </div>
     </div>
   </div>
@@ -978,6 +1008,7 @@ def render_quotes_page() -> str:
 """
     script = """
 const QUOTE_STALE_MINUTES = 30;
+let _quoteProfileEditState = null;
 
 function compactNumber(value) {
   if (value === null || value === undefined || value === '') {
@@ -1121,11 +1152,7 @@ function quoteExceptionActions(row) {
   if (String(row.reason || '') === 'blocked_or_question_line') {
     actions.push(`<button type="button" data-quote-exception-attach="${row.id}">附加限制</button>`);
   }
-  actions.push(`<button type="button" data-quote-template-prefill="${row.id}">一键建模板</button>`);
-  actions.push(`<button type="button" data-quote-exception-annotate="${row.id}">生成模板</button>`);
-  if (String(row.reason || '').includes('unknown')) {
-    actions.push(`<button type="button" data-quote-dictionary-prefill="${row.id}">添加到字典</button>`);
-  }
+  actions.push(`<button type="button" data-quote-exception-harvest="${row.id}">人工整理</button>`);
   actions.push(`<button type="button" data-quote-exception-ignore="${row.id}">忽略</button>`);
   return actions.join('');
 }
@@ -1243,21 +1270,39 @@ let allQuoteRows = [];
 let allQuoteExceptions = [];
 let allQuoteProfiles = [];
 let allQuoteInquiries = [];
+let quoteExceptionState = {
+  limit: 10,
+  offset: 0,
+  total: 0,
+  openTotal: 0,
+  handledTotal: 0,
+  hasPrev: false,
+  hasNext: false,
+  resolutionStatus: 'open',
+};
 
 function currentQuoteFilters() {
   const form = document.querySelector('#quote-filter-form');
   return Object.fromEntries(new FormData(form).entries());
 }
 
-function renderQuoteBoard(rows) {
+function renderQuoteBoard(rows, loadError = '') {
   const filteredRows = rows.filter((row) => quoteRowMatches(row, currentQuoteFilters()));
   document.querySelector('#quote-live-count').textContent = String(filteredRows.length);
   document.querySelector('#quote-source-count').textContent = String(new Set(filteredRows.map((row) => quoteSourceText(row))).size);
+  if (loadError) {
+    document.querySelector('#quote-board-range').textContent = `报价墙加载失败: ${loadError}`;
+    document.querySelector('#quote-filter-status').textContent = '报价墙渲染已降级；其他区块不受影响，点“刷新”可重试。';
+    document.querySelector('#quote-board-table tbody').innerHTML = `<tr><td colspan="12" class="muted">报价墙加载失败: ${textValue(loadError, '未知错误')}</td></tr>`;
+    bindQuoteRankingButtons();
+    bindQuoteDeleteButtons();
+    return;
+  }
   document.querySelector('#quote-board-range').textContent = filteredRows.length
-    ? `已加载 ${filteredRows.length} 条可用报价，最新更新时间 ${latestQuoteTime(filteredRows) || '—'}。`
+    ? `已加载 ${filteredRows.length} 个 SKU 的当前最高报价，最新更新时间 ${latestQuoteTime(filteredRows) || '—'}。`
     : '当前没有可用报价。';
   document.querySelector('#quote-filter-status').textContent = filteredRows.length
-    ? `当前显示 ${filteredRows.length} 条报价。`
+    ? `当前显示的是每个精确 SKU 的最高价；离散面额和区间分开，组实时显示该群最新一笔是涨还是跌。`
     : '没有匹配的报价。';
   document.querySelector('#quote-board-table tbody').innerHTML = filteredRows.length
     ? filteredRows.map((row) => `
@@ -1268,8 +1313,7 @@ function renderQuoteBoard(rows) {
         <td>${quoteFormFactorText(row.form_factor || row.quote_form_factor)}</td>
         <td>${compactNumber(row.price ?? row.rate ?? row.quote_price ?? '')}</td>
         <td><span class="quote-change-chip ${quoteChangeClass(row.change_status)}">${quoteChangeText(row)}</span></td>
-        <td>${quoteSourceText(row)}<span class="quote-source-detail">${quoteSourceDetailText(row)}</span></td>
-        <td>${textValue(row.sender_id)}</td>
+        <td>${quoteSourceText(row)}<span class="quote-source-detail">${textValue(row.sender_id)} / ${quoteSourceDetailText(row)}</span></td>
         <td>${formatQuoteTime(row.updated_at || row.effective_at || row.created_at || row.message_time || row.received_at)}</td>
         <td class="${quoteAgeClass(row)}">${quoteAgeText(row.effective_at || row.message_time || row.created_at || row.updated_at || row.received_at)}</td>
         <td><span class="quote-status-chip ${quoteDisplayStatusClass(row)}">${quoteDisplayStatusText(row)}</span></td>
@@ -1277,7 +1321,7 @@ function renderQuoteBoard(rows) {
         <td><button type="button" data-quote-ranking-id="${row.id}">排名</button> <button type="button" class="quote-delete-btn" data-quote-delete-id="${row.id}" style="color:#c0392b;border-color:#c0392b">删除</button></td>
       </tr>
     `).join('')
-    : '<tr><td colspan="13" class="muted">暂无可用报价</td></tr>';
+    : '<tr><td colspan="12" class="muted">暂无可用报价</td></tr>';
   bindQuoteRankingButtons();
   bindQuoteDeleteButtons();
 }
@@ -1361,8 +1405,13 @@ function closeQuoteRankingModal() {
   document.querySelector('#quote-ranking-modal').setAttribute('aria-hidden', 'true');
 }
 
-function renderQuoteProfiles(rows) {
+function renderQuoteProfiles(rows, loadError = '') {
   allQuoteProfiles = rows || [];
+  if (loadError) {
+    document.querySelector('#quote-profile-table tbody').innerHTML =
+      `<tr><td colspan="11" class="muted">模板列表加载失败: ${textValue(loadError, '未知错误')}</td></tr>`;
+    return;
+  }
   document.querySelector('#quote-profile-table tbody').innerHTML = allQuoteProfiles.length
     ? allQuoteProfiles.map((row) => `
       <tr>
@@ -1376,13 +1425,349 @@ function renderQuoteProfiles(rows) {
         <td>${textValue(row.parser_template)}</td>
         <td>${textValue(row.stale_after_minutes)}分钟</td>
         <td class="quote-note">${textValue(row.note)}</td>
+        <td><button type="button" data-quote-profile-edit="${escapeHtml(String(row.id || ''))}">编辑模板</button> <button type="button" data-quote-profile-delete="${escapeHtml(String(row.id || ''))}" style="color:#c0392b;border-color:#c0392b">删除模板</button></td>
       </tr>
     `).join('')
-    : '<tr><td colspan="10" class="muted">暂无模板配置</td></tr>';
+    : '<tr><td colspan="11" class="muted">暂无模板配置</td></tr>';
+  bindQuoteProfileButtons();
 }
 
-function renderQuoteInquiries(rows) {
+function quoteRowsForProfile(row) {
+  return (allQuoteRows || []).filter((item) =>
+    String(item.platform || '') === String(row.platform || '')
+    && (
+      String(item.source_group_key || '') === String(row.source_group_key || '')
+      || String(item.chat_id || '') === String(row.chat_id || '')
+    )
+  );
+}
+
+function parseGroupParserConfig(rawConfig) {
+  const text = String(rawConfig || '').trim();
+  if (!text) return null;
+  try {
+    const parsed = JSON.parse(text);
+    if (String(parsed.version || '') !== 'group-parser-v1' || !Array.isArray(parsed.sections)) {
+      return null;
+    }
+    return parsed;
+  } catch (error) {
+    return null;
+  }
+}
+
+function groupParserSectionCards(row) {
+  const parsed = parseGroupParserConfig(row.template_config || '');
+  if (!parsed) return [];
+  return parsed.sections.map((section, index) => {
+    const defaults = section.defaults || {};
+    const quoteLines = Array.isArray(section.lines) ? section.lines.filter((item) => item.kind === 'quote') : [];
+    const firstPattern = quoteLines.length ? String(quoteLines[0].pattern || '').trim() : '';
+    return {
+      index,
+      label: String(section.label || defaults.card_type || `骨架${index + 1}`).trim() || `骨架${index + 1}`,
+      priority: Number(section.priority || (index + 1) * 10),
+      quote_count: quoteLines.length,
+      country_or_currency: String(defaults.country_or_currency || '').trim(),
+      form_factor: String(defaults.form_factor || '').trim() || '不限',
+      first_pattern: firstPattern,
+    };
+  });
+}
+
+function groupParserConfigToFixedTemplate(row) {
+  const rawConfig = String(row.template_config || '').trim();
+  if (!rawConfig) return '';
+  const parsed = parseGroupParserConfig(rawConfig);
+  if (!parsed) return rawConfig;
+  const latestRows = quoteRowsForProfile(row);
+  const lines = [];
+  const sections = parsed.sections.slice();
+  sections.forEach((section, sectionIndex) => {
+    const defaults = section.defaults || {};
+    const defaultCountry = String(defaults.country_or_currency || '').trim();
+    const defaultForm = String(defaults.form_factor || '').trim() || '不限';
+    const defaultCard = String(defaults.card_type || section.label || '').trim() || '未知';
+    if (lines.length) lines.push('');
+    lines.push(`# 骨架 ${sectionIndex + 1} / ${sections.length}`);
+    lines.push('[默认]');
+    if (defaultCountry) lines.push(`国家 / 币种=${defaultCountry}`);
+    lines.push(`形态=${defaultForm}`);
+    lines.push('');
+    lines.push(`[${defaultCard}]`);
+    const quoteLines = Array.isArray(section.lines) ? section.lines.filter((item) => item.kind === 'quote') : [];
+    for (const line of quoteLines) {
+      const outputs = line.outputs || {};
+      const amountRange = String(outputs.amount_range || '').trim();
+      const country = String(outputs.country_or_currency || '').trim();
+      const formFactor = String(outputs.form_factor || defaultForm).trim() || defaultForm;
+      const cardType = String(outputs.card_type || defaultCard).trim() || defaultCard;
+      const latest = latestRows.find((quoteRow) =>
+        String(quoteRow.card_type || '') === cardType
+        && String(quoteRow.country_or_currency || '') === country
+        && normalizeFormFactorText(quoteRow.form_factor || '') === normalizeFormFactorText(formFactor)
+        && String(quoteRow.amount_range || '') === amountRange
+      );
+      const priceText = latest ? compactNumber(latest.price) : '?';
+      const label = amountRange || country || '未知';
+      lines.push(`${label}=${priceText}`);
+    }
+  });
+  return lines.join('\\n').trim();
+}
+
+function fixedTemplateToGroupParserConfig(templateText, existingConfigText) {
+  let existing;
+  try {
+    existing = JSON.parse(String(existingConfigText || ''));
+  } catch (error) {
+    throw new Error('当前模板不是有效 JSON，不能用固定格式编辑。');
+  }
+  if (String(existing.version || '') !== 'group-parser-v1' || !Array.isArray(existing.sections)) {
+    throw new Error('当前模板不是 group-parser-v1，暂不支持固定格式编辑。');
+  }
+
+  const blocks = [];
+  let pendingDefaults = { country_or_currency: '', form_factor: '不限' };
+  let activeDefaults = { ...pendingDefaults };
+  let currentCard = null;
+  for (const rawLine of String(templateText || '').split('\\n')) {
+    const line = normalizeQuoteLineForUi(rawLine);
+    if (!line) continue;
+    if (/^#\\s*骨架\\s+\\d+/i.test(line) || /^\\/\\//.test(line)) continue;
+    const blockMatch = line.match(/^\\[(.+)\\]$/);
+    if (blockMatch) {
+      const blockName = String(blockMatch[1] || '').trim();
+      if (blockName === '默认') {
+        currentCard = null;
+        pendingDefaults = { ...activeDefaults };
+        continue;
+      }
+      currentCard = {
+        card_type: blockName,
+        defaults: { ...pendingDefaults },
+        quotes: [],
+      };
+      activeDefaults = { ...currentCard.defaults };
+      blocks.push(currentCard);
+      continue;
+    }
+    if (!currentCard) {
+      const separator = line.includes('=') ? '=' : (line.includes(':') ? ':' : '');
+      if (!separator) continue;
+      const [rawKey, rawValue] = line.split(separator, 2);
+      const key = String(rawKey || '').replace(/\\s+/g, '').toLowerCase();
+      const value = String(rawValue || '').trim();
+      if (key === '国家/币种' || key === '国家/币种'.replace(/\\s+/g, '').toLowerCase() || key === 'country/currency') {
+        pendingDefaults.country_or_currency = value;
+      } else if (key === '形态') {
+        pendingDefaults.form_factor = value || '不限';
+      }
+      continue;
+    }
+    const separator = line.includes('=') ? '=' : (line.includes(':') ? ':' : '');
+    if (!separator) continue;
+    const [label, price] = line.split(separator, 2);
+    currentCard.quotes.push({
+      label: String(label || '').trim(),
+      price_text: String(price || '').trim(),
+    });
+  }
+
+  const existingSections = existing.sections.filter((section) => section && section.enabled !== false);
+  if (blocks.length !== existingSections.length) {
+    throw new Error(`固定格式里有 ${blocks.length} 段，但当前模板有 ${existingSections.length} 套骨架；请先在异常区重建，不要直接改这里。`);
+  }
+
+  const nextConfig = {
+    ...existing,
+    sections: existing.sections.map((section, index) => {
+      const block = blocks[index];
+      const quoteLines = Array.isArray(section.lines) ? section.lines.filter((item) => item.kind === 'quote') : [];
+      if (block.quotes.length !== quoteLines.length) {
+        throw new Error(`第 ${index + 1} 套骨架报价行数量不一致；这里暂时只支持修改现有模板，不支持增删行。`);
+      }
+      const nextDefaults = {
+        ...(section.defaults || {}),
+        card_type: block.card_type || section.defaults?.card_type || '',
+        country_or_currency: block.defaults.country_or_currency || section.defaults?.country_or_currency || '',
+        form_factor: block.defaults.form_factor || section.defaults?.form_factor || '不限',
+      };
+      let quoteCursor = 0;
+      const nextLines = (section.lines || []).map((line) => {
+        if (line.kind !== 'quote') return line;
+        const quote = block.quotes[quoteCursor++];
+        const label = String(quote.label || '').trim();
+        const normalizedLabel = label.replace(/\\s+/g, '');
+        const looksAmount = /^[0-9]+(?:[\\/-][0-9]+)*$/.test(normalizedLabel);
+        return {
+          ...line,
+          outputs: {
+            ...(line.outputs || {}),
+            card_type: block.card_type || line.outputs?.card_type || nextDefaults.card_type,
+            country_or_currency: looksAmount ? (nextDefaults.country_or_currency || line.outputs?.country_or_currency || '') : label,
+            form_factor: nextDefaults.form_factor || line.outputs?.form_factor || '不限',
+            amount_range: looksAmount ? label : (line.outputs?.amount_range || '不限'),
+          },
+        };
+      });
+      return {
+        ...section,
+        label: block.card_type || section.label,
+        defaults: nextDefaults,
+        lines: nextLines,
+      };
+    }),
+  };
+  return JSON.stringify(nextConfig);
+}
+
+function bindQuoteProfileButtons() {
+  document.querySelectorAll('[data-quote-profile-edit]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const targetId = String(button.dataset.quoteProfileEdit || '');
+      const row = allQuoteProfiles.find((item) => String(item.id || '') === targetId);
+      if (row) {
+        openQuoteProfileEditModal(row);
+      }
+    });
+  });
+  document.querySelectorAll('[data-quote-profile-delete]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const targetId = String(button.dataset.quoteProfileDelete || '');
+      const row = allQuoteProfiles.find((item) => String(item.id || '') === targetId);
+      if (!row) return;
+      if (!confirm(`确定删除模板？\\n${row.chat_name || row.chat_id || '未知群'} / ${row.chat_id || ''}`)) {
+        return;
+      }
+      const adminPassword = prompt('请输入报价管理密码，确认删除模板');
+      if (adminPassword === null) return;
+      const resp = await fetch('/api/quotes/group-profiles/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: Number(targetId),
+          admin_password: adminPassword,
+        }),
+      });
+      const data = await resp.json();
+      if (data.error) {
+        alert(`删除失败: ${data.error}`);
+        return;
+      }
+      if (!data.deleted) {
+        alert('删除失败: 没找到这条模板');
+        return;
+      }
+      if (_quoteProfileEditState && String(_quoteProfileEditState.id || '') === targetId) {
+        closeQuoteProfileEditModal();
+      }
+      await loadQuotesData();
+      alert('模板已删除。');
+    });
+  });
+}
+
+function closeQuoteProfileEditModal() {
+  const modal = document.querySelector('#quote-profile-edit-modal');
+  modal.classList.remove('open');
+  modal.setAttribute('aria-hidden', 'true');
+  _quoteProfileEditState = null;
+}
+
+function openQuoteProfileEditModal(row) {
+  const fixedTemplateText = groupParserConfigToFixedTemplate(row);
+  _quoteProfileEditState = {
+    id: row.id || '',
+    platform: row.platform || 'whatsapp',
+    chat_id: row.chat_id || '',
+    chat_name: row.chat_name || row.chat_id || '',
+    default_card_type: row.default_card_type || '',
+    default_country_or_currency: row.default_country_or_currency || '',
+    default_form_factor: row.default_form_factor || '不限',
+    default_multiplier: row.default_multiplier || '',
+    parser_template: row.parser_template || '',
+    stale_after_minutes: String(row.stale_after_minutes || '30'),
+    note: row.note || '',
+    template_config: row.template_config || '',
+    fixed_template_text: fixedTemplateText,
+    profile_id: row.id || '',
+  };
+  const modal = document.querySelector('#quote-profile-edit-modal');
+  modal.classList.add('open');
+  modal.setAttribute('aria-hidden', 'false');
+  document.querySelector('#quote-profile-edit-subtitle').textContent =
+    `${row.chat_name || row.chat_id || '未知群'} / ${row.chat_id || ''} / 当前共有 ${safeSectionCount(row.template_config)} 套骨架`;
+  renderQuoteProfileEditModal();
+}
+
+function safeSectionCount(templateConfigText) {
+  try {
+    const parsed = JSON.parse(String(templateConfigText || ''));
+    return Array.isArray(parsed.sections) ? parsed.sections.length : 0;
+  } catch (error) {
+    return 0;
+  }
+}
+
+function renderQuoteProfileEditModal() {
+  if (!_quoteProfileEditState) return;
+  const body = document.querySelector('#quote-profile-edit-body');
+  const currentRow = allQuoteProfiles.find((item) => String(item.id || '') === String(_quoteProfileEditState.id || '')) || {};
+  const sectionCards = groupParserSectionCards(currentRow);
+  const sectionCardsHtml = sectionCards.length
+    ? `
+      <div style="grid-column:1 / -1;">
+        <div class="muted" style="margin-bottom:8px;">当前群专用解析器共有 ${sectionCards.length} 套骨架，按优先级从低到高展示。你现在编辑的是这一整个群模板，不是单独某一条报价。</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;">
+          ${sectionCards.map((card) => `
+            <div style="border:1px solid #d8e2f0;border-radius:8px;padding:10px;background:#f8fbff;">
+              <div style="font-weight:700;">骨架 ${card.index + 1}</div>
+              <div class="muted" style="margin-top:4px;">卡种: ${escapeHtml(card.label)}</div>
+              <div class="muted">默认: ${escapeHtml(card.country_or_currency || '—')} / ${escapeHtml(card.form_factor || '不限')}</div>
+              <div class="muted">报价行: ${card.quote_count} 条 / 优先级 ${card.priority}</div>
+              <div style="margin-top:6px;font-family:monospace;font-size:12px;white-space:pre-wrap;">${escapeHtml(card.first_pattern || '暂无报价 pattern')}</div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `
+    : '';
+  body.innerHTML = `
+    <div class="quote-filter-grid" style="grid-template-columns:repeat(2,minmax(0,1fr));display:grid;gap:10px;">
+      <input data-profile-edit-field="platform" value="${escapeHtml(_quoteProfileEditState.platform)}" placeholder="平台" />
+      <input data-profile-edit-field="chat_id" value="${escapeHtml(_quoteProfileEditState.chat_id)}" placeholder="群ID / chat_id" />
+      <input data-profile-edit-field="chat_name" value="${escapeHtml(_quoteProfileEditState.chat_name)}" placeholder="群名" />
+      <input data-profile-edit-field="default_card_type" value="${escapeHtml(_quoteProfileEditState.default_card_type)}" placeholder="默认卡种" />
+      <input data-profile-edit-field="default_country_or_currency" value="${escapeHtml(_quoteProfileEditState.default_country_or_currency)}" placeholder="默认国家 / 币种" />
+      <input data-profile-edit-field="default_form_factor" value="${escapeHtml(_quoteProfileEditState.default_form_factor)}" placeholder="默认形态" />
+      <input data-profile-edit-field="default_multiplier" value="${escapeHtml(_quoteProfileEditState.default_multiplier)}" placeholder="默认倍数" />
+      <input data-profile-edit-field="parser_template" value="${escapeHtml(_quoteProfileEditState.parser_template)}" placeholder="模板类型" />
+      <input data-profile-edit-field="stale_after_minutes" value="${escapeHtml(_quoteProfileEditState.stale_after_minutes)}" placeholder="超时分钟" />
+      <input data-profile-edit-field="note" value="${escapeHtml(_quoteProfileEditState.note)}" placeholder="备注" />
+      ${sectionCardsHtml}
+      <textarea data-profile-edit-field="fixed_template_text" style="grid-column:1 / -1;min-height:320px;font-family:monospace;" placeholder="固定格式模板">${escapeHtml(_quoteProfileEditState.fixed_template_text)}</textarea>
+      <details style="grid-column:1 / -1;">
+        <summary class="muted" style="cursor:pointer;">查看原始模板 JSON</summary>
+        <textarea data-profile-edit-field="template_config" style="margin-top:8px;min-height:220px;font-family:monospace;">${escapeHtml(_quoteProfileEditState.template_config)}</textarea>
+      </details>
+    </div>
+  `;
+  document.querySelector('#quote-profile-edit-summary').textContent = '固定格式优先；按“骨架 1 / N、骨架 2 / N”顺序编辑已有模板。这里只适合改已有骨架的卡种、国家/币种、形态和面额标签，不适合增删骨架。';
+  document.querySelectorAll('[data-profile-edit-field]').forEach((node) => {
+    node.addEventListener('input', (event) => {
+      _quoteProfileEditState[event.target.dataset.profileEditField] = event.target.value;
+    });
+  });
+}
+
+function renderQuoteInquiries(rows, loadError = '') {
   allQuoteInquiries = rows || [];
+  if (loadError) {
+    document.querySelector('#quote-inquiry-table tbody').innerHTML =
+      `<tr><td colspan="8" class="muted">短回复上下文加载失败: ${textValue(loadError, '未知错误')}</td></tr>`;
+    return;
+  }
   document.querySelector('#quote-inquiry-table tbody').innerHTML = allQuoteInquiries.length
     ? allQuoteInquiries.map((row) => `
       <tr>
@@ -1399,25 +1784,111 @@ function renderQuoteInquiries(rows) {
     : '<tr><td colspan="8" class="muted">暂无短回复上下文</td></tr>';
 }
 
-function renderQuoteExceptions(rows) {
-  const filteredRows = rows;
-  document.querySelector('#quote-exception-count').textContent = String(filteredRows.length);
-  document.querySelector('#quote-exception-range').textContent = filteredRows.length
-    ? `已收集 ${filteredRows.length} 条消息级异常，点击行可标注。`
-    : '当前没有异常。';
-  const container = document.querySelector('#quote-exception-cards');
-  if (!filteredRows.length) {
-    container.innerHTML = '<div class="muted" style="padding:12px;">当前没有异常。</div>';
+function quoteExceptionHarvestStatus(row) {
+  const status = String(row.resolution_status || row.status || 'open').toLowerCase();
+  const note = String(row.resolution_note || '');
+  if (note.includes('result_saved')) {
+    return '已整理，模板待应用';
+  }
+  if (note.includes('harvested') && note.includes('replayed=true')) {
+    return '已整理，已重放';
+  }
+  if (note.includes('harvested') && note.includes('replayed=false')) {
+    return '已整理，未重放';
+  }
+  if (status === 'open') {
+    return '待整理';
+  }
+  if (status === 'ignored') {
+    return '已忽略';
+  }
+  return quoteStatusText(status);
+}
+
+function displayQuoteResolutionNote(note) {
+  const text = String(note || '');
+  const lines = text.split('\\n');
+  if (lines[0] && lines[0].startsWith('quote_exception_suppression:')) {
+    lines.shift();
+  }
+  return lines.join('\\n').trim();
+}
+
+function bindQuoteExceptionPagination() {
+  const prevButton = document.querySelector('#quote-exception-prev');
+  const nextButton = document.querySelector('#quote-exception-next');
+  const toggleButton = document.querySelector('#quote-exception-toggle');
+  prevButton.disabled = !quoteExceptionState.hasPrev;
+  nextButton.disabled = !quoteExceptionState.hasNext;
+  toggleButton.textContent = quoteExceptionState.resolutionStatus === 'open' ? '查看已处理' : '只看待处理';
+  prevButton.onclick = async () => {
+    if (!quoteExceptionState.hasPrev) return;
+    quoteExceptionState.offset = Math.max(0, quoteExceptionState.offset - quoteExceptionState.limit);
+    await loadQuotesData();
+  };
+  nextButton.onclick = async () => {
+    if (!quoteExceptionState.hasNext) return;
+    quoteExceptionState.offset += quoteExceptionState.limit;
+    await loadQuotesData();
+  };
+  toggleButton.onclick = async () => {
+    quoteExceptionState.resolutionStatus = quoteExceptionState.resolutionStatus === 'open' ? 'all' : 'open';
+    quoteExceptionState.offset = 0;
+    await loadQuotesData();
+  };
+}
+
+function renderQuoteExceptions(payload) {
+  if (payload?._load_error) {
+    quoteExceptionState = {
+      ...quoteExceptionState,
+      hasPrev: false,
+      hasNext: false,
+    };
+    document.querySelector('#quote-exception-count').textContent = '0';
+    document.querySelector('#quote-exception-range').textContent = `异常区加载失败: ${payload._load_error}`;
+    document.querySelector('#quote-exception-page-status').textContent = '异常区暂不可用';
+    document.querySelector('#quote-exception-cards').innerHTML =
+      `<div class="muted" style="padding:12px;">异常区加载失败: ${textValue(payload._load_error, '未知错误')}</div>`;
+    bindQuoteExceptionPagination();
     return;
   }
-  container.innerHTML = filteredRows.map((row) => {
+  const rows = Array.isArray(payload?.rows) ? payload.rows : [];
+  quoteExceptionState = {
+    ...quoteExceptionState,
+    limit: Number(payload?.limit || quoteExceptionState.limit || 10),
+    offset: Number(payload?.offset || 0),
+    total: Number(payload?.total || 0),
+    openTotal: Number(payload?.open_total || 0),
+    handledTotal: Number(payload?.handled_total || 0),
+    hasPrev: Boolean(payload?.has_prev),
+    hasNext: Boolean(payload?.has_next),
+    resolutionStatus: String(payload?.resolution_status || quoteExceptionState.resolutionStatus || 'open'),
+  };
+  document.querySelector('#quote-exception-count').textContent = String(quoteExceptionState.openTotal);
+  const pageStart = rows.length ? quoteExceptionState.offset + 1 : 0;
+  const pageEnd = quoteExceptionState.offset + rows.length;
+  document.querySelector('#quote-exception-range').textContent = quoteExceptionState.openTotal
+    ? `待处理总数 ${quoteExceptionState.openTotal} 条；已处理 ${quoteExceptionState.handledTotal} 条。`
+    : '当前没有待处理异常。';
+  document.querySelector('#quote-exception-page-status').textContent = rows.length
+    ? `当前显示 ${pageStart}-${pageEnd} / ${quoteExceptionState.total}（${quoteExceptionState.resolutionStatus === 'open' ? '待处理' : '全部'}）`
+    : `当前没有${quoteExceptionState.resolutionStatus === 'open' ? '待处理' : ''}异常。`;
+  const container = document.querySelector('#quote-exception-cards');
+  if (!rows.length) {
+    container.innerHTML = `<div class="muted" style="padding:12px;">当前没有${quoteExceptionState.resolutionStatus === 'open' ? '待处理' : ''}异常。</div>`;
+    bindQuoteExceptionPagination();
+    return;
+  }
+  const renderExceptionCard = (row) => {
     const status = String(row.resolution_status || row.status || 'open').toLowerCase();
     const sourceLines = String(row.source_line || '').split('\\n').filter(Boolean);
     const linesHtml = sourceLines.map((line, idx) => {
       const escaped = line.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-      return `<div class="exc-line" data-exc-id="${row.id}" data-line-idx="${idx}" style="padding:4px 8px;cursor:pointer;border-radius:3px;font-family:monospace;font-size:13px;" onmouseover="this.style.background='#e3f2fd'" onmouseout="this.style.background=''">${escaped}</div>`;
+      return `<div class="exc-line" data-exc-id="${row.id}" data-line-idx="${idx}" style="padding:4px 8px;border-radius:3px;font-family:monospace;font-size:13px;">${escaped}</div>`;
     }).join('');
-    const noteHtml = row.resolution_note ? `<div class="muted" style="font-size:12px;margin-top:4px;white-space:pre-wrap;">${textValue(row.resolution_note)}</div>` : '';
+    const note = displayQuoteResolutionNote(row.resolution_note);
+    const noteHtml = note ? `<div class="muted" style="font-size:12px;margin-top:4px;white-space:pre-wrap;">${textValue(note)}</div>` : '';
     return `<div class="exc-card" data-exc-row-id="${row.id}" style="border:1px solid #ddd;border-radius:6px;padding:12px;background:#fafafa;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
         <div>
@@ -1427,27 +1898,21 @@ function renderQuoteExceptions(rows) {
           <span class="quote-status-chip ${quoteStatusClass(status)}" style="margin-left:8px;">${quoteStatusText(status)}</span>
         </div>
         <div style="display:flex;gap:4px;">
-          <button type="button" data-quote-exception-annotate="${row.id}" style="font-size:12px;font-weight:bold;background:#00897b;color:#fff;border:none;padding:4px 12px;border-radius:3px;cursor:pointer;">生成模板</button>
+          <button type="button" data-quote-exception-harvest="${row.id}" style="font-size:12px;font-weight:bold;background:#00897b;color:#fff;border:none;padding:4px 12px;border-radius:3px;cursor:pointer;">人工整理</button>
           <button type="button" data-quote-exception-ignore="${row.id}" style="font-size:12px;">忽略</button>
         </div>
       </div>
-      <div style="margin-bottom:4px;font-size:12px;color:#888;">点击任意行开始标注 ↓</div>
+      <div style="display:flex;justify-content:space-between;gap:12px;margin-bottom:6px;font-size:12px;color:#666;">
+        <span>${quoteExceptionHarvestStatus(row)}</span>
+        <span>${textValue(row.suggested_action || '直接把右侧整理成最终正确结果；不确定的不要上墙。')}</span>
+      </div>
       <div class="exc-lines">${linesHtml}</div>
       ${noteHtml}
     </div>`;
-  }).join('');
+  };
+  container.innerHTML = rows.map((row) => renderExceptionCard(row)).join('');
   bindQuoteExceptionButtons();
-  bindExcLineClicks();
-}
-
-function bindExcLineClicks() {
-  document.querySelectorAll('.exc-line').forEach((el) => {
-    el.addEventListener('click', () => {
-      const excId = el.dataset.excId;
-      const row = allQuoteExceptions.find((item) => String(item.id) === excId);
-      if (row) openTplGenModal(row);
-    });
-  });
+  bindQuoteExceptionPagination();
 }
 
 function bindQuoteExceptionButtons() {
@@ -1482,145 +1947,1053 @@ function bindQuoteExceptionButtons() {
       await loadQuotesData();
     });
   });
-  document.querySelectorAll('[data-quote-template-prefill]').forEach((button) => {
+  document.querySelectorAll('[data-quote-exception-harvest]').forEach((button) => {
     button.addEventListener('click', () => {
-      const row = allQuoteExceptions.find((item) => String(item.id) === String(button.dataset.quoteTemplatePrefill));
-      if (row) fillQuoteProfileFromException(row);
-    });
-  });
-  document.querySelectorAll('[data-quote-dictionary-prefill]').forEach((button) => {
-    button.addEventListener('click', () => {
-      const row = allQuoteExceptions.find((item) => String(item.id) === String(button.dataset.quoteDictionaryPrefill));
-      if (row) openDictionaryPrefill(row);
-    });
-  });
-  document.querySelectorAll('[data-quote-exception-annotate]').forEach((button) => {
-    button.addEventListener('click', () => {
-      const row = allQuoteExceptions.find((item) => String(item.id) === String(button.dataset.quoteExceptionAnnotate));
-      if (row) openTplGenModal(row);
+      const row = allQuoteExceptions.find((item) => String(item.id) === String(button.dataset.quoteExceptionHarvest));
+      if (row) openQuoteHarvestModal(row);
     });
   });
 }
 
 // ---------------------------------------------------------------------------
-// Template Generator Modal
+// Quote Harvest Modal
 // ---------------------------------------------------------------------------
-let _tplGenExcId = null;
-let _tplGenDetections = [];
+let _quoteHarvestState = null;
+let _quoteHarvestPreviewToken = 0;
 
-function closeTplGenModal() {
-  const modal = document.querySelector('#quote-tpl-gen-modal');
+function escapeHtml(value) {
+  return String(value || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function normalizeQuoteLineForUi(line) {
+  let text = String(line || '');
+  text = text
+    .replace(/（/g, '(')
+    .replace(/）/g, ')')
+    .replace(/＝/g, '=')
+    .replace(/：/g, ':')
+    .replace(/\u3000/g, ' ');
+  text = text.replace(/\\s*=\\s*/g, '=');
+  text = text.replace(/\\s*:\\s*/g, ':');
+  text = text.replace(/ {2,}/g, ' ');
+  return text.trim();
+}
+
+function isQuoteCandidateLine(line) {
+  const normalized = normalizeQuoteLineForUi(line);
+  if (!normalized || !/\\d/.test(normalized)) return false;
+  const lowered = normalized.toLowerCase();
+  if (lowered.includes('wechat') || lowered.includes('whatsapp') || lowered.includes('recommend friends')) return false;
+  return /[=:￥¥]/.test(normalized) || normalized.includes('收') || lowered.includes('ask') || normalized.includes('暂停') || lowered.includes('task');
+}
+
+function quoteHarvestRawLooksComplex(rawLines) {
+  const meaningfulLines = (rawLines || []).filter((item) => item.normalized);
+  const separatorCount = meaningfulLines.filter((item) => /={3,}|-{3,}|【.+】|快卡|不限购/.test(item.normalized)).length;
+  const quoteLineCount = meaningfulLines.filter((item) => item.quoteCandidate).length;
+  const countryTokens = ['英国', '德国', '荷兰', '法国', '西班牙', '芬兰', '爱尔兰', '比利时', '意大利', '奥地利', '墨西哥', '南非', '巴西', 'CAD', 'GBP', 'USD'];
+  const seenCountries = new Set();
+  meaningfulLines.forEach((item) => {
+    countryTokens.forEach((token) => {
+      if (item.normalized.includes(token)) seenCountries.add(token);
+    });
+  });
+  return separatorCount >= 2 || seenCountries.size >= 3 || (separatorCount >= 1 && quoteLineCount >= 5);
+}
+
+function quoteHarvestPreviewSuggestsHarvest(preview, previewError = '') {
+  const errors = [...(Array.isArray(preview?.errors) ? preview.errors : [])];
+  if (previewError) errors.push(previewError);
+  const unmatchedCount = errors.filter((item) => String(item).includes('原文里还有未吸收的报价行')).length;
+  const missingCardTitleCount = errors.filter((item) => String(item).includes('没在原文里找到卡种标题')).length;
+  return unmatchedCount >= 3 || missingCardTitleCount >= 2;
+}
+
+function quoteHarvestSuggestionActive() {
+  return Boolean(_quoteHarvestState && (_quoteHarvestState.suggestedByRaw || _quoteHarvestState.suggestedByPreview));
+}
+
+function closeQuoteHarvestModal() {
+  const modal = document.querySelector('#quote-harvest-modal');
   modal.classList.remove('open');
   modal.setAttribute('aria-hidden', 'true');
+  _quoteHarvestState = null;
+  document.querySelector('#quote-harvest-admin-password').value = '';
 }
 
-async function openTplGenModal(row) {
-  _tplGenExcId = row.id;
-  const modal = document.querySelector('#quote-tpl-gen-modal');
-  const body = document.querySelector('#quote-tpl-gen-body');
-  body.innerHTML = '<div class="muted" style="padding:12px;">分析中...</div>';
+function currentHarvestProfile(row) {
+  return allQuoteProfiles.find((item) =>
+    String(item.platform || 'whatsapp') === sourcePlatform(row)
+    && String(item.chat_id || '') === String(row.chat_id || '')
+  ) || null;
+}
+
+function createHarvestRow() {
+  return {
+    source_line_index: '',
+    amount: '',
+    price: '',
+    country_or_currency: '',
+    form_factor: '',
+  };
+}
+
+function currentResultState() {
+  return _quoteHarvestState?.result || null;
+}
+
+function currentSectionHarvestState() {
+  return _quoteHarvestState?.harvest || null;
+}
+
+function rememberHarvestScroll() {
+  const harvest = currentSectionHarvestState();
+  if (!harvest) return;
+  const node = document.querySelector('#quote-harvest-lines');
+  if (!node) return;
+  harvest.scrollTop = node.scrollTop || 0;
+}
+
+function restoreHarvestScroll() {
+  const harvest = currentSectionHarvestState();
+  if (!harvest) return;
+  const node = document.querySelector('#quote-harvest-lines');
+  if (!node) return;
+  const targetIndex = harvest.scrollAnchorIndex;
+  const targetTop = Number(harvest.scrollTop || 0);
+  window.requestAnimationFrame(() => {
+    const latestNode = document.querySelector('#quote-harvest-lines');
+    if (!latestNode) return;
+    latestNode.scrollTop = targetTop;
+    if (targetIndex === null || targetIndex === undefined || targetIndex === '') return;
+    const targetLine = latestNode.querySelector(`[data-harvest-line="${Number(targetIndex)}"]`);
+    if (targetLine) {
+      targetLine.scrollIntoView({ block: 'center' });
+    }
+  });
+}
+
+function openQuoteHarvestModal(row) {
+  const profile = currentHarvestProfile(row);
+  const sharedResultState = {
+    highlightedIndexes: [],
+    editorText: '',
+    editorDirty: false,
+    preview: null,
+    previewLoading: false,
+    previewError: '',
+  };
+  const rawLines = String(row.raw_text || row.source_line || '').split('\\n').map((line, index) => ({
+    index,
+    raw: line,
+    normalized: normalizeQuoteLineForUi(line),
+    quoteCandidate: isQuoteCandidateLine(line),
+  }));
+  _quoteHarvestState = {
+    row,
+    rawLines,
+    mode: String(profile?.parser_template || '') === 'supermarket-card' ? 'supermarket' : 'result',
+    suggestedByRaw: quoteHarvestRawLooksComplex(rawLines),
+    suggestedByPreview: false,
+    result: sharedResultState,
+    supermarket: sharedResultState,
+    harvest: {
+      sectionStart: null,
+      sectionEnd: null,
+      defaults: {
+        section_label: '',
+        priority: '100',
+        card_type: profile?.default_card_type || '',
+        form_factor: profile?.default_form_factor || '不限',
+        country_or_currency: profile?.default_country_or_currency || '',
+      },
+      rows: [],
+      ignoredLineIndexes: [],
+      activeRowIndex: null,
+      preview: null,
+      previewLoading: false,
+      previewError: '',
+      previewDirty: false,
+      savedSections: 0,
+      remainingLines: [],
+      restrictionLinesAttached: [],
+      handledLineIndexes: [],
+      confirmedPreviewRows: [],
+      lastSaveResult: null,
+      completed: false,
+      scrollTop: 0,
+      scrollAnchorIndex: null,
+    },
+  };
+  const modal = document.querySelector('#quote-harvest-modal');
   modal.classList.add('open');
   modal.setAttribute('aria-hidden', 'false');
-
-  const resp = await fetch('/api/quotes/exceptions/suggest-template', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ exception_id: row.id }),
-  });
-  const data = await resp.json();
-  if (data.error) {
-    body.innerHTML = `<div style="color:red;padding:12px;">${data.error}</div>`;
-    return;
-  }
-  _tplGenDetections = data.detections || [];
-  document.querySelector('#quote-tpl-gen-subtitle').textContent =
-    `来源: ${data.source_group_key || ''}`;
-  renderTplGenLines();
+  renderQuoteHarvestModal();
+  requestQuoteResultPreview();
 }
 
-function renderTplGenLines() {
-  const body = document.querySelector('#quote-tpl-gen-body');
-  if (!_tplGenDetections.length) {
-    body.innerHTML = '<div class="muted" style="padding:12px;">没有检测到内容行。</div>';
-    updateTplGenSummary();
+function setQuoteHarvestMode(mode) {
+  if (!_quoteHarvestState || !_quoteHarvestState[mode]) return;
+  _quoteHarvestState.mode = mode;
+  renderQuoteHarvestModal();
+  if ((mode === 'result' || mode === 'supermarket') && !currentResultState().preview && !currentResultState().previewLoading) {
+    requestQuoteResultPreview();
+  }
+}
+
+function harvestSelectedIndexes() {
+  const harvest = currentSectionHarvestState();
+  if (!harvest || harvest.sectionStart === null || harvest.sectionEnd === null) {
+    return new Set();
+  }
+  const indexes = new Set();
+  const start = Math.min(harvest.sectionStart, harvest.sectionEnd);
+  const end = Math.max(harvest.sectionStart, harvest.sectionEnd);
+  for (let i = start; i <= end; i++) indexes.add(i);
+  return indexes;
+}
+
+function harvestBoundIndexSet() {
+  const bound = new Set();
+  for (const row of currentSectionHarvestState()?.rows || []) {
+    if (row.source_line_index !== '' && row.source_line_index !== null && row.source_line_index !== undefined) {
+      bound.add(Number(row.source_line_index));
+    }
+  }
+  return bound;
+}
+
+function indexesForRemainingLines(rawLines, remainingLines) {
+  const counts = new Map();
+  for (const line of remainingLines || []) {
+    const normalized = normalizeQuoteLineForUi(line);
+    if (!normalized) continue;
+    counts.set(normalized, (counts.get(normalized) || 0) + 1);
+  }
+  const indexes = new Set();
+  for (const item of rawLines || []) {
+    const count = counts.get(item.normalized) || 0;
+    if (!item.normalized || count <= 0) continue;
+    indexes.add(item.index);
+    counts.set(item.normalized, count - 1);
+  }
+  return indexes;
+}
+
+function handledIndexesForRemainingLines(rawLines, remainingLines) {
+  const remainingIndexes = indexesForRemainingLines(rawLines, remainingLines);
+  const handled = [];
+  for (const item of rawLines || []) {
+    if (!item.normalized) continue;
+    if (!remainingIndexes.has(item.index)) handled.push(item.index);
+  }
+  return handled;
+}
+
+function renderHarvestPreviewRowsTable(rows, emptyText) {
+  const rowsHtml = Array.isArray(rows) && rows.length
+    ? rows.map((item) => `
+      <tr>
+        <td>${textValue(item.card_type)}</td>
+        <td>${textValue(item.country_or_currency)}</td>
+        <td>${textValue(item.amount)}</td>
+        <td>${quoteFormFactorText(item.form_factor)}</td>
+        <td>${textValue(item.price)}</td>
+      </tr>
+    `).join('')
+    : `<tr><td colspan="5" class="muted">${escapeHtml(emptyText)}</td></tr>`;
+  return `
+    <div class="table-wrap">
+      <table class="quote-table">
+        <thead><tr><th>卡种</th><th>国家 / 币种</th><th>面额</th><th>形态</th><th>价格</th></tr></thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+function selectedHarvestItems() {
+  const selectedIndexes = harvestSelectedIndexes();
+  return (_quoteHarvestState?.rawLines || []).filter((item) => selectedIndexes.has(item.index));
+}
+
+function candidateHarvestQuoteItems() {
+  const harvest = currentSectionHarvestState();
+  const selected = selectedHarvestItems().filter((item) => item.normalized);
+  const ignored = new Set((harvest?.ignoredLineIndexes || []).map((value) => Number(value)));
+  const fromPreview = Array.isArray(harvest?.preview?.quote_candidates) && harvest.preview.quote_candidates.length
+    ? harvest.preview.quote_candidates
+        .map((item) => Number(item.source_line_index))
+        .filter((index) => selected.some((line) => line.index === index) && !ignored.has(index))
+        .map((index) => selected.find((line) => line.index === index))
+        .filter(Boolean)
+    : [];
+  if (fromPreview.length) return fromPreview;
+  return selected.filter((item) => item.quoteCandidate && !ignored.has(item.index));
+}
+
+function selectedRestrictionItems() {
+  const harvest = currentSectionHarvestState();
+  const selected = selectedHarvestItems().filter((item) => item.normalized);
+  const ignored = new Set((harvest?.ignoredLineIndexes || []).map((value) => Number(value)));
+  const fromPreview = Array.isArray(harvest?.preview?.restriction_candidates) && harvest.preview.restriction_candidates.length
+    ? harvest.preview.restriction_candidates
+        .map((item) => Number(item.source_line_index))
+        .filter((index) => selected.some((line) => line.index === index) && !ignored.has(index))
+        .map((index) => selected.find((line) => line.index === index))
+        .filter(Boolean)
+    : [];
+  return fromPreview.length ? fromPreview : [];
+}
+
+function suggestHarvestSectionLabel() {
+  const selected = selectedHarvestItems();
+  const first = selected.find((item) => item.normalized && !/^\\d/.test(item.normalized));
+  if (!first) return '';
+  return first.normalized
+    .replace(/^[=#\\s【】-]+/, '')
+    .replace(/[=#\\s【】-]+$/g, '')
+    .slice(0, 24);
+}
+
+function seedHarvestRowsFromSelection() {
+  const harvest = currentSectionHarvestState();
+  if (!harvest) return;
+  const quoteItems = candidateHarvestQuoteItems();
+  const existingIndexes = new Set((harvest.rows || [])
+    .map((row) => row.source_line_index)
+    .filter((value) => value !== '' && value !== null && value !== undefined)
+    .map((value) => Number(value)));
+  const nextRows = quoteItems
+    .filter((item) => !existingIndexes.has(item.index))
+    .map((item) => ({
+      ...createHarvestRow(),
+      source_line_index: item.index,
+    }));
+  if (!nextRows.length && harvest.rows.length) return;
+  if (!harvest.rows.length) {
+    harvest.rows = quoteItems.map((item) => ({
+      ...createHarvestRow(),
+      source_line_index: item.index,
+    }));
+  } else {
+    harvest.rows.push(...nextRows);
+  }
+  harvest.activeRowIndex = harvest.rows.length ? 0 : null;
+  markSectionHarvestDirty();
+}
+
+function translateHarvestError(error) {
+  const text = String(error || '');
+  if (!text) return '';
+  if (text === 'missing_default_card_type') return '第 2 步还没填卡种。';
+  if (text === 'missing_default_form_factor') return '第 2 步还没填形态。';
+  if (text === 'no_quote_rows') return '第 3 步还没有报价行。先用“按选区自动生成报价行”，再补面额和价格。';
+  if (/^row_\\d+_missing_source_line$/.test(text)) return '有报价行还没绑定原文。';
+  if (/^row_\\d+_missing_amount_or_price$/.test(text)) return '有报价行还没填完面额或价格。';
+  if (/^row_\\d+_source_out_of_section$/.test(text)) return '有报价行绑定到了选区外，请重新绑定。';
+  if (/^row_\\d+_missing_fixed_fields$/.test(text)) return '段级固定信息还没补齐，请检查卡种、国家/币种、形态。';
+  const duplicateMatch = text.match(/^duplicate_source_line_(\\d+)$/);
+  if (duplicateMatch) return `原文第 ${Number(duplicateMatch[1]) + 1} 行被重复绑定了。`;
+  return text;
+}
+
+function translateHarvestUnhandledReason(reason) {
+  const text = String(reason || '');
+  if (text === 'price_like_line_unhandled') return '像报价的原文还没录入到报价表。';
+  return text;
+}
+
+function markSectionHarvestDirty() {
+  const harvest = currentSectionHarvestState();
+  if (!harvest) return;
+  harvest.preview = null;
+  harvest.previewError = '';
+  harvest.previewDirty = true;
+}
+
+function markQuoteHarvestPreviewStale(mode) {
+  const summary = document.querySelector('#quote-harvest-summary');
+  const saveButton = document.querySelector('#quote-harvest-save');
+  if (saveButton) saveButton.disabled = true;
+  if (!summary) return;
+  summary.textContent = mode === 'harvest'
+    ? '内容已修改，请先重新预览这一段。'
+    : '内容已修改，请重新生成预览。';
+}
+
+function harvestPayload() {
+  const harvest = currentSectionHarvestState();
+  if (!_quoteHarvestState || !harvest) return null;
+  if (harvest.sectionStart === null || harvest.sectionEnd === null) return null;
+  return {
+    exception_id: _quoteHarvestState.row.id,
+    section_start_line: Math.min(harvest.sectionStart, harvest.sectionEnd),
+    section_end_line: Math.max(harvest.sectionStart, harvest.sectionEnd),
+    defaults: harvest.defaults,
+    rows: harvest.rows.map((row) => ({
+      source_line_index: row.source_line_index,
+      amount: row.amount,
+      price: row.price,
+      country_or_currency: row.country_or_currency,
+      form_factor: row.form_factor,
+    })),
+    ignored_line_indexes: harvest.ignoredLineIndexes,
+  };
+}
+
+async function requestQuoteHarvestPreview() {
+  const harvest = currentSectionHarvestState();
+  const payload = harvestPayload();
+  if (!_quoteHarvestState || !harvest || !payload) {
+    alert('请先选择一段 section');
     return;
   }
-  body.innerHTML = _tplGenDetections.map((d, idx) => {
-    const escaped = (d.line || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    const patternEsc = (d.pattern || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    if (d.type === 'section') {
-      return `<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-bottom:1px solid #eee;">
-        <span style="font-size:11px;padding:2px 6px;border-radius:3px;background:#e8f5e9;color:#2e7d32;white-space:nowrap;">段头</span>
-        <code style="flex:1;font-size:13px;">${escaped}</code>
-        <code style="color:#888;font-size:12px;">${patternEsc}</code>
-      </div>`;
+  const token = ++_quoteHarvestPreviewToken;
+  harvest.previewLoading = true;
+  harvest.previewError = '';
+  renderQuoteHarvestModal();
+  try {
+    const resp = await fetch('/api/quotes/exceptions/harvest-preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await resp.json();
+    if (!_quoteHarvestState || token !== _quoteHarvestPreviewToken) return;
+    if (data.error) {
+      harvest.preview = null;
+      harvest.previewError = data.error;
+    } else {
+      harvest.preview = data;
+      harvest.previewError = '';
+      harvest.previewDirty = false;
     }
-    if (d.type === 'price') {
-      return `<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-bottom:1px solid #eee;">
-        <span style="font-size:11px;padding:2px 6px;border-radius:3px;background:#e3f2fd;color:#1565c0;white-space:nowrap;cursor:pointer;" data-tpl-toggle="${idx}">报价</span>
-        <code style="flex:1;font-size:13px;">${escaped}</code>
-        <code style="color:#0a0;font-size:12px;font-weight:bold;">${patternEsc}</code>
-      </div>`;
+  } catch (error) {
+    if (_quoteHarvestState && token === _quoteHarvestPreviewToken) {
+      harvest.preview = null;
+      harvest.previewError = error.message;
     }
-    // skip
-    return `<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-bottom:1px solid #eee;opacity:0.45;">
-      <span style="font-size:11px;padding:2px 6px;border-radius:3px;background:#f5f5f5;color:#999;white-space:nowrap;cursor:pointer;" data-tpl-toggle="${idx}">跳过</span>
-      <code style="flex:1;font-size:13px;">${escaped}</code>
+  } finally {
+    if (_quoteHarvestState && token === _quoteHarvestPreviewToken) {
+      harvest.previewLoading = false;
+      if (_quoteHarvestState.mode === 'harvest') {
+        renderQuoteHarvestModal();
+      }
+    }
+  }
+}
+
+async function requestQuoteResultPreview() {
+  const result = currentResultState();
+  if (!_quoteHarvestState || !result) return;
+  const token = ++_quoteHarvestPreviewToken;
+  result.previewLoading = true;
+  result.previewError = '';
+  renderQuoteHarvestModal();
+  try {
+    const resp = await fetch('/api/quotes/exceptions/result-preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        exception_id: _quoteHarvestState.row.id,
+        result_template_text: result.editorText || '',
+        mode: _quoteHarvestState.mode || 'result',
+      }),
+    });
+    const data = await resp.json();
+    if (!_quoteHarvestState || token !== _quoteHarvestPreviewToken) return;
+    if (data.error) {
+      result.preview = null;
+      result.previewError = data.error;
+      _quoteHarvestState.suggestedByPreview = quoteHarvestPreviewSuggestsHarvest(null, data.error);
+    } else {
+      result.preview = data;
+      result.previewError = '';
+      _quoteHarvestState.suggestedByPreview = quoteHarvestPreviewSuggestsHarvest(data, '');
+      if (!result.editorDirty || !String(result.editorText || '').trim()) {
+        result.editorText = String(data.result_template_text || '');
+      }
+    }
+  } catch (error) {
+    if (_quoteHarvestState && token === _quoteHarvestPreviewToken) {
+      result.preview = null;
+      result.previewError = error.message;
+      _quoteHarvestState.suggestedByPreview = quoteHarvestPreviewSuggestsHarvest(null, error.message);
+    }
+  } finally {
+    if (_quoteHarvestState && token === _quoteHarvestPreviewToken) {
+      result.previewLoading = false;
+      if (_quoteHarvestState.mode === 'result' || _quoteHarvestState.mode === 'supermarket') {
+        renderQuoteHarvestModal();
+      }
+    }
+  }
+}
+
+function renderQuoteHarvestTabs() {
+  const mode = _quoteHarvestState?.mode || 'result';
+  const buttonStyle = (active) => `padding:8px 14px;border-radius:999px;border:1px solid ${active ? '#00897b' : '#d0d7de'};background:${active ? '#e0f2f1' : '#fff'};color:${active ? '#00695c' : '#455a64'};font-weight:${active ? '700' : '500'};cursor:pointer;`;
+  return `
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <button type="button" data-quote-harvest-mode="result" style="${buttonStyle(mode === 'result')}">标准模板整理</button>
+      <button type="button" data-quote-harvest-mode="supermarket" style="${buttonStyle(mode === 'supermarket')}">超市卡</button>
+      <button type="button" data-quote-harvest-mode="harvest" style="${buttonStyle(mode === 'harvest')}">分段收割</button>
+      <span class="muted" style="font-size:12px;">标准模板整理保留主流程；超市卡适合超长混合报价；分段收割继续逐段整理。</span>
+    </div>
+  `;
+}
+
+function renderQuoteResultPane() {
+  const result = currentResultState();
+  const isSupermarketMode = _quoteHarvestState?.mode === 'supermarket';
+  const preview = result?.preview;
+  const highlightedIndexes = new Set((result?.highlightedIndexes || []).map((value) => Number(value)));
+  const linesHtml = (_quoteHarvestState?.rawLines || []).map((item) => {
+    const highlighted = highlightedIndexes.has(item.index);
+    return `<div data-result-line="${item.index}" style="border:1px solid ${highlighted ? '#90caf9' : '#e0e0e0'};background:${highlighted ? '#eef7ff' : '#fff'};border-radius:6px;padding:8px;cursor:pointer;">
+      <div style="font-size:12px;color:#666;margin-bottom:4px;">#${item.index + 1}</div>
+      <div style="white-space:pre-wrap;font-family:monospace;font-size:13px;">${escapeHtml(item.normalized || item.raw || ' ')}</div>
     </div>`;
   }).join('');
-  // Toggle click: switch between price/skip
-  body.querySelectorAll('[data-tpl-toggle]').forEach((el) => {
-    el.addEventListener('click', () => {
-      const i = Number(el.dataset.tplToggle);
-      const d = _tplGenDetections[i];
-      if (d.type === 'skip') d.type = 'price';
-      else if (d.type === 'price') d.type = 'skip';
-      renderTplGenLines();
+  const previewRowsHtml = Array.isArray(preview?.preview_rows) && preview.preview_rows.length
+    ? preview.preview_rows.map((item) => `
+      <tr>
+        <td>${textValue(item.card_type)}</td>
+        <td>${textValue(item.country_or_currency)}</td>
+        <td>${textValue(item.amount)}</td>
+        <td>${quoteFormFactorText(item.form_factor)}</td>
+        <td>${textValue(item.price)}</td>
+      </tr>
+    `).join('')
+    : '<tr><td colspan="5" class="muted">暂无预览报价</td></tr>';
+  const ignoredHtml = Array.isArray(preview?.notes) && preview.notes.length
+    ? preview.notes.map((item) => `<div style="font-family:monospace;font-size:12px;white-space:pre-wrap;">${escapeHtml(item)}</div>`).join('')
+    : '<div class="muted">未上墙的非价格文本会自动忽略。</div>';
+  const warningsHtml = Array.isArray(preview?.warnings) && preview.warnings.length
+    ? preview.warnings.map((item) => `<div style="font-size:12px;color:#8a5200;">${escapeHtml(item)}</div>`).join('')
+    : '<div class="muted">暂无警告</div>';
+  const errorsHtml = Array.isArray(preview?.errors) && preview.errors.length
+    ? preview.errors.map((item) => `<div style="font-size:12px;color:#c62828;">${escapeHtml(item)}</div>`).join('')
+    : '<div class="muted">当前没有校验错误</div>';
+  const suggestionHtml = quoteHarvestSuggestionActive()
+    ? `<div style="border:1px solid #ffcc80;background:#fff8e1;border-radius:8px;padding:10px 12px;">
+        <div style="font-weight:700;color:#8a5200;margin-bottom:4px;">这条原文更适合分段收割</div>
+        <div class="muted" style="font-size:12px;">当前原文包含多段或多国家结构；标准模板区仍可保留给主流单国家消息，复杂消息建议按段预览并保存。</div>
+        <div style="margin-top:8px;"><button type="button" id="quote-harvest-switch-button">切换到分段收割</button></div>
+      </div>`
+    : '';
+  return `
+    ${suggestionHtml}
+    <div style="display:grid;grid-template-columns:minmax(320px,1fr) minmax(360px,1.1fr);gap:12px;align-items:start;">
+      <section class="panel" style="margin:0;display:flex;flex-direction:column;gap:12px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+          <strong>原文区</strong>
+          <div class="muted" style="font-size:12px;">点击行可高亮参考，不参与保存。</div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px;max-height:62vh;overflow:auto;">${linesHtml}</div>
+      </section>
+      <section class="panel" style="margin:0;display:flex;flex-direction:column;gap:12px;">
+        <strong>${isSupermarketMode ? '超市卡模板区' : '结果模板区'}</strong>
+        <div class="muted" style="font-size:12px;">${isSupermarketMode ? '适合超长、多卡种、多国家的混合报价。右侧写法不变，但保存时不受 3 套骨架上限。' : '只适合整洁单国家原文。固定块格式：只写 [默认] 和卡种块；默认里只填 国家 / 币种、形态；报价统一写成 50=5.3、10-195=5.25、100/150=5.43 这种格式。'}</div>
+        <textarea id="quote-harvest-editor" style="min-height:280px;font-family:monospace;">${escapeHtml(result?.editorText || '')}</textarea>
+        <div class="muted" style="font-size:12px;">示例：<br>[默认]<br>国家 / 币种=USD<br>形态=横白卡<br><br>[Apple]<br>50=5.3<br>10-195=5.25<br>100/150=5.43<br>200-450=5.44<br>300/400/500=5.45</div>
+        <div><strong style="font-size:12px;">预览区</strong></div>
+        <div>${result?.previewLoading ? '<div class="muted">预览计算中...</div>' : (result?.previewError ? `<div style="color:#c62828;">${escapeHtml(result.previewError)}</div>` : '')}</div>
+        <div class="table-wrap">
+          <table class="quote-table">
+            <thead><tr><th>卡种</th><th>国家 / 币种</th><th>面额</th><th>形态</th><th>价格</th></tr></thead>
+            <tbody>${previewRowsHtml}</tbody>
+          </table>
+        </div>
+        <div>
+          <strong style="font-size:12px;">自动忽略文本</strong>
+          <div style="font-size:12px;white-space:pre-wrap;">${ignoredHtml}</div>
+        </div>
+        <div>
+          <strong style="font-size:12px;">警告</strong>
+          <div style="font-size:12px;white-space:pre-wrap;">${warningsHtml}</div>
+        </div>
+        <div>
+          <strong style="font-size:12px;color:#c62828;">错误</strong>
+          <div style="font-size:12px;white-space:pre-wrap;">${errorsHtml}</div>
+        </div>
+      </section>
+    </div>
+  `;
+}
+
+function renderQuoteSectionHarvestPane() {
+  const harvest = currentSectionHarvestState();
+  const preview = harvest?.preview;
+  const selectedIndexes = harvestSelectedIndexes();
+  const boundIndexes = harvestBoundIndexSet();
+  const ignoredIndexes = new Set((harvest?.ignoredLineIndexes || []).map((value) => Number(value)));
+  const remainingIndexes = indexesForRemainingLines(_quoteHarvestState?.rawLines || [], harvest?.remainingLines || []);
+  const handledIndexes = new Set((harvest?.handledLineIndexes || []).map((value) => Number(value)));
+  const quoteCandidateIndexes = new Set((preview?.quote_candidates || []).map((item) => Number(item.source_line_index)));
+  const restrictionCandidateIndexes = new Set((preview?.restriction_candidates || []).map((item) => Number(item.source_line_index)));
+  const literalIndexes = new Set((preview?.non_quote_literals || []).map((item) => Number(item.source_line_index)));
+  const linesHtml = (_quoteHarvestState?.rawLines || []).map((item) => {
+    const selected = selectedIndexes.has(item.index);
+    const bound = boundIndexes.has(item.index);
+    const ignored = ignoredIndexes.has(item.index);
+    const handled = handledIndexes.has(item.index);
+    const remaining = remainingIndexes.has(item.index);
+    let label = '普通文本';
+    let badgeColor = '#eceff1';
+    if (bound) {
+      label = '已绑定';
+      badgeColor = '#e8f5e9';
+    } else if (ignored) {
+      label = '已忽略';
+      badgeColor = '#f5f5f5';
+    } else if (selected) {
+      label = '当前选区';
+      badgeColor = '#e3f2fd';
+    } else if (handled) {
+      label = '已处理';
+      badgeColor = '#f1f8e9';
+    } else if (remaining) {
+      label = '待处理';
+      badgeColor = '#fff3e0';
+    } else if (restrictionCandidateIndexes.has(item.index)) {
+      label = '说明';
+      badgeColor = '#fff3e0';
+    } else if (quoteCandidateIndexes.has(item.index) || item.quoteCandidate) {
+      label = '报价候选';
+      badgeColor = '#e3f2fd';
+    } else if (literalIndexes.has(item.index)) {
+      label = '普通文本';
+      badgeColor = '#eceff1';
+    }
+    const background = selected ? '#eef7ff' : (handled ? '#f9fff8' : '#fff');
+    const border = selected ? '#90caf9' : (handled ? '#c5e1a5' : '#e0e0e0');
+    return `<div data-harvest-line="${item.index}" style="border:1px solid ${border};background:${background};border-radius:6px;padding:8px;cursor:pointer;">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+        <strong style="font-size:12px;color:#666;">#${item.index + 1}</strong>
+        <span style="font-size:11px;padding:2px 6px;border-radius:999px;background:${badgeColor};color:#455a64;">${label}</span>
+      </div>
+      <div style="white-space:pre-wrap;font-family:monospace;font-size:13px;margin:6px 0 8px 0;">${escapeHtml(item.normalized || item.raw || ' ')}</div>
+      <div style="display:flex;justify-content:flex-end;">
+        <button type="button" data-harvest-ignore="${item.index}" style="font-size:11px;" ${selected ? '' : 'disabled'}>${ignored ? '取消忽略' : '忽略此行'}</button>
+      </div>
+    </div>`;
+  }).join('');
+  const quoteItems = candidateHarvestQuoteItems();
+  const restrictionItems = selectedRestrictionItems();
+  const selectedItems = selectedHarvestItems();
+  const selectionSummary = selectedItems.length
+    ? `已选第 ${Math.min(...selectedItems.map((item) => item.index)) + 1} - ${Math.max(...selectedItems.map((item) => item.index)) + 1} 行，共 ${selectedItems.length} 行`
+    : '还没选 section';
+  const rowsHtml = harvest?.rows?.length
+    ? harvest.rows.map((row, idx) => `
+      <div style="border:1px solid ${idx === harvest.activeRowIndex ? '#90caf9' : '#dfe6ee'};border-radius:8px;padding:10px;background:${idx === harvest.activeRowIndex ? '#eef7ff' : '#fff'};">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;">
+          <strong>报价 ${idx + 1}</strong>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <button type="button" data-harvest-bind-row="${idx}" style="font-size:12px;">${row.source_line_index === '' ? '去左边绑定原文' : `已绑第 ${Number(row.source_line_index) + 1} 行`}</button>
+            <button type="button" data-harvest-delete-row="${idx}" style="color:#c0392b;font-size:12px;">删除</button>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;">
+          <input data-harvest-row-field="${idx}:amount" value="${escapeHtml(row.amount)}" placeholder="面额，如 20-250" />
+          <input data-harvest-row-field="${idx}:price" value="${escapeHtml(row.price)}" placeholder="价格，如 6.0" />
+          <input data-harvest-row-field="${idx}:country_or_currency" value="${escapeHtml(row.country_or_currency)}" placeholder="国家覆盖，可空，大多数不用填" />
+          <input data-harvest-row-field="${idx}:form_factor" value="${escapeHtml(row.form_factor)}" placeholder="形态覆盖，可空，大多数不用填" />
+        </div>
+      </div>
+    `).join('')
+    : '<div class="muted">第 3 步还没有报价行。先点“按选区自动生成报价行”，再补面额和价格。</div>';
+  const confirmedPreviewRows = Array.isArray(harvest?.confirmedPreviewRows) ? harvest.confirmedPreviewRows : [];
+  const currentPreviewRows = Array.isArray(preview?.preview_rows) ? preview.preview_rows : [];
+  const combinedPreviewRows = [...confirmedPreviewRows, ...currentPreviewRows];
+  const hasDraftRows = Array.isArray(harvest?.rows) && harvest.rows.some((row) =>
+    String(row.source_line_index ?? '').trim() !== ''
+    && String(row.amount || '').trim()
+    && String(row.price || '').trim()
+  );
+  const staleNoQuoteRows = Boolean(
+    hasDraftRows
+    && Array.isArray(preview?.errors)
+    && preview.errors.some((item) => String(item || '') === 'no_quote_rows')
+  );
+  const remainingHtml = Array.isArray(harvest?.remainingLines) && harvest.remainingLines.length
+    ? harvest.remainingLines.map((line) => `<div style="font-size:12px;color:#8a5200;">${escapeHtml(line)}</div>`).join('')
+    : '<div class="muted">没有剩余待处理行。</div>';
+  const unhandledHtml = Array.isArray(preview?.unhandled_lines) && preview.unhandled_lines.length
+    ? preview.unhandled_lines.map((item) => `<div style="color:#c62828;">#${Number(item.source_line_index) + 1} ${escapeHtml(item.line)} (${escapeHtml(translateHarvestUnhandledReason(item.reason))})</div>`).join('')
+    : '<div class="muted">当前选区没有未处理风险行。</div>';
+  const errorHtml = staleNoQuoteRows
+    ? '<div class="muted">当前已经录入了报价行，但预览结果已过期。请点“生成预览”重新计算。</div>'
+    : harvest?.previewError
+    ? `<div style="color:#c62828;">${escapeHtml(harvest.previewError)}</div>`
+    : (Array.isArray(preview?.errors) && preview.errors.length
+      ? preview.errors.map((item) => `<div style="color:#c62828;">${escapeHtml(translateHarvestError(item))}</div>`).join('')
+      : (harvest?.previewDirty && hasDraftRows
+        ? '<div class="muted">当前已经录入了报价行，请点“生成预览”重新计算。</div>'
+        : '<div class="muted">先框一段、录入报价，再点“预览这一段”。</div>'));
+  const latestText = preview
+    ? (preview.is_latest_for_group ? '当前是该群最新消息：保存这一段时只推进本次选区；只有整条整理完成后才会按最新原文统一回放上墙。' : '当前不是该群最新消息：保存这一段后仅追加模板。')
+    : '同一条异常可连续分段整理；每次只保存当前选中的 section。';
+  return `
+    <div style="display:grid;grid-template-columns:minmax(340px,1fr) minmax(420px,1.15fr);gap:12px;align-items:start;">
+      <section class="panel" style="margin:0;align-self:start;height:78vh;overflow:hidden;display:flex;flex-direction:column;gap:12px;">
+        <strong>原文区</strong>
+        <div style="border:1px solid #dfe6ee;border-radius:8px;padding:10px;background:#f8fbff;">
+          <div style="font-size:12px;color:#5f6b7a;margin-bottom:4px;">当前选取</div>
+          <div style="font-size:14px;font-weight:600;">${selectionSummary}</div>
+        </div>
+        <div class="muted" style="font-size:12px;">先在左边点出这一段。第一次点击定开始行，第二次点击定结束行；如果要重选，直接再点新的开始行。</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button type="button" id="quote-harvest-clear-section">清空 section</button>
+          <button type="button" id="quote-harvest-clear-ignore">清空忽略</button>
+        </div>
+        <div id="quote-harvest-lines" style="display:flex;flex-direction:column;gap:8px;flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;padding-right:4px;">${linesHtml}</div>
+      </section>
+      <div style="display:flex;flex-direction:column;gap:12px;height:78vh;overflow-y:auto;overflow-x:hidden;padding-right:4px;">
+        <section class="panel stack" style="margin:0;">
+          <strong>第 1 步：先选这一段</strong>
+          <div class="muted" style="font-size:12px;">选区里识别到 ${quoteItems.length} 条报价候选，${restrictionItems.length} 条说明行。</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button type="button" id="quote-harvest-seed-rows" ${!quoteItems.length ? 'disabled' : ''}>按选区自动生成报价行</button>
+            <button type="button" id="quote-harvest-add-row">手动新增一行</button>
+          </div>
+        </section>
+        <section class="panel stack" style="margin:0;">
+          <strong>第 2 步：补这一段的固定信息</strong>
+          <div class="quote-filter-grid" style="grid-template-columns:repeat(2,minmax(0,1fr));">
+            <input data-harvest-default="section_label" value="${escapeHtml(harvest?.defaults?.section_label || '')}" placeholder="段名，如 UK快卡" />
+            <input data-harvest-default="card_type" value="${escapeHtml(harvest?.defaults?.card_type || '')}" placeholder="卡种，如 Apple" />
+            <input data-harvest-default="country_or_currency" value="${escapeHtml(harvest?.defaults?.country_or_currency || '')}" placeholder="只有整段同一国家 / 币种才填" />
+            <input data-harvest-default="form_factor" value="${escapeHtml(harvest?.defaults?.form_factor || '')}" placeholder="整段共用形态，如 横白卡" />
+          </div>
+          <div class="muted" style="font-size:12px;">这里只填这一整段都一样的东西。例子：UK快卡 这种整段同一币种时可以填 GBP；欧盟国家 这种每行国家都不同，就把“国家 / 币种”留空，不要忽略。卡种一般要填，形态如果整段都一样就填。</div>
+        </section>
+        <section class="panel stack" style="margin:0;">
+          <strong>第 3 步：确认报价行</strong>
+          <div class="muted" style="font-size:12px;">先用“按选区自动生成报价行”，再把每行的面额和价格补上。国家覆盖、形态覆盖只有少数情况才需要填。</div>
+          <div style="display:flex;flex-direction:column;gap:10px;">${rowsHtml}</div>
+        </section>
+        <section class="panel stack" style="margin:0;">
+          <strong>预览区</strong>
+          <div class="muted" style="font-size:12px;">${latestText}</div>
+          <div>${harvest?.previewLoading ? '<div class="muted">预览计算中...</div>' : errorHtml}</div>
+          <div>
+            <strong style="font-size:12px;">已确认结果</strong>
+            <div class="muted" style="font-size:12px;">前面已经保存过的 section 会累计显示在这里，方便你继续核对整条原文。</div>
+            ${renderHarvestPreviewRowsTable(confirmedPreviewRows, '前面还没有已确认结果。')}
+          </div>
+          <div>
+            <strong style="font-size:12px;">本次预览结果</strong>
+            ${renderHarvestPreviewRowsTable(currentPreviewRows, '当前这一段还没有预览报价。')}
+          </div>
+          <div>
+            <strong style="font-size:12px;">累计预览结果</strong>
+            <div class="muted" style="font-size:12px;">最终保存前，看这里是否和整条原文想要上墙的结果一致。</div>
+            ${renderHarvestPreviewRowsTable(combinedPreviewRows, '累计预览结果为空。')}
+          </div>
+          <div>
+            <strong style="font-size:12px;">剩余待处理行</strong>
+            <div style="font-size:12px;white-space:pre-wrap;">${remainingHtml}</div>
+          </div>
+          <div>
+            <strong style="font-size:12px;">当前选区风险行</strong>
+            <div style="font-size:12px;white-space:pre-wrap;">${unhandledHtml}</div>
+          </div>
+        </section>
+      </div>
+    </div>
+  `;
+}
+
+function bindResultPaneEvents() {
+  const result = currentResultState();
+  const editor = document.querySelector('#quote-harvest-editor');
+  if (editor) {
+    editor.addEventListener('input', (event) => {
+      result.editorText = event.target.value;
+      result.editorDirty = true;
+      result.preview = null;
+      result.previewError = '';
+      markQuoteHarvestPreviewStale('result');
+    });
+  }
+  const switchButton = document.querySelector('#quote-harvest-switch-button');
+  if (switchButton) {
+    switchButton.addEventListener('click', () => setQuoteHarvestMode('harvest'));
+  }
+  document.querySelectorAll('[data-result-line]').forEach((node) => {
+    node.addEventListener('click', () => {
+      const index = Number(node.dataset.resultLine);
+      const current = new Set((result.highlightedIndexes || []).map((item) => Number(item)));
+      if (current.has(index)) current.delete(index);
+      else current.add(index);
+      result.highlightedIndexes = Array.from(current.values()).sort((a, b) => a - b);
+      renderQuoteHarvestModal();
     });
   });
-  updateTplGenSummary();
 }
 
-function updateTplGenSummary() {
-  const rules = tplGenCollectRules();
-  document.querySelector('#quote-tpl-gen-summary').textContent =
-    `将生成 ${rules.length} 条新模板规则（去重后）`;
+function bindSectionHarvestEvents() {
+  const harvest = currentSectionHarvestState();
+  document.querySelector('#quote-harvest-clear-section')?.addEventListener('click', () => {
+    harvest.sectionStart = null;
+    harvest.sectionEnd = null;
+    harvest.ignoredLineIndexes = [];
+    harvest.rows = harvest.rows.map((row) => ({ ...row, source_line_index: '' }));
+    harvest.activeRowIndex = null;
+    markSectionHarvestDirty();
+    renderQuoteHarvestModal();
+  });
+  document.querySelector('#quote-harvest-clear-ignore')?.addEventListener('click', () => {
+    harvest.ignoredLineIndexes = [];
+    markSectionHarvestDirty();
+    renderQuoteHarvestModal();
+  });
+  document.querySelector('#quote-harvest-add-row')?.addEventListener('click', () => {
+    harvest.rows.push(createHarvestRow());
+    harvest.activeRowIndex = harvest.rows.length - 1;
+    markSectionHarvestDirty();
+    renderQuoteHarvestModal();
+  });
+  document.querySelector('#quote-harvest-seed-rows')?.addEventListener('click', () => {
+    seedHarvestRowsFromSelection();
+    renderQuoteHarvestModal();
+  });
+  document.querySelectorAll('[data-harvest-default]').forEach((input) => {
+    input.addEventListener('input', () => {
+      harvest.defaults[input.dataset.harvestDefault] = input.value;
+      markSectionHarvestDirty();
+      markQuoteHarvestPreviewStale('harvest');
+    });
+  });
+  document.querySelectorAll('[data-harvest-row-field]').forEach((input) => {
+    input.addEventListener('input', () => {
+      const [rowIndex, field] = input.dataset.harvestRowField.split(':');
+      harvest.rows[Number(rowIndex)][field] = input.value;
+      markSectionHarvestDirty();
+      markQuoteHarvestPreviewStale('harvest');
+    });
+  });
+  document.querySelectorAll('[data-harvest-bind-row]').forEach((button) => {
+    button.addEventListener('click', () => {
+      harvest.activeRowIndex = Number(button.dataset.harvestBindRow);
+      renderQuoteHarvestModal();
+    });
+  });
+  document.querySelectorAll('[data-harvest-delete-row]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const index = Number(button.dataset.harvestDeleteRow);
+      harvest.rows.splice(index, 1);
+      harvest.activeRowIndex = null;
+      markSectionHarvestDirty();
+      renderQuoteHarvestModal();
+    });
+  });
+  document.querySelectorAll('[data-harvest-line]').forEach((lineNode) => {
+    lineNode.addEventListener('click', () => {
+      const index = Number(lineNode.dataset.harvestLine);
+      harvest.scrollAnchorIndex = index;
+      if (harvest.activeRowIndex !== null) {
+        const selected = harvestSelectedIndexes();
+        if (!selected.has(index)) return;
+        harvest.rows[harvest.activeRowIndex].source_line_index = index;
+        harvest.activeRowIndex = null;
+        markSectionHarvestDirty();
+        renderQuoteHarvestModal();
+        return;
+      }
+      if (harvest.sectionStart === null || (harvest.sectionStart !== null && harvest.sectionEnd !== null && harvest.sectionStart !== harvest.sectionEnd)) {
+        harvest.sectionStart = index;
+        harvest.sectionEnd = index;
+      } else if (harvest.sectionStart === harvest.sectionEnd && index !== harvest.sectionStart) {
+        harvest.sectionEnd = index;
+      } else {
+        harvest.sectionStart = index;
+        harvest.sectionEnd = index;
+      }
+      if (!String(harvest.defaults.section_label || '').trim()) {
+        harvest.defaults.section_label = suggestHarvestSectionLabel();
+      }
+      const lower = Math.min(harvest.sectionStart, harvest.sectionEnd);
+      const upper = Math.max(harvest.sectionStart, harvest.sectionEnd);
+      harvest.ignoredLineIndexes = harvest.ignoredLineIndexes.filter((value) => Number(value) >= lower && Number(value) <= upper);
+      harvest.rows = harvest.rows.map((row) => {
+        const lineIndex = Number(row.source_line_index);
+        if (row.source_line_index === '' || (lineIndex >= lower && lineIndex <= upper)) return row;
+        return { ...row, source_line_index: '' };
+      });
+      markSectionHarvestDirty();
+      renderQuoteHarvestModal();
+    });
+  });
+  document.querySelectorAll('[data-harvest-ignore]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.stopPropagation();
+      const index = Number(button.dataset.harvestIgnore);
+      harvest.scrollAnchorIndex = index;
+      const selected = harvestSelectedIndexes();
+      if (!selected.has(index)) return;
+      const ignoredIndexes = new Set(harvest.ignoredLineIndexes.map((value) => Number(value)));
+      if (ignoredIndexes.has(index)) {
+        harvest.ignoredLineIndexes = harvest.ignoredLineIndexes.filter((value) => Number(value) !== index);
+      } else {
+        harvest.ignoredLineIndexes.push(index);
+      }
+      markSectionHarvestDirty();
+      renderQuoteHarvestModal();
+    });
+  });
 }
 
-function tplGenCollectRules() {
-  const seen = new Set();
-  const rules = [];
-  for (const d of _tplGenDetections) {
-    if (!d.pattern || d.type === 'skip') continue;
-    if (!seen.has(d.pattern)) {
-      seen.add(d.pattern);
-      rules.push({ pattern: d.pattern, type: d.type });
-    }
+function renderQuoteHarvestModal() {
+  if (!_quoteHarvestState) return;
+  if (_quoteHarvestState.mode === 'harvest') {
+    rememberHarvestScroll();
   }
-  return rules;
+  const body = document.querySelector('#quote-harvest-body');
+  const summary = document.querySelector('#quote-harvest-summary');
+  const previewButton = document.querySelector('#quote-harvest-preview');
+  const saveButton = document.querySelector('#quote-harvest-save');
+  const subtitle = document.querySelector('#quote-harvest-subtitle');
+  const result = currentResultState();
+  const harvest = currentSectionHarvestState();
+  subtitle.textContent = _quoteHarvestState.mode === 'harvest'
+    ? `${textValue(_quoteHarvestState.row.chat_name || _quoteHarvestState.row.source_group_key)} / ${formatQuoteTime(_quoteHarvestState.row.message_time || _quoteHarvestState.row.created_at)} / 分段收割：每次只预览并保存当前 section`
+    : (_quoteHarvestState.mode === 'supermarket'
+      ? `${textValue(_quoteHarvestState.row.chat_name || _quoteHarvestState.row.source_group_key)} / ${formatQuoteTime(_quoteHarvestState.row.message_time || _quoteHarvestState.row.created_at)} / 超市卡：超长混合报价可保存为不限套数骨架`
+      : `${textValue(_quoteHarvestState.row.chat_name || _quoteHarvestState.row.source_group_key)} / ${formatQuoteTime(_quoteHarvestState.row.message_time || _quoteHarvestState.row.created_at)} / 标准模板整理：主流单国家优先`);
+  body.innerHTML = `
+    <div class="stack" style="gap:12px;">
+      ${renderQuoteHarvestTabs()}
+      ${_quoteHarvestState.mode === 'harvest' ? renderQuoteSectionHarvestPane() : renderQuoteResultPane()}
+    </div>
+  `;
+  document.querySelectorAll('[data-quote-harvest-mode]').forEach((button) => {
+    button.addEventListener('click', () => setQuoteHarvestMode(button.dataset.quoteHarvestMode));
+  });
+  if (_quoteHarvestState.mode === 'harvest') {
+    bindSectionHarvestEvents();
+    restoreHarvestScroll();
+    const remainingCount = Array.isArray(harvest.remainingLines) ? harvest.remainingLines.length : 0;
+    const replayRows = Number(harvest?.lastSaveResult?.replay?.rows || 0);
+    const replayed = Boolean(harvest?.lastSaveResult?.replay?.replayed);
+    summary.textContent = harvest.completed
+      ? (replayed
+        ? `已保存 ${harvest.savedSections} 段；该消息已整理完成，并已上墙 ${replayRows} 条报价。如发现漏段，可继续补一段并重放。`
+        : `已保存 ${harvest.savedSections} 段；模板已整理完成，但这条不是最新消息，未自动上墙。如发现漏段，仍可继续补一段。`)
+      : `已保存 ${harvest.savedSections} 段；剩余 ${remainingCount} 行待处理。`;
+    previewButton.textContent = harvest.completed ? '继续预览这一段' : '预览这一段';
+    saveButton.textContent = harvest.completed
+      ? (replayed ? '继续补一段并上墙' : '继续补一段')
+      : '保存这一段并继续';
+    previewButton.disabled = harvest.previewLoading;
+    saveButton.disabled = harvest.previewLoading || !Boolean(harvest.preview?.can_save);
+  } else {
+    bindResultPaneEvents();
+    summary.textContent = result.preview
+      ? (result.preview.can_save ? `预览通过：将保存 ${result.preview.derived_sections?.length || 0} 套${_quoteHarvestState.mode === 'supermarket' ? '超市卡' : '群'}骨架。` : '修正右侧结果模板后，再点“生成预览”。')
+      : (_quoteHarvestState.mode === 'supermarket'
+        ? '超长混合报价可走超市卡；填写方式和标准模板整理一致，但保存时不受 3 套骨架上限。'
+        : '主流单国家消息优先走标准模板整理；复杂消息可切到分段收割。');
+    previewButton.textContent = '生成预览';
+    saveButton.textContent = _quoteHarvestState.mode === 'supermarket' ? '保存超市卡模板' : '保存模板';
+    previewButton.disabled = result.previewLoading;
+    saveButton.disabled = result.previewLoading || !Boolean(result.preview?.can_save);
+  }
 }
 
-document.querySelector('#quote-tpl-gen-close').addEventListener('click', closeTplGenModal);
-document.querySelector('#quote-tpl-gen-cancel').addEventListener('click', closeTplGenModal);
-
-document.querySelector('#quote-tpl-gen-save').addEventListener('click', async () => {
-  const rules = tplGenCollectRules();
-  if (!rules.length) {
-    alert('没有可保存的规则');
+document.querySelector('#quote-harvest-close').addEventListener('click', closeQuoteHarvestModal);
+document.querySelector('#quote-harvest-cancel').addEventListener('click', closeQuoteHarvestModal);
+document.querySelector('#quote-harvest-modal').addEventListener('click', (event) => {
+  if (event.target === event.currentTarget) {
+    closeQuoteHarvestModal();
+  }
+});
+document.querySelector('#quote-harvest-preview').addEventListener('click', async () => {
+  if (!_quoteHarvestState) return;
+  if (_quoteHarvestState.mode === 'harvest') {
+    await requestQuoteHarvestPreview();
     return;
   }
-  const resp = await fetch('/api/quotes/exceptions/batch-rules', {
+  await requestQuoteResultPreview();
+});
+document.querySelector('#quote-harvest-save').addEventListener('click', async () => {
+  if (!_quoteHarvestState) return;
+  const adminPassword = document.querySelector('#quote-harvest-admin-password').value;
+  if (_quoteHarvestState.mode === 'harvest') {
+    const harvest = currentSectionHarvestState();
+    const payload = harvestPayload();
+    if (!payload) {
+      alert('请先选择一段 section');
+      return;
+    }
+    const resp = await fetch('/api/quotes/exceptions/harvest-save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...payload,
+        admin_password: adminPassword,
+      }),
+    });
+    const data = await resp.json();
+    if (data.error) {
+      alert(`保存失败: ${data.error}`);
+      return;
+    }
+    const savedIndexSet = new Set((harvest.handledLineIndexes || []).map((value) => Number(value)));
+    for (const index of (data.saved_line_indexes || [])) {
+      savedIndexSet.add(Number(index));
+    }
+    harvest.savedSections += 1;
+    harvest.confirmedPreviewRows = [
+      ...(Array.isArray(harvest.confirmedPreviewRows) ? harvest.confirmedPreviewRows : []),
+      ...(Array.isArray(data.preview_rows) ? data.preview_rows : []),
+    ];
+    harvest.remainingLines = Array.isArray(data.remaining_lines) ? data.remaining_lines : [];
+    harvest.restrictionLinesAttached = Array.isArray(data.restriction_lines_attached) ? data.restriction_lines_attached : [];
+    harvest.handledLineIndexes = Array.from(savedIndexSet.values()).sort((a, b) => a - b);
+    harvest.lastSaveResult = data;
+    harvest.sectionStart = null;
+    harvest.sectionEnd = null;
+    harvest.rows = [];
+    harvest.ignoredLineIndexes = [];
+    harvest.activeRowIndex = null;
+    harvest.preview = null;
+    harvest.previewError = '';
+    harvest.completed = Boolean(data.resolved_fully);
+    renderQuoteHarvestModal();
+    await loadQuotesData();
+    if (data.resolved_fully) {
+      const replayed = Boolean(data.replay?.replayed);
+      const replayRows = Number(data.replay?.rows || 0);
+      alert(replayed
+        ? `这一条异常已整理完成，并已上墙 ${replayRows} 条报价。如发现漏段，还可以继续补一段并重放。`
+        : '这一条异常已整理完成，模板已保存；但这条不是该群最新消息，所以没有自动上墙。如发现漏段，仍可继续补一段。');
+    } else {
+      alert('这一段已保存，可继续整理剩余内容。');
+    }
+    return;
+  }
+  const result = currentResultState();
+  const resp = await fetch('/api/quotes/exceptions/result-save', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ exception_id: _tplGenExcId, rules }),
+    body: JSON.stringify({
+      exception_id: _quoteHarvestState.row.id,
+      result_template_text: result.editorText || '',
+      mode: _quoteHarvestState.mode || 'result',
+      admin_password: adminPassword,
+    }),
   });
   const data = await resp.json();
   if (data.error) {
     alert(`保存失败: ${data.error}`);
     return;
   }
-  alert(`已保存 ${data.added} 条模板规则`);
-  closeTplGenModal();
+  alert(_quoteHarvestState.mode === 'supermarket' ? '超市卡模板已保存；本次默认不立即上墙。' : '模板已保存；本次默认不立即上墙。');
+  closeQuoteHarvestModal();
   await loadQuotesData();
 });
 
@@ -1669,22 +3042,60 @@ function openDictionaryPrefill(row) {
 }
 
 async function loadQuotesData() {
-  const [boardResponse, exceptionResponse, profileResponse, inquiryResponse] = await Promise.all([
-    fetch('/api/quotes/board'),
-    fetch('/api/quotes/exceptions'),
-    fetch('/api/quotes/group-profiles'),
-    fetch('/api/quotes/inquiries'),
+  const exceptionParams = new URLSearchParams({
+    limit: String(quoteExceptionState.limit || 10),
+    offset: String(quoteExceptionState.offset || 0),
+    resolution_status: quoteExceptionState.resolutionStatus || 'open',
+  });
+  const fetchQuotePayload = async (url, fallback, label) => {
+    try {
+      const response = await fetch(url);
+      const rawText = await response.text();
+      let payload = {};
+      if (rawText) {
+        try {
+          payload = JSON.parse(rawText);
+        } catch (error) {
+          throw new Error(`${label} 返回了非 JSON 内容`);
+        }
+      }
+      if (!response.ok) {
+        throw new Error(payload?.error || `${label} 请求失败 (${response.status})`);
+      }
+      return (payload && typeof payload === 'object') ? payload : fallback;
+    } catch (error) {
+      console.error(`${label} 加载失败`, error);
+      return {
+        ...fallback,
+        _load_error: error?.message || String(error || `${label} 加载失败`),
+      };
+    }
+  };
+  const [boardPayload, exceptionPayload, profilePayload, inquiryPayload] = await Promise.all([
+    fetchQuotePayload('/api/quotes/board', { rows: [], total: 0 }, '报价墙'),
+    fetchQuotePayload(`/api/quotes/exceptions?${exceptionParams.toString()}`, { rows: [], total: 0 }, '异常区'),
+    fetchQuotePayload('/api/quotes/group-profiles', { rows: [], total: 0 }, '群模板'),
+    fetchQuotePayload('/api/quotes/inquiries', { rows: [], total: 0 }, '短回复上下文'),
   ]);
-  const boardPayload = await boardResponse.json();
-  const exceptionPayload = await exceptionResponse.json();
-  const profilePayload = await profileResponse.json();
-  const inquiryPayload = await inquiryResponse.json();
+  if (
+    !exceptionPayload?._load_error
+    && Array.isArray(exceptionPayload.rows)
+    && exceptionPayload.rows.length === 0
+    && Number(exceptionPayload.offset || 0) > 0
+    && !exceptionPayload.has_next
+  ) {
+    quoteExceptionState.offset = Math.max(
+      0,
+      Number(exceptionPayload.offset || 0) - Number(exceptionPayload.limit || quoteExceptionState.limit || 10),
+    );
+    return loadQuotesData();
+  }
   allQuoteRows = Array.isArray(boardPayload.rows) ? boardPayload.rows : [];
   allQuoteExceptions = Array.isArray(exceptionPayload.rows) ? exceptionPayload.rows : [];
-  renderQuoteBoard(allQuoteRows);
-  renderQuoteExceptions(allQuoteExceptions);
-  renderQuoteProfiles(Array.isArray(profilePayload.rows) ? profilePayload.rows : []);
-  renderQuoteInquiries(Array.isArray(inquiryPayload.rows) ? inquiryPayload.rows : []);
+  renderQuoteBoard(allQuoteRows, boardPayload._load_error || '');
+  renderQuoteExceptions(exceptionPayload);
+  renderQuoteProfiles(Array.isArray(profilePayload.rows) ? profilePayload.rows : [], profilePayload._load_error || '');
+  renderQuoteInquiries(Array.isArray(inquiryPayload.rows) ? inquiryPayload.rows : [], inquiryPayload._load_error || '');
 }
 
 function syncQuoteUrl() {
@@ -1734,6 +3145,83 @@ document.querySelector('#quote-profile-form').addEventListener('submit', async (
 document.querySelector('#quote-profile-clear').addEventListener('click', () => {
   document.querySelector('#quote-profile-form').reset();
   document.querySelector('#quote-profile-prefill-status').textContent = '可从异常区一键填充群模板。';
+});
+
+document.querySelector('#quote-profile-edit-close').addEventListener('click', closeQuoteProfileEditModal);
+document.querySelector('#quote-profile-edit-cancel').addEventListener('click', closeQuoteProfileEditModal);
+document.querySelector('#quote-profile-edit-modal').addEventListener('click', (event) => {
+  if (event.target === event.currentTarget) {
+    closeQuoteProfileEditModal();
+  }
+});
+document.querySelector('#quote-profile-edit-save').addEventListener('click', async () => {
+  if (!_quoteProfileEditState) return;
+  let templateConfig = _quoteProfileEditState.template_config || '';
+  if (['group-parser', 'supermarket-card'].includes(String(_quoteProfileEditState.parser_template || ''))) {
+    try {
+      templateConfig = fixedTemplateToGroupParserConfig(
+        _quoteProfileEditState.fixed_template_text || '',
+        _quoteProfileEditState.template_config || '',
+      );
+    } catch (error) {
+      alert(`保存失败: ${error.message}`);
+      return;
+    }
+  }
+  const payload = {
+    platform: _quoteProfileEditState.platform || 'whatsapp',
+    chat_id: _quoteProfileEditState.chat_id || '',
+    chat_name: _quoteProfileEditState.chat_name || _quoteProfileEditState.chat_id || '',
+    default_card_type: _quoteProfileEditState.default_card_type || '',
+    default_country_or_currency: _quoteProfileEditState.default_country_or_currency || '',
+    default_form_factor: _quoteProfileEditState.default_form_factor || '不限',
+    default_multiplier: _quoteProfileEditState.default_multiplier || '',
+    parser_template: _quoteProfileEditState.parser_template || '',
+    stale_after_minutes: _quoteProfileEditState.stale_after_minutes || '30',
+    note: _quoteProfileEditState.note || '',
+    template_config: templateConfig,
+  };
+  const resp = await fetch('/api/quotes/group-profiles', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const data = await resp.json();
+  if (data.error) {
+    alert(`保存失败: ${data.error}`);
+    return;
+  }
+  closeQuoteProfileEditModal();
+  await loadQuotesData();
+});
+document.querySelector('#quote-profile-edit-save').insertAdjacentHTML('beforebegin', '<button type="button" id="quote-profile-edit-delete" style="color:#c0392b;border-color:#c0392b">删除模板</button>');
+document.querySelector('#quote-profile-edit-delete').addEventListener('click', async () => {
+  if (!_quoteProfileEditState) return;
+  if (!confirm(`确定删除模板？\\n${_quoteProfileEditState.chat_name || _quoteProfileEditState.chat_id || '未知群'} / ${_quoteProfileEditState.chat_id || ''}`)) {
+    return;
+  }
+  const adminPassword = prompt('请输入报价管理密码，确认删除模板');
+  if (adminPassword === null) return;
+  const resp = await fetch('/api/quotes/group-profiles/delete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      id: Number(_quoteProfileEditState.profile_id || _quoteProfileEditState.id || 0),
+      admin_password: adminPassword,
+    }),
+  });
+  const data = await resp.json();
+  if (data.error) {
+    alert(`删除失败: ${data.error}`);
+    return;
+  }
+  if (!data.deleted) {
+    alert('删除失败: 没找到这条模板');
+    return;
+  }
+  closeQuoteProfileEditModal();
+  await loadQuotesData();
+  alert('模板已删除。');
 });
 
 document.querySelector('#quote-inquiry-form').addEventListener('submit', async (event) => {

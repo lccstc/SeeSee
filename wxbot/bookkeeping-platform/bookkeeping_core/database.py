@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 import re
 from pathlib import Path
@@ -15,6 +16,20 @@ from .quotes import (
 
 
 DBRow = dict[str, Any]
+_QUOTE_EXCEPTION_SUPPRESSION_NOTE_PREFIX = "quote_exception_suppression:"
+_QUOTE_EXCEPTION_SUPPRESSION_NOTE_VERSION = 1
+_QUOTE_EXCEPTION_SUPPRESSION_TRANSLATION = str.maketrans(
+    {
+        "\uff08": "(",
+        "\uff09": ")",
+        "\uff1d": "=",
+        "\uff1a": ":",
+        "\uff0c": ",",
+        "\uff0b": "+",
+        "\uff0d": "-",
+        "\u3000": " ",
+    }
+)
 
 
 def is_postgres_dsn(target: str | Path) -> bool:
@@ -60,6 +75,16 @@ class _BookkeepingStoreBase:
             WHERE group_key = ?
             """,
             (platform, chat_id, chat_name, group_key),
+        )
+        self.conn.execute(
+            """
+            UPDATE quote_group_profiles
+            SET chat_name = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE platform = ?
+              AND chat_id = ?
+            """,
+            (chat_name, platform, chat_id),
         )
 
     def add_transaction(
@@ -181,6 +206,13 @@ class _BookkeepingStoreBase:
                 json.dumps(raw_payload, ensure_ascii=False, sort_keys=True),
             ),
         )
+        if is_group:
+            self._refresh_group_profile_if_exists(
+                platform=platform,
+                group_key=group_key,
+                chat_id=chat_id,
+                chat_name=chat_name,
+            )
         self.conn.commit()
         return bool(cur.rowcount)
 
@@ -1488,6 +1520,157 @@ class _BookkeepingStoreBase:
         self.conn.commit()
         return self._last_insert_id(cur)
 
+    @staticmethod
+    def _normalize_quote_exception_text_for_suppression(text: str) -> str:
+        normalized_lines: list[str] = []
+        for raw_line in str(text or "").translate(
+            _QUOTE_EXCEPTION_SUPPRESSION_TRANSLATION
+        ).splitlines():
+            line = re.sub(r"\s+", " ", raw_line).strip()
+            if line:
+                normalized_lines.append(line)
+        return "\n".join(normalized_lines)
+
+    def build_quote_exception_suppression_signature(
+        self,
+        *,
+        source_group_key: str,
+        reason: str,
+        source_line: str,
+        raw_text: str,
+    ) -> str:
+        parts = (
+            str(source_group_key or "").strip(),
+            str(reason or "").strip(),
+            self._normalize_quote_exception_text_for_suppression(source_line),
+            self._normalize_quote_exception_text_for_suppression(raw_text),
+        )
+        return hashlib.sha256("\x1f".join(parts).encode("utf-8")).hexdigest()
+
+    def encode_quote_exception_suppression_note(
+        self,
+        *,
+        source_group_key: str,
+        reason: str,
+        source_line: str,
+        raw_text: str,
+        note: str = "",
+    ) -> str:
+        payload = {
+            "version": _QUOTE_EXCEPTION_SUPPRESSION_NOTE_VERSION,
+            "signature": self.build_quote_exception_suppression_signature(
+                source_group_key=source_group_key,
+                reason=reason,
+                source_line=source_line,
+                raw_text=raw_text,
+            ),
+        }
+        marker = f"{_QUOTE_EXCEPTION_SUPPRESSION_NOTE_PREFIX}{json.dumps(payload, ensure_ascii=False)}"
+        suffix = str(note or "").strip()
+        return marker if not suffix else f"{marker}\n{suffix}"
+
+    @staticmethod
+    def _parse_quote_exception_suppression_note(note: str) -> dict[str, Any] | None:
+        text = str(note or "").strip()
+        if not text.startswith(_QUOTE_EXCEPTION_SUPPRESSION_NOTE_PREFIX):
+            return None
+        payload_line = text.splitlines()[0][len(_QUOTE_EXCEPTION_SUPPRESSION_NOTE_PREFIX) :]
+        try:
+            payload = json.loads(payload_line)
+        except json.JSONDecodeError:
+            return None
+        if not isinstance(payload, dict):
+            return None
+        return payload
+
+    def _quote_exception_suppression_signature_from_row(self, row: DBRow) -> str:
+        payload = self._parse_quote_exception_suppression_note(
+            str(row.get("resolution_note") or "")
+        )
+        signature = str((payload or {}).get("signature") or "").strip()
+        if signature:
+            return signature
+        return self.build_quote_exception_suppression_signature(
+            source_group_key=str(row.get("source_group_key") or ""),
+            reason=str(row.get("reason") or ""),
+            source_line=str(row.get("source_line") or ""),
+            raw_text=str(row.get("raw_text") or ""),
+        )
+
+    def is_quote_exception_suppressed(
+        self,
+        *,
+        source_group_key: str,
+        reason: str,
+        source_line: str,
+        raw_text: str,
+    ) -> bool:
+        target_signature = self.build_quote_exception_suppression_signature(
+            source_group_key=source_group_key,
+            reason=reason,
+            source_line=source_line,
+            raw_text=raw_text,
+        )
+        rows = self.conn.execute(
+            """
+            SELECT source_group_key, reason, source_line, raw_text, resolution_note
+            FROM quote_parse_exceptions
+            WHERE source_group_key = ?
+              AND reason = ?
+              AND resolution_status = 'ignored'
+            ORDER BY id DESC
+            """,
+            (source_group_key, reason),
+        ).fetchall()
+        for row in rows:
+            if self._quote_exception_suppression_signature_from_row(
+                self._serialize_quote_db_row(row)
+            ) == target_signature:
+                return True
+        return False
+
+    def record_quote_exception_unless_suppressed(
+        self,
+        *,
+        quote_document_id: int,
+        platform: str,
+        source_group_key: str,
+        chat_id: str,
+        chat_name: str,
+        source_name: str,
+        sender_id: str,
+        reason: str,
+        source_line: str,
+        raw_text: str,
+        message_time: str,
+        parser_template: str,
+        parser_version: str,
+        confidence: float,
+    ) -> int:
+        if self.is_quote_exception_suppressed(
+            source_group_key=source_group_key,
+            reason=reason,
+            source_line=source_line,
+            raw_text=raw_text,
+        ):
+            return 0
+        return self.record_quote_exception(
+            quote_document_id=quote_document_id,
+            platform=platform,
+            source_group_key=source_group_key,
+            chat_id=chat_id,
+            chat_name=chat_name,
+            source_name=source_name,
+            sender_id=sender_id,
+            reason=reason,
+            source_line=source_line,
+            raw_text=raw_text,
+            message_time=message_time,
+            parser_template=parser_template,
+            parser_version=parser_version,
+            confidence=confidence,
+        )
+
     def list_quote_dictionary_aliases(
         self,
         *,
@@ -1641,6 +1824,39 @@ class _BookkeepingStoreBase:
             WHERE id = ?
             """,
             (resolution_status, resolution_note, exception_id),
+        )
+        self.conn.commit()
+        return int(getattr(cur, "rowcount", 0) or 0)
+
+    def update_quote_exception(
+        self,
+        *,
+        exception_id: int,
+        resolution_status: str,
+        resolution_note: str = "",
+        source_line: str | None = None,
+    ) -> int:
+        assignments = [
+            "resolution_status = ?",
+            "resolution_note = ?",
+            "resolved_at = CASE WHEN ? = 'open' THEN NULL ELSE CURRENT_TIMESTAMP END",
+        ]
+        params: list[Any] = [
+            resolution_status,
+            resolution_note,
+            resolution_status,
+        ]
+        if source_line is not None:
+            assignments.append("source_line = ?")
+            params.append(source_line)
+        params.append(exception_id)
+        cur = self.conn.execute(
+            f"""
+            UPDATE quote_parse_exceptions
+            SET {", ".join(assignments)}
+            WHERE id = ?
+            """,
+            params,
         )
         self.conn.commit()
         return int(getattr(cur, "rowcount", 0) or 0)
@@ -1918,6 +2134,7 @@ class _BookkeepingStoreBase:
             SELECT *
             FROM quote_group_profiles
             WHERE platform = ? AND chat_name = ?
+            ORDER BY updated_at DESC, id DESC
             LIMIT 1
             """,
             (platform, chat_name),
@@ -1935,6 +2152,17 @@ class _BookkeepingStoreBase:
             (limit,),
         ).fetchall()
         return [self._serialize_quote_db_row(row) for row in rows]
+
+    def delete_quote_group_profile(self, *, profile_id: int) -> bool:
+        cursor = self.conn.execute(
+            """
+            DELETE FROM quote_group_profiles
+            WHERE id = ?
+            """,
+            (profile_id,),
+        )
+        self.conn.commit()
+        return bool(getattr(cursor, "rowcount", 0))
 
     def append_rule_to_group_profile(self, *, platform: str, chat_id: str, new_rule: dict) -> bool:
         row = self.get_quote_group_profile(platform=platform, chat_id=chat_id)
@@ -1966,9 +2194,14 @@ class _BookkeepingStoreBase:
     def list_quote_board(self, *, limit: int = 500) -> list[DBRow]:
         rows = self.conn.execute(
             """
-            SELECT *
-            FROM quote_price_rows
-            WHERE quote_status = 'active' AND expires_at IS NULL
+            SELECT
+              qpr.*,
+              COALESCE(NULLIF(g.chat_name, ''), qpr.chat_name) AS chat_name
+            FROM quote_price_rows AS qpr
+            LEFT JOIN groups AS g
+              ON g.group_key = qpr.source_group_key
+             AND g.platform = qpr.platform
+            WHERE qpr.quote_status = 'active' AND qpr.expires_at IS NULL
             ORDER BY card_type ASC, country_or_currency ASC, amount_range ASC,
                      COALESCE(multiplier, '') ASC, form_factor ASC, price DESC,
                      effective_at DESC, id DESC
@@ -1978,7 +2211,7 @@ class _BookkeepingStoreBase:
         ).fetchall()
         grouped: dict[tuple[str, str, str, str, str], Any] = {}
         for row in rows:
-            normalized_amount = normalize_quote_amount_range(str(row["amount_range"] or "不限"))
+            normalized_amount = self._quote_amount_board_key(str(row["amount_range"] or "不限"))
             normalized_form_factor = normalize_quote_form_factor(
                 str(row["form_factor"] or "不限")
             )
@@ -2006,7 +2239,7 @@ class _BookkeepingStoreBase:
         normalized_rows: list[DBRow] = []
         for row in grouped.values():
             item = self._quote_row_with_change(self._serialize_quote_db_row(row))
-            item["amount_range"] = normalize_quote_amount_range(
+            item["amount_range"] = self._quote_amount_board_key(
                 str(item.get("amount_range") or "不限")
             )
             item["form_factor"] = normalize_quote_form_factor(
@@ -2017,7 +2250,6 @@ class _BookkeepingStoreBase:
             ) or None
             item["amount_display"] = self._quote_amount_display(item)
             normalized_rows.append(item)
-        normalized_rows = self._prune_dominated_quote_rows(normalized_rows)
         return sorted(
             normalized_rows,
             key=lambda row: (
@@ -2034,36 +2266,42 @@ class _BookkeepingStoreBase:
 
     def _quote_row_with_change(self, row: DBRow) -> DBRow:
         result = dict(row)
-        previous = self.conn.execute(
+        current_amount_key = self._quote_amount_board_key(str(result.get("amount_range") or "不限"))
+        previous_rows = self.conn.execute(
             """
-            SELECT price, effective_at, id
+            SELECT price, effective_at, id, amount_range
             FROM quote_price_rows
             WHERE platform = ?
               AND source_group_key = ?
               AND card_type = ?
               AND country_or_currency = ?
-              AND amount_range = ?
               AND form_factor = ?
               AND COALESCE(multiplier, '') = COALESCE(?, '')
               AND id <> ?
               AND quote_document_id <> ?
               AND effective_at <= ?
             ORDER BY effective_at DESC, id DESC
-            LIMIT 1
             """,
             (
                 result["platform"],
                 result["source_group_key"],
                 result["card_type"],
                 result["country_or_currency"],
-                result["amount_range"],
                 result["form_factor"],
                 result["multiplier"],
                 result["id"],
                 result["quote_document_id"],
                 result["effective_at"],
             ),
-        ).fetchone()
+        ).fetchall()
+        previous = next(
+            (
+                row
+                for row in previous_rows
+                if self._quote_amount_board_key(str(row["amount_range"] or "不限")) == current_amount_key
+            ),
+            None,
+        )
         if not previous:
             result["change_status"] = "new"
             result["previous_price"] = None
@@ -2087,14 +2325,38 @@ class _BookkeepingStoreBase:
         return result
 
     @staticmethod
+    def _quote_amount_board_key(amount_range: str) -> str:
+        text = str(amount_range or "").strip()
+        if not text:
+            return "不限"
+        if text == "不限":
+            return text
+        text = text.replace("／", "/").replace("－", "-").replace("—", "-").replace("~", "-")
+        parts = re.split(r"([/-])", text)
+        normalized_parts: list[str] = []
+        for part in parts:
+            if not part:
+                continue
+            if part in {"-", "/"}:
+                normalized_parts.append(part)
+                continue
+            stripped = re.sub(r"\s+", "", part)
+            if not stripped:
+                continue
+            if re.fullmatch(r"\d+(?:\.\d+)?", stripped):
+                normalized_parts.append(f"{float(stripped):g}")
+            else:
+                normalized_parts.append(stripped)
+        return "".join(normalized_parts) or "不限"
+
+    @staticmethod
     def _quote_stale_after_minutes(row: DBRow) -> int:
         if str(row.get("card_type") or "").lower() == "apple":
             return 30
         return 120
 
-    @staticmethod
-    def _quote_amount_display(row: DBRow) -> str:
-        amount = str(row.get("amount_range") or "")
+    def _quote_amount_display(self, row: DBRow) -> str:
+        amount = self._quote_amount_board_key(str(row.get("amount_range") or ""))
         multiplier = normalize_quote_multiplier(str(row.get("multiplier") or ""))
         if multiplier:
             return f"{amount} / {multiplier}" if amount else multiplier
@@ -2292,7 +2554,7 @@ class _BookkeepingStoreBase:
         limit: int = 50,
     ) -> tuple[list[DBRow], int]:
         normalized_form_factor = normalize_quote_form_factor(form_factor)
-        normalized_amount_range = normalize_quote_amount_range(amount_range)
+        normalized_amount_range = self._quote_amount_board_key(amount_range)
         normalized_multiplier = normalize_quote_multiplier(str(multiplier or ""))
         params: list = [card_type, country_or_currency]
         rows = self.conn.execute(
@@ -2311,40 +2573,72 @@ class _BookkeepingStoreBase:
             row
             for row in rows
             if normalize_quote_form_factor(str(row["form_factor"] or "不限")) == normalized_form_factor
-            and normalize_quote_amount_range(str(row["amount_range"] or "不限"))
+            and self._quote_amount_board_key(str(row["amount_range"] or "不限"))
             == normalized_amount_range
             and normalize_quote_multiplier(str(row["multiplier"] or ""))
             == normalized_multiplier
         ]
         total = len(filtered)
-        return [
-            self._quote_row_with_change(self._serialize_quote_db_row(row))
-            for row in filtered[:limit]
-        ], total
+        ranking_rows: list[DBRow] = []
+        for row in filtered[:limit]:
+            item = self._quote_row_with_change(self._serialize_quote_db_row(row))
+            item["amount_range"] = self._quote_amount_board_key(
+                str(item.get("amount_range") or "不限")
+            )
+            item["amount_display"] = self._quote_amount_display(item)
+            ranking_rows.append(item)
+        return ranking_rows, total
 
     def list_quote_exceptions(
         self,
         *,
         source_group_key: str | None = None,
-        limit: int = 100,
+        resolution_status: str | None = None,
+        limit: int = 10,
         offset: int = 0,
-    ) -> tuple[list[DBRow], int]:
+    ) -> dict[str, Any]:
         where_parts = []
         params: list = []
         if source_group_key is not None:
             where_parts.append("source_group_key = ?")
             params.append(source_group_key)
+        if resolution_status and resolution_status != "all":
+            where_parts.append("resolution_status = ?")
+            params.append(resolution_status)
         where_clause = " AND ".join(where_parts) if where_parts else "1=1"
         count_row = self.conn.execute(
             f"SELECT COUNT(*) AS cnt FROM quote_parse_exceptions WHERE {where_clause}",
             params,
         ).fetchone()
         total = int(count_row["cnt"])
+        stats_where_parts = []
+        stats_params: list[Any] = []
+        if source_group_key is not None:
+            stats_where_parts.append("source_group_key = ?")
+            stats_params.append(source_group_key)
+        stats_where_clause = (
+            " AND ".join(stats_where_parts) if stats_where_parts else "1=1"
+        )
+        stats_row = self.conn.execute(
+            f"""
+            SELECT
+              SUM(CASE WHEN resolution_status = 'open' THEN 1 ELSE 0 END) AS open_total,
+              SUM(CASE WHEN resolution_status <> 'open' THEN 1 ELSE 0 END) AS handled_total
+            FROM quote_parse_exceptions
+            WHERE {stats_where_clause}
+            """,
+            stats_params,
+        ).fetchone()
         params.extend([limit, offset])
         rows = self.conn.execute(
             f"""
-            SELECT *
-            FROM quote_parse_exceptions
+            SELECT
+              qpe.*,
+              COALESCE(NULLIF(g.chat_name, ''), qpe.chat_name) AS chat_name
+            FROM quote_parse_exceptions AS qpe
+            LEFT JOIN groups AS g
+              ON g.group_key = qpe.source_group_key
+             AND g.platform = qpe.platform
             WHERE {where_clause}
             ORDER BY
               CASE WHEN resolution_status = 'open' THEN 0 ELSE 1 END ASC,
@@ -2354,7 +2648,18 @@ class _BookkeepingStoreBase:
             """,
             params,
         ).fetchall()
-        return [self._serialize_quote_db_row(row) for row in rows], total
+        serialized_rows = [self._serialize_quote_db_row(row) for row in rows]
+        return {
+            "rows": serialized_rows,
+            "total": total,
+            "open_total": int(stats_row["open_total"] or 0),
+            "handled_total": int(stats_row["handled_total"] or 0),
+            "limit": limit,
+            "offset": offset,
+            "has_prev": offset > 0,
+            "has_next": offset + len(serialized_rows) < total,
+            "resolution_status": resolution_status or "open",
+        }
 
     def _serialize_quote_db_row(self, row) -> dict:
         result = dict(row)
@@ -2387,6 +2692,8 @@ class _BookkeepingStoreBase:
         reason = str(row.get("reason") or "")
         if reason == "blocked_or_question_line":
             return "限制/问价说明"
+        if reason == "missing_group_template":
+            return "群模板未配置"
         if reason == "missing_context":
             return "缺少上下文"
         if reason == "modifier_rule":
@@ -2403,6 +2710,8 @@ class _BookkeepingStoreBase:
         source_line = str(row.get("source_line") or "")
         if reason == "blocked_or_question_line":
             return "这是限制或需要询问的说明，不是可直接入墙价格；确认无误可忽略。"
+        if reason == "missing_group_template":
+            return "这个群已经进报价采集范围，但还没有可用模板；先到异常区整理成固定模板再上墙。"
         if reason == "missing_context" and re.fullmatch(r"\d+(?:\.\d+)?", source_line.strip()):
             return "这是短回复价格；需要先有询价上下文，或手动补卡种/国家/面额。"
         if reason == "missing_context":

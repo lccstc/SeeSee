@@ -1062,6 +1062,43 @@ class UnifiedRuntimeTests(PostgresTestCase):
 
         self.assertNotEqual(row["created_at"], "2099-01-01 00:00:00")
 
+    def test_incoming_group_message_refreshes_group_and_quote_profile_chat_name(self) -> None:
+        self.db.set_group(
+            platform="wechat",
+            group_key="wechat:room-rename",
+            chat_id="room-rename",
+            chat_name="旧群名",
+            group_num=5,
+        )
+        self.db.upsert_quote_group_profile(
+            platform="wechat",
+            chat_id="room-rename",
+            chat_name="旧群名",
+            default_card_type="Apple",
+            default_country_or_currency="USD",
+            default_form_factor="横白卡",
+            parser_template="group-parser",
+            template_config=json.dumps(
+                {"version": "group-parser-v1", "defaults": {}, "sections": []},
+                ensure_ascii=False,
+            ),
+        )
+
+        self.runtime.process_envelope(
+            self._message(
+                platform="wechat",
+                message_id="msg-rename-1",
+                chat_id="room-rename",
+                chat_name="新群名",
+                text="普通聊天，不记账",
+            )
+        )
+
+        group_row = self.db.get_group_by_key("wechat:room-rename")
+        self.assertEqual(str(group_row["chat_name"]), "新群名")
+        profile_row = self.db.get_quote_group_profile(platform="wechat", chat_id="room-rename")
+        self.assertEqual(str(profile_row["chat_name"]), "新群名")
+
     def test_whoami_command_returns_observed_and_canonical_identity_before_group_activation(self) -> None:
         self.db.bind_identity(
             platform="wechat",

@@ -4,6 +4,7 @@ import inspect
 import json
 import logging
 import os
+import uuid
 from datetime import date, datetime
 from pathlib import Path
 from urllib.parse import parse_qs
@@ -33,6 +34,8 @@ from bookkeeping_web.pages import (
 )
 
 logger = logging.getLogger(__name__)
+
+_SUPERMARKET_CARD_PARSER_TEMPLATE = "supermarket-card"
 
 
 def create_app(
@@ -104,6 +107,8 @@ def create_app(
             return _with_db(db_file, start_response, _handle_quotes_matches, environ)
         if path == "/api/quotes/group-profiles":
             return _with_db(db_file, start_response, _handle_quotes_group_profiles, environ)
+        if path == "/api/quotes/group-profiles/delete" and method == "POST":
+            return _with_db(db_file, start_response, _handle_quotes_group_profiles_delete, environ)
         if path == "/api/quotes/dictionary":
             return _with_db(db_file, start_response, _handle_quotes_dictionary, environ)
         if path == "/api/quotes/dictionary/disable" and method == "POST":
@@ -115,6 +120,22 @@ def create_app(
         if path == "/api/quotes/exceptions/resolve" and method == "POST":
             return _with_db(
                 db_file, start_response, _handle_quotes_exception_resolve, environ
+            )
+        if path == "/api/quotes/exceptions/result-preview" and method == "POST":
+            return _with_db(
+                db_file, start_response, _handle_quotes_exception_result_preview, environ
+            )
+        if path == "/api/quotes/exceptions/result-save" and method == "POST":
+            return _with_db(
+                db_file, start_response, _handle_quotes_exception_result_save, environ
+            )
+        if path == "/api/quotes/exceptions/harvest-preview" and method == "POST":
+            return _with_db(
+                db_file, start_response, _handle_quotes_exception_harvest_preview, environ
+            )
+        if path == "/api/quotes/exceptions/harvest-save" and method == "POST":
+            return _with_db(
+                db_file, start_response, _handle_quotes_exception_harvest_save, environ
             )
         if path == "/api/quotes/exceptions/suggest-template" and method == "POST":
             return _with_db(
@@ -541,6 +562,16 @@ def _handle_quotes_dictionary(db: BookkeepingDB, start_response, environ):
     return _respond_json(start_response, 200, {"alias_id": alias_id})
 
 
+def _handle_quotes_group_profiles_delete(db: BookkeepingDB, start_response, environ):
+    try:
+        payload = _read_json_body(environ)
+        _require_quote_admin_password(payload)
+        deleted = db.delete_quote_group_profile(profile_id=int(payload["id"]))
+    except (KeyError, TypeError, ValueError) as exc:
+        return _respond_json(start_response, 400, {"error": f"Bad payload: {exc}"})
+    return _respond_json(start_response, 200, {"deleted": deleted})
+
+
 def _handle_quotes_dictionary_disable(db: BookkeepingDB, start_response, environ):
     try:
         payload = _read_json_body(environ)
@@ -581,12 +612,19 @@ def _require_quote_admin_password(payload: dict) -> None:
 def _handle_quotes_exceptions(db: BookkeepingDB, start_response, environ):
     params = _read_query_params(environ)
     try:
-        limit = int(params.get("limit", "50")) if params.get("limit") else 50
+        limit = int(params.get("limit", "10")) if params.get("limit") else 10
         offset = int(params.get("offset", "0")) if params.get("offset") else 0
         if limit < 1 or limit > 500:
             return _respond_json(start_response, 400, {"error": "limit must be 1-500"})
         if offset < 0:
             return _respond_json(start_response, 400, {"error": "offset must be >= 0"})
+        resolution_status = str(params.get("resolution_status") or "open").strip().lower()
+        if resolution_status not in {"open", "ignored", "resolved", "attached", "all"}:
+            return _respond_json(
+                start_response,
+                400,
+                {"error": "resolution_status must be open, ignored, resolved, attached, or all"},
+            )
     except ValueError as exc:
         return _respond_json(start_response, 400, {"error": f"Bad query: {exc}"})
     payload = _call_optional_db_method(
@@ -595,10 +633,16 @@ def _handle_quotes_exceptions(db: BookkeepingDB, start_response, environ):
         default={"rows": [], "total": 0},
         limit=limit,
         offset=offset,
+        resolution_status=resolution_status,
     )
     normalized = _normalize_quote_payload(payload)
     normalized.setdefault("limit", limit)
     normalized.setdefault("offset", offset)
+    normalized.setdefault("resolution_status", resolution_status)
+    normalized.setdefault("open_total", 0)
+    normalized.setdefault("handled_total", 0)
+    normalized.setdefault("has_prev", offset > 0)
+    normalized.setdefault("has_next", offset + len(normalized.get("rows") or []) < int(normalized.get("total") or 0))
     return _respond_json(start_response, 200, normalized)
 
 
@@ -665,14 +709,711 @@ def _handle_quotes_exception_resolve(db: BookkeepingDB, start_response, environ)
             return _respond_json(start_response, 200, result)
         if resolution_status not in {"ignored", "resolved", "attached", "annotate", "open"}:
             raise ValueError("resolution_status must be ignored, resolved, attached, annotate, or open")
+        resolution_note = str(payload.get("resolution_note") or "")
+        if resolution_status == "ignored":
+            exc_row = db.get_quote_exception(exception_id=exception_id)
+            if not exc_row:
+                return _respond_json(start_response, 404, {"error": "exception not found"})
+            resolution_note = db.encode_quote_exception_suppression_note(
+                source_group_key=str(exc_row.get("source_group_key") or ""),
+                reason=str(exc_row.get("reason") or ""),
+                source_line=str(exc_row.get("source_line") or ""),
+                raw_text=str(exc_row.get("raw_text") or ""),
+                note=resolution_note,
+            )
         updated = db.resolve_quote_exception(
             exception_id=exception_id,
             resolution_status=resolution_status,
-            resolution_note=str(payload.get("resolution_note") or ""),
+            resolution_note=resolution_note,
         )
     except (KeyError, TypeError, ValueError) as exc:
         return _respond_json(start_response, 400, {"error": f"Bad payload: {exc}"})
     return _respond_json(start_response, 200, {"updated": updated})
+
+
+def _normalize_quote_harvest_defaults(payload: dict) -> dict[str, object]:
+    card_type = normalize_quote_card_type(str(payload.get("card_type") or "").strip())
+    form_factor = normalize_quote_form_factor(
+        str(payload.get("form_factor") or "").strip() or "不限"
+    )
+    country_input = str(payload.get("country_or_currency") or "").strip()
+    country_or_currency = (
+        normalize_quote_country_or_currency(country_input) if country_input else ""
+    )
+    section_label = str(payload.get("section_label") or "").strip()
+    priority_raw = payload.get("priority")
+    priority = int(priority_raw) if str(priority_raw or "").strip() else 100
+    return {
+        "card_type": card_type,
+        "form_factor": form_factor,
+        "country_or_currency": country_or_currency,
+        "section_label": section_label,
+        "priority": priority,
+    }
+
+
+def _normalize_quote_harvest_rows(payload_rows: list[dict]) -> list[dict[str, object]]:
+    from bookkeeping_core.template_engine import normalize_strict_section_amount_label
+
+    rows: list[dict[str, object]] = []
+    for row in payload_rows:
+        amount = normalize_strict_section_amount_label(str(row.get("amount") or "").strip())
+        price_text = str(row.get("price") or "").strip()
+        country_input = str(row.get("country_or_currency") or "").strip()
+        form_factor_input = str(row.get("form_factor") or "").strip()
+        rows.append(
+            {
+                "source_line_index": row.get("source_line_index"),
+                "amount": amount,
+                "price": price_text,
+                "country_or_currency": (
+                    normalize_quote_country_or_currency(country_input)
+                    if country_input
+                    else ""
+                ),
+                "form_factor": (
+                    normalize_quote_form_factor(form_factor_input)
+                    if form_factor_input
+                    else ""
+                ),
+            }
+        )
+    return rows
+
+
+def _quote_document_row(db: BookkeepingDB, *, quote_document_id: int) -> dict | None:
+    row = db.conn.execute(
+        """
+        SELECT *
+        FROM quote_documents
+        WHERE id = ?
+        LIMIT 1
+        """,
+        (quote_document_id,),
+    ).fetchone()
+    return db._serialize_quote_db_row(row) if row else None
+
+
+def _latest_quote_document_for_group(db: BookkeepingDB, *, source_group_key: str) -> dict | None:
+    row = db.conn.execute(
+        """
+        SELECT *
+        FROM quote_documents
+        WHERE source_group_key = ?
+        ORDER BY message_time DESC, id DESC
+        LIMIT 1
+        """,
+        (source_group_key,),
+    ).fetchone()
+    return db._serialize_quote_db_row(row) if row else None
+
+
+def _is_latest_quote_exception_document(db: BookkeepingDB, exc_row: dict) -> bool:
+    quote_document_id = int(exc_row.get("quote_document_id") or 0)
+    source_group_key = str(exc_row.get("source_group_key") or "")
+    if not quote_document_id or not source_group_key:
+        return False
+    latest = _latest_quote_document_for_group(db, source_group_key=source_group_key)
+    if not latest:
+        return False
+    if int(latest.get("id") or 0) == quote_document_id:
+        return True
+    return (
+        str(latest.get("raw_text") or "") == str(exc_row.get("raw_text") or "")
+        and str(latest.get("message_time") or "") == str(exc_row.get("message_time") or "")
+    )
+
+
+def _build_quote_harvest_preview_payload(db: BookkeepingDB, payload: dict) -> dict:
+    from bookkeeping_core.template_engine import derive_strict_section_preview
+
+    exception_id = int(payload["exception_id"])
+    exc_row = db.get_quote_exception(exception_id=exception_id)
+    if not exc_row:
+        raise ValueError("exception not found")
+    quote_document_id = int(exc_row.get("quote_document_id") or 0)
+    quote_document = (
+        _quote_document_row(db, quote_document_id=quote_document_id)
+        if quote_document_id
+        else None
+    )
+    raw_text = str((quote_document or {}).get("raw_text") or exc_row.get("raw_text") or "")
+    section_start_line = int(payload["section_start_line"])
+    section_end_line = int(payload["section_end_line"])
+    defaults = _normalize_quote_harvest_defaults(dict(payload.get("defaults") or {}))
+    rows = _normalize_quote_harvest_rows(list(payload.get("rows") or []))
+    ignored_line_indexes = [int(item) for item in list(payload.get("ignored_line_indexes") or [])]
+    preview = derive_strict_section_preview(
+        raw_text=raw_text,
+        section_start_line=section_start_line,
+        section_end_line=section_end_line,
+        defaults=defaults,
+        rows=rows,
+        ignored_line_indexes=ignored_line_indexes,
+    )
+    preview["exception_id"] = exception_id
+    preview["source_group_key"] = str(exc_row.get("source_group_key") or "")
+    preview["quote_document_id"] = quote_document_id
+    preview["is_latest_for_group"] = _is_latest_quote_exception_document(db, exc_row)
+    preview["raw_lines"] = [
+        {"index": idx, "line": line}
+        for idx, line in enumerate(raw_text.splitlines())
+    ]
+    return preview
+
+
+def _build_quote_result_preview_payload(db: BookkeepingDB, payload: dict) -> dict:
+    from bookkeeping_core.template_engine import derive_result_template_preview
+
+    exception_id = int(payload["exception_id"])
+    exc_row = db.get_quote_exception(exception_id=exception_id)
+    if not exc_row:
+        raise ValueError("exception not found")
+    quote_document_id = int(exc_row.get("quote_document_id") or 0)
+    quote_document = (
+        _quote_document_row(db, quote_document_id=quote_document_id)
+        if quote_document_id
+        else None
+    )
+    raw_text = str((quote_document or {}).get("raw_text") or exc_row.get("raw_text") or "")
+    chat_name = str((quote_document or {}).get("chat_name") or exc_row.get("chat_name") or "")
+    result_template_text = str(payload.get("result_template_text") or "")
+    preview = derive_result_template_preview(
+        raw_text=raw_text,
+        result_template_text=result_template_text,
+        chat_name=chat_name,
+    )
+    preview["exception_id"] = exception_id
+    preview["source_group_key"] = str(exc_row.get("source_group_key") or "")
+    preview["quote_document_id"] = quote_document_id
+    preview["is_latest_for_group"] = _is_latest_quote_exception_document(db, exc_row)
+    preview["raw_lines"] = [
+        {"index": idx, "line": line}
+        for idx, line in enumerate(raw_text.splitlines())
+    ]
+    return preview
+
+
+def _load_bound_quote_group_profile(
+    db: BookkeepingDB,
+    *,
+    platform: str,
+    chat_id: str,
+    chat_name: str,
+) -> dict | None:
+    by_id = db.get_quote_group_profile(platform=platform, chat_id=chat_id) if chat_id else None
+    if by_id and str(by_id.get("chat_name") or "") == chat_name:
+        return by_id
+    by_name = db.get_quote_group_profile_by_name(platform=platform, chat_name=chat_name) if chat_name else None
+    if by_name:
+        return by_name
+    return None
+
+
+def _merge_strict_section_template_config(
+    existing_raw: str,
+    *,
+    derived_section: dict,
+) -> str:
+    from bookkeeping_core.template_engine import TemplateConfig
+
+    try:
+        existing = TemplateConfig.from_json(existing_raw) if existing_raw.strip() else TemplateConfig(version="strict-section-v1")
+    except ValueError:
+        existing = TemplateConfig(version="strict-section-v1")
+    if existing.version != "strict-section-v1":
+        existing = TemplateConfig(version="strict-section-v1")
+    sections = list(existing.sections)
+    next_id = len(sections) + 1
+    section = dict(derived_section)
+    section["id"] = f"section-{next_id}"
+    section["enabled"] = True
+    sections.append(section)
+    existing.version = "strict-section-v1"
+    existing.sections = sections
+    return existing.to_json()
+
+
+def _group_parser_section_signature(section: dict) -> str:
+    payload = {
+        "label": str(section.get("label") or ""),
+        "defaults": dict(section.get("defaults") or {}),
+        "lines": list(section.get("lines") or []),
+    }
+    return json.dumps(payload, ensure_ascii=False, sort_keys=True)
+
+
+def _merge_group_parser_template_config(
+    existing_raw: str,
+    *,
+    derived_sections: list[dict],
+    max_sections: int | None = None,
+) -> str:
+    from bookkeeping_core.template_engine import TemplateConfig
+    from bookkeeping_core.template_engine import _GROUP_PARSER_VERSION as GROUP_PARSER_VERSION
+
+    try:
+        existing = (
+            TemplateConfig.from_json(existing_raw)
+            if existing_raw.strip()
+            else TemplateConfig(version=GROUP_PARSER_VERSION)
+        )
+    except ValueError:
+        existing = TemplateConfig(version=GROUP_PARSER_VERSION)
+    if existing.version != GROUP_PARSER_VERSION:
+        existing = TemplateConfig(version=GROUP_PARSER_VERSION)
+
+    sections = list(existing.sections)
+    signatures = {
+        _group_parser_section_signature(section): index
+        for index, section in enumerate(sections)
+    }
+    for derived_section in derived_sections:
+        signature = _group_parser_section_signature(derived_section)
+        if signature in signatures:
+            index = signatures[signature]
+            preserved_id = str(sections[index].get("id") or f"section-{index + 1}")
+            sections[index] = {
+                **dict(derived_section),
+                "id": preserved_id,
+                "enabled": True,
+            }
+            continue
+        if max_sections is not None and len(sections) >= max_sections:
+            raise ValueError(f"当前群模板已达到 {max_sections} 套骨架上限，请先复盘，不再继续新增。")
+        sections.append(
+            {
+                **dict(derived_section),
+                "id": f"section-{len(sections) + 1}",
+                "enabled": True,
+            }
+        )
+        signatures[signature] = len(sections) - 1
+    for index, section in enumerate(sections, start=1):
+        section["id"] = f"section-{index}"
+        section["enabled"] = True
+        section["priority"] = index * 10
+    existing.version = GROUP_PARSER_VERSION
+    existing.sections = sections
+    return existing.to_json()
+
+
+def _replay_latest_quote_document_with_current_template(
+    db: BookkeepingDB,
+    *,
+    exc_row: dict,
+    record_exceptions: bool = True,
+) -> dict:
+    from bookkeeping_core.quotes import AUTO_PUBLISH_CONFIDENCE
+    from bookkeeping_core.template_engine import TemplateConfig, parse_message_with_template
+
+    quote_document_id = int(exc_row.get("quote_document_id") or 0)
+    quote_document = _quote_document_row(db, quote_document_id=quote_document_id)
+    if not quote_document:
+        return {"replayed": False, "rows": 0, "exceptions": 0, "reason": "missing_quote_document"}
+    group_profile = db.get_quote_group_profile(
+        platform=str(exc_row.get("platform") or ""),
+        chat_id=str(exc_row.get("chat_id") or ""),
+    )
+    if not group_profile:
+        return {"replayed": False, "rows": 0, "exceptions": 0, "reason": "missing_group_profile"}
+    template_config_raw = str(group_profile.get("template_config") or "").strip()
+    if not template_config_raw:
+        return {"replayed": False, "rows": 0, "exceptions": 0, "reason": "missing_template_config"}
+    template = TemplateConfig.from_json(template_config_raw)
+    parsed = parse_message_with_template(
+        text=str(quote_document.get("raw_text") or ""),
+        template=template,
+        platform=str(quote_document.get("platform") or ""),
+        chat_id=str(quote_document.get("chat_id") or ""),
+        chat_name=str(quote_document.get("chat_name") or ""),
+        message_id=str(quote_document.get("message_id") or ""),
+        source_name=str(quote_document.get("source_name") or ""),
+        sender_id=str(quote_document.get("sender_id") or ""),
+        source_group_key=str(quote_document.get("source_group_key") or ""),
+        message_time=str(quote_document.get("message_time") or ""),
+    )
+    remaining_lines: list[str] = []
+    for item in parsed.exceptions:
+        for raw_line in str(item.source_line or "").splitlines():
+            line = str(raw_line or "").strip()
+            if line and line not in remaining_lines:
+                remaining_lines.append(line)
+    deactivate_method = getattr(db, "deactivate_old_quotes_for_group", None)
+    if callable(deactivate_method):
+        deactivate_method(source_group_key=str(quote_document.get("source_group_key") or ""))
+    replay_message_id = f"{parsed.message_id or 'replay'}#replay-{uuid.uuid4().hex[:12]}"
+    replay_document_id = db.record_quote_document(
+        platform=parsed.platform,
+        source_group_key=parsed.source_group_key,
+        chat_id=parsed.chat_id,
+        chat_name=parsed.chat_name,
+        message_id=replay_message_id,
+        source_name=parsed.source_name,
+        sender_id=parsed.sender_id,
+        raw_text=parsed.raw_text,
+        message_time=parsed.message_time,
+        parser_template=parsed.parser_template,
+        parser_version=parsed.parser_version,
+        confidence=parsed.confidence,
+        parse_status=parsed.parse_status,
+    )
+    if record_exceptions:
+        for item in parsed.exceptions:
+            db.record_quote_exception_unless_suppressed(
+                quote_document_id=replay_document_id,
+                platform=item.platform,
+                source_group_key=item.source_group_key,
+                chat_id=item.chat_id,
+                chat_name=item.chat_name,
+                source_name=item.source_name,
+                sender_id=item.sender_id,
+                reason=item.reason,
+                source_line=item.source_line,
+                raw_text=item.raw_text,
+                message_time=item.message_time,
+                parser_template=item.parser_template,
+                parser_version=item.parser_version,
+                confidence=item.confidence,
+            )
+    published_rows = 0
+    for item in parsed.rows:
+        if item.quote_status != "active" or item.confidence < AUTO_PUBLISH_CONFIDENCE:
+            if record_exceptions:
+                db.record_quote_exception_unless_suppressed(
+                    quote_document_id=replay_document_id,
+                    platform=item.platform,
+                    source_group_key=item.source_group_key,
+                    chat_id=item.chat_id,
+                    chat_name=item.chat_name,
+                    source_name=item.source_name,
+                    sender_id=item.sender_id,
+                    reason="low_confidence_or_non_active",
+                    source_line=item.source_line,
+                    raw_text=item.raw_text,
+                    message_time=item.message_time,
+                    parser_template=item.parser_template,
+                    parser_version=item.parser_version,
+                    confidence=item.confidence,
+                )
+            continue
+        db.upsert_quote_price_row_with_history(
+            quote_document_id=replay_document_id,
+            message_id=item.message_id,
+            platform=item.platform,
+            source_group_key=item.source_group_key,
+            chat_id=item.chat_id,
+            chat_name=item.chat_name,
+            source_name=item.source_name,
+            sender_id=item.sender_id,
+            card_type=item.card_type,
+            country_or_currency=item.country_or_currency,
+            amount_range=item.amount_range,
+            multiplier=item.multiplier,
+            form_factor=item.form_factor,
+            price=item.price,
+            quote_status=item.quote_status,
+            restriction_text=item.restriction_text,
+            source_line=item.source_line,
+            raw_text=item.raw_text,
+            message_time=item.message_time,
+            effective_at=item.effective_at,
+            expires_at=item.expires_at,
+            parser_template=item.parser_template,
+            parser_version=item.parser_version,
+            confidence=item.confidence,
+        )
+        published_rows += 1
+    return {
+        "replayed": True,
+        "rows": published_rows,
+        "exceptions": 1 if remaining_lines else 0,
+        "quote_document_id": replay_document_id,
+        "remaining_lines": remaining_lines,
+    }
+
+
+def _subtract_harvested_lines_from_exception_pool(
+    exc_row: dict,
+    *,
+    section_start_line: int,
+    section_end_line: int,
+) -> list[str]:
+    from bookkeeping_core.template_engine import _normalized_indexed_nonempty_lines
+
+    current_pool_text = str(exc_row.get("source_line") or "").strip() or str(
+        exc_row.get("raw_text") or ""
+    )
+    current_pool_lines = [
+        str(item["line"])
+        for item in _normalized_indexed_nonempty_lines(
+            current_pool_text,
+            split_multi_quotes=True,
+        )
+    ]
+    selected_counts: dict[str, int] = {}
+    lower = min(section_start_line, section_end_line)
+    upper = max(section_start_line, section_end_line)
+    for item in _normalized_indexed_nonempty_lines(
+        str(exc_row.get("raw_text") or ""),
+        split_multi_quotes=True,
+    ):
+        raw_index = int(item.get("raw_index") or 0)
+        if raw_index < lower or raw_index > upper:
+            continue
+        line = str(item.get("line") or "").strip()
+        if not line:
+            continue
+        selected_counts[line] = selected_counts.get(line, 0) + 1
+    remaining_lines: list[str] = []
+    for line in current_pool_lines:
+        remaining_count = selected_counts.get(line, 0)
+        if remaining_count > 0:
+            selected_counts[line] = remaining_count - 1
+            continue
+        remaining_lines.append(line)
+    return remaining_lines
+
+
+def _handle_quotes_exception_harvest_preview(db: BookkeepingDB, start_response, environ):
+    try:
+        payload = _read_json_body(environ)
+        preview = _build_quote_harvest_preview_payload(db, payload)
+    except (KeyError, TypeError, ValueError) as exc:
+        return _respond_json(start_response, 400, {"error": f"Bad payload: {exc}"})
+    return _respond_json(start_response, 200, preview)
+
+
+def _handle_quotes_exception_result_preview(db: BookkeepingDB, start_response, environ):
+    try:
+        payload = _read_json_body(environ)
+        preview = _build_quote_result_preview_payload(db, payload)
+    except (KeyError, TypeError, ValueError) as exc:
+        return _respond_json(start_response, 400, {"error": f"Bad payload: {exc}"})
+    return _respond_json(start_response, 200, preview)
+
+
+def _handle_quotes_exception_harvest_save(db: BookkeepingDB, start_response, environ):
+    try:
+        payload = _read_json_body(environ)
+        _require_quote_admin_password(payload)
+        preview = _build_quote_harvest_preview_payload(db, payload)
+        if not preview.get("can_save"):
+            return _respond_json(
+                start_response,
+                400,
+                {
+                    "error": "preview is not saveable",
+                    "preview": preview,
+                },
+            )
+        exception_id = int(payload["exception_id"])
+        exc_row = db.get_quote_exception(exception_id=exception_id)
+        if not exc_row:
+            return _respond_json(start_response, 404, {"error": "exception not found"})
+        already_resolved = (
+            str(exc_row.get("resolution_status") or "").strip().lower() == "resolved"
+        )
+        derived_section = dict(preview.get("derived_section") or {})
+        group_profile = db.get_quote_group_profile(
+            platform=str(exc_row.get("platform") or ""),
+            chat_id=str(exc_row.get("chat_id") or ""),
+        )
+        section_start_line = int(payload["section_start_line"])
+        section_end_line = int(payload["section_end_line"])
+        merged_config = _merge_strict_section_template_config(
+            str((group_profile or {}).get("template_config") or ""),
+            derived_section=derived_section,
+        )
+        defaults = dict(derived_section.get("defaults") or {})
+        db.upsert_quote_group_profile(
+            platform=str(exc_row.get("platform") or ""),
+            chat_id=str(exc_row.get("chat_id") or ""),
+            chat_name=str(exc_row.get("chat_name") or exc_row.get("chat_id") or ""),
+            default_card_type=str(defaults.get("card_type") or (group_profile or {}).get("default_card_type") or ""),
+            default_country_or_currency=str(defaults.get("country_or_currency") or (group_profile or {}).get("default_country_or_currency") or ""),
+            default_form_factor=str(defaults.get("form_factor") or (group_profile or {}).get("default_form_factor") or "不限"),
+            default_multiplier=str((group_profile or {}).get("default_multiplier") or ""),
+            parser_template="strict-section-v1",
+            stale_after_minutes=int((group_profile or {}).get("stale_after_minutes") or 30),
+            note=str((group_profile or {}).get("note") or ""),
+            template_config=merged_config,
+        )
+        replay_result = {"replayed": False, "rows": 0, "exceptions": 0, "remaining_lines": []}
+        restriction_lines_attached = [
+            str(line.get("pattern") or "").strip()
+            for line in list(derived_section.get("lines") or [])
+            if str(line.get("kind") or "").strip() == "restriction"
+            and str(line.get("pattern") or "").strip()
+        ]
+        remaining_lines = _subtract_harvested_lines_from_exception_pool(
+            exc_row,
+            section_start_line=section_start_line,
+            section_end_line=section_end_line,
+        )
+        resolved_fully = already_resolved or (
+            not bool(preview.get("is_latest_for_group"))
+            or not remaining_lines
+        )
+        if already_resolved:
+            remaining_lines = []
+        if bool(preview.get("is_latest_for_group")) and (resolved_fully or already_resolved):
+            replay_result = _replay_latest_quote_document_with_current_template(
+                db,
+                exc_row=exc_row,
+                record_exceptions=False,
+            )
+        resolution_note = (
+            f"harvested section={derived_section.get('label') or '未命名 Section'} "
+            f"rows={len(preview.get('preview_rows') or [])} "
+            f"restrictions={len(restriction_lines_attached)} "
+            f"remaining={len(remaining_lines)} "
+            f"replayed={'true' if replay_result.get('replayed') else 'false'}"
+        )
+        if resolved_fully:
+            db.resolve_quote_exception(
+                exception_id=exception_id,
+                resolution_status="resolved",
+                resolution_note=resolution_note,
+            )
+        else:
+            db.update_quote_exception(
+                exception_id=exception_id,
+                resolution_status="open",
+                resolution_note=resolution_note,
+                source_line="\n".join(remaining_lines),
+            )
+        return _respond_json(
+            start_response,
+            200,
+            {
+                "saved": True,
+                "preview_rows": preview.get("preview_rows") or [],
+                "derived_section": derived_section,
+                "replay": replay_result,
+                "is_latest_for_group": preview.get("is_latest_for_group"),
+                "resolved_fully": resolved_fully,
+                "remaining_lines": remaining_lines,
+                "restriction_lines_attached": restriction_lines_attached,
+                "saved_line_indexes": list(
+                    range(
+                        min(section_start_line, section_end_line),
+                        max(section_start_line, section_end_line) + 1,
+                    )
+                ),
+            },
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        return _respond_json(start_response, 400, {"error": f"Bad payload: {exc}"})
+
+
+def _handle_quotes_exception_result_save(db: BookkeepingDB, start_response, environ):
+    try:
+        from bookkeeping_core.template_engine import _GROUP_PARSER_MAX_SECTIONS as GROUP_PARSER_MAX_SECTIONS
+
+        payload = _read_json_body(environ)
+        _require_quote_admin_password(payload)
+        preview = _build_quote_result_preview_payload(db, payload)
+        if not preview.get("can_save"):
+            return _respond_json(
+                start_response,
+                400,
+                {
+                    "error": "preview is not saveable",
+                    "preview": preview,
+                },
+            )
+        if not bool(preview.get("strict_replay_ok")):
+            return _respond_json(
+                start_response,
+                400,
+                {
+                    "error": "strict replay validation failed",
+                    "preview": preview,
+                },
+            )
+        exception_id = int(payload["exception_id"])
+        exc_row = db.get_quote_exception(exception_id=exception_id)
+        if not exc_row:
+            return _respond_json(start_response, 404, {"error": "exception not found"})
+        group_profile = _load_bound_quote_group_profile(
+            db,
+            platform=str(exc_row.get("platform") or ""),
+            chat_id=str(exc_row.get("chat_id") or ""),
+            chat_name=str(exc_row.get("chat_name") or exc_row.get("chat_id") or ""),
+        )
+        requested_mode = str(payload.get("mode") or "").strip().lower()
+        existing_parser_template = str((group_profile or {}).get("parser_template") or "").strip()
+        use_supermarket_mode = (
+            requested_mode == "supermarket"
+            or existing_parser_template == _SUPERMARKET_CARD_PARSER_TEMPLATE
+        )
+        derived_sections = list(preview.get("derived_sections") or [])
+        merged_config = _merge_group_parser_template_config(
+            str((group_profile or {}).get("template_config") or ""),
+            derived_sections=derived_sections,
+            max_sections=None if use_supermarket_mode else GROUP_PARSER_MAX_SECTIONS,
+        )
+        preview_rows = list(preview.get("preview_rows") or [])
+        first_row = preview_rows[0] if preview_rows else {}
+        draft_defaults = dict((preview.get("draft_structure") or {}).get("defaults") or {})
+        db.upsert_quote_group_profile(
+            platform=str(exc_row.get("platform") or ""),
+            chat_id=str(exc_row.get("chat_id") or ""),
+            chat_name=str(exc_row.get("chat_name") or exc_row.get("chat_id") or ""),
+            default_card_type=str(
+                (group_profile or {}).get("default_card_type")
+                or first_row.get("card_type")
+                or draft_defaults.get("card_type")
+                or ""
+            ),
+            default_country_or_currency=str(
+                (group_profile or {}).get("default_country_or_currency")
+                or draft_defaults.get("country_or_currency")
+                or first_row.get("country_or_currency")
+                or ""
+            ),
+            default_form_factor=str(
+                draft_defaults.get("form_factor")
+                or (group_profile or {}).get("default_form_factor")
+                or first_row.get("form_factor")
+                or "不限"
+            ),
+            default_multiplier=str((group_profile or {}).get("default_multiplier") or ""),
+            parser_template=_SUPERMARKET_CARD_PARSER_TEMPLATE if use_supermarket_mode else "group-parser",
+            stale_after_minutes=int((group_profile or {}).get("stale_after_minutes") or 30),
+            note=str((group_profile or {}).get("note") or ""),
+            template_config=merged_config,
+        )
+        resolution_note = (
+            f"result_saved mode={'supermarket' if use_supermarket_mode else 'group-parser'} "
+            f"skeletons={len(derived_sections)} "
+            f"rows={len(preview_rows)} applied=false strict_replay=true"
+        )
+        db.resolve_quote_exception(
+            exception_id=exception_id,
+            resolution_status="resolved",
+            resolution_note=resolution_note,
+        )
+        return _respond_json(
+            start_response,
+            200,
+            {
+                "saved": True,
+                "applied": False,
+                "preview_rows": preview_rows,
+                "notes": preview.get("notes") or [],
+                "warnings": preview.get("warnings") or [],
+                "derived_sections": derived_sections,
+                "skeleton_summaries": preview.get("skeleton_summaries") or [],
+                "result_template_text": preview.get("result_template_text") or "",
+                "strict_replay_ok": preview.get("strict_replay_ok"),
+                "mode": "supermarket" if use_supermarket_mode else "result",
+                "parser_template": _SUPERMARKET_CARD_PARSER_TEMPLATE if use_supermarket_mode else "group-parser",
+            },
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        return _respond_json(start_response, 400, {"error": f"Bad payload: {exc}"})
 
 
 def _handle_quotes_suggest_template(db: BookkeepingDB, start_response, environ):

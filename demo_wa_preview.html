@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SeeSee Quote Card</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #0b141a;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 40px;
+    padding: 30px 20px;
+    font-family: 'Inter', -apple-system, sans-serif;
+  }
+
+  .label {
+    color: #8696a0;
+    font-size: 13px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: -20px;
+  }
+
+  /* ===== WhatsApp Bubble Wrapper ===== */
+  .wa-bubble {
+    background: #005c4b;
+    border-radius: 8px;
+    padding: 6px;
+    max-width: 440px;
+    width: 100%;
+  }
+
+  /* ===== The Card ===== */
+  .card {
+    width: 100%;
+    border-radius: 6px;
+    overflow: hidden;
+    background: #0f1923;
+    color: #e6edf3;
+    font-size: 13px;
+    line-height: 1.4;
+  }
+
+  /* --- Header --- */
+  .card-header {
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+    padding: 22px 20px 18px;
+    position: relative;
+    overflow: hidden;
+  }
+  .card-header::before {
+    content: '';
+    position: absolute;
+    top: -40px; right: -40px;
+    width: 120px; height: 120px;
+    background: radial-gradient(circle, rgba(233,69,96,0.15) 0%, transparent 70%);
+    border-radius: 50%;
+  }
+  .card-header::after {
+    content: '';
+    position: absolute;
+    bottom: -30px; left: 30%;
+    width: 160px; height: 80px;
+    background: radial-gradient(circle, rgba(0,122,255,0.1) 0%, transparent 70%);
+  }
+  .brand-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: relative;
+    z-index: 1;
+  }
+  .brand-name {
+    font-size: 28px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+    background: linear-gradient(135deg, #fff 0%, #a8c0ff 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .brand-tag {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 2px;
+    color: rgba(255,255,255,0.4);
+    text-transform: uppercase;
+  }
+  .header-meta {
+    display: flex;
+    gap: 20px;
+    margin-top: 12px;
+    position: relative;
+    z-index: 1;
+  }
+  .meta-chip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(255,255,255,0.08);
+    padding: 5px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 500;
+    color: rgba(255,255,255,0.7);
+    backdrop-filter: blur(4px);
+  }
+  .meta-chip .val {
+    color: #fff;
+    font-weight: 700;
+  }
+  .rate-highlight {
+    color: #ff6b6b;
+    font-weight: 700;
+  }
+
+  /* --- Section --- */
+  .section {
+    border-top: 1px solid rgba(255,255,255,0.06);
+  }
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px 6px;
+  }
+  .section-icon {
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 700;
+    color: #fff;
+    flex-shrink: 0;
+  }
+  .section-title {
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+  }
+  .section-badge {
+    font-size: 10px;
+    color: rgba(255,255,255,0.35);
+    margin-left: auto;
+    font-weight: 500;
+  }
+
+  /* --- Sub-region tag --- */
+  .region-row {
+    display: flex;
+    align-items: center;
+    padding: 6px 16px 2px;
+  }
+  .region-tag {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 3px;
+    letter-spacing: 0.5px;
+  }
+
+  /* --- Data rows --- */
+  .data-grid {
+    padding: 2px 16px 8px;
+  }
+  .data-row {
+    display: grid;
+    grid-template-columns: 1fr 50px 70px 90px;
+    gap: 4px;
+    padding: 4px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.03);
+    align-items: center;
+  }
+  .data-row:last-child { border-bottom: none; }
+  .data-row .range {
+    font-weight: 500;
+    color: #c9d1d9;
+    font-size: 12.5px;
+  }
+  .data-row .qty {
+    font-size: 11px;
+    color: rgba(255,255,255,0.3);
+    text-align: center;
+  }
+  .data-row .cny {
+    font-weight: 600;
+    color: #e6edf3;
+    text-align: right;
+    font-size: 12.5px;
+  }
+  .data-row .ngn {
+    font-weight: 700;
+    text-align: right;
+    font-size: 12.5px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* --- Compact single-row currencies --- */
+  .compact-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+    padding: 0 12px 8px;
+  }
+  .compact-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 6px;
+    border-radius: 4px;
+  }
+  .compact-item:hover { background: rgba(255,255,255,0.03); }
+  .compact-item .cur {
+    font-size: 11px;
+    font-weight: 700;
+    color: rgba(255,255,255,0.5);
+    width: 30px;
+    flex-shrink: 0;
+  }
+  .compact-item .cny {
+    font-size: 12px;
+    font-weight: 600;
+    color: #c9d1d9;
+  }
+  .compact-item .ngn {
+    font-size: 11.5px;
+    font-weight: 700;
+    margin-left: auto;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* --- NGN color coding --- */
+  .ngn-high { color: #ff6b6b; }
+  .ngn-mid  { color: #ffa44f; }
+  .ngn-low  { color: #7ee787; }
+
+  /* --- Footer --- */
+  .card-footer {
+    border-top: 1px solid rgba(255,255,255,0.06);
+    padding: 10px 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .footer-contact {
+    font-size: 11px;
+    color: rgba(255,255,255,0.35);
+  }
+  .footer-contact a {
+    color: rgba(255,255,255,0.5);
+    text-decoration: none;
+  }
+  .footer-cta {
+    font-size: 10px;
+    font-weight: 600;
+    color: #0f3460;
+    background: linear-gradient(135deg, #a8c0ff 0%, #3f78e0 100%);
+    padding: 4px 10px;
+    border-radius: 12px;
+    letter-spacing: 0.3px;
+  }
+
+  /* --- Apple color scheme --- */
+  .section.apple .section-icon { background: linear-gradient(135deg, #007AFF, #5856D6); }
+  .section.apple .section-title { color: #58a6ff; }
+  .section.apple .region-tag { background: rgba(0,122,255,0.12); color: #58a6ff; }
+
+  /* --- Steam color scheme --- */
+  .section.steam .section-icon { background: linear-gradient(135deg, #1B2838, #2a475e); }
+  .section.steam .section-title { color: #8bb9e0; }
+
+  /* --- Razer color scheme --- */
+  .section.razer .section-icon { background: linear-gradient(135deg, #00d400, #00a000); }
+  .section.razer .section-title { color: #56d364; }
+
+  /* --- Xbox color scheme --- */
+  .section.xbox .section-icon { background: linear-gradient(135deg, #107c10, #1a9f1a); }
+  .section.xbox .section-title { color: #56d364; }
+
+  /* ===== Original text for comparison ===== */
+  .original {
+    background: #005c4b;
+    border-radius: 8px;
+    padding: 10px 14px;
+    max-width: 440px;
+    width: 100%;
+    color: #e9edef;
+    font-family: -apple-system, sans-serif;
+    font-size: 13.5px;
+    line-height: 1.45;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .original b { font-weight: 600; }
+</style>
+</head>
+<body>
+
+<div class="label">Your current format ↓</div>
+<div class="original">NGN=	196.2
+<b>★★A pple 1$=￥& N★★</b>
+———A pple  USA  ———
+100 /150	【50X】	￥	5.57	₦	1092.83
+200 -450	【50X】	￥	5.62	₦	1102.64
+300 /400	【100X】	￥	5.62	₦	1102.64
+500 /500	【500X】	￥	5.62	₦	1102.64
+10-495	【5X】	￥	5.2	₦	1020.24
+———A pple  CAD  ———
+100-150	【 50X】	￥	3.7	₦	725.94
+200-500	【 50X】		3.7	₦	725.94
+20-495	【 5 X】	￥	3.6	₦	706.32
+———A pple  AUD  ———
+100-500	【 50X】	     ￥	3.3	₦	647.46
+10--495	【 5 X】	￥	3.2	₦	627.84
+———A pple  UK ———
+100--200	【 50X】	￥	5.7	₦	1118.34
+10-495	【 5 X】	￥	5.35	₦	1049.67
+... (continues for 60+ more lines)</div>
+
+<div class="label" style="margin-top: 50px;">New design ↓</div>
+
+<div class="wa-bubble">
+<div class="card">
+
+  <!-- Header -->
+  <div class="card-header">
+    <div class="brand-row">
+      <div class="brand-name">SeeSee</div>
+      <div class="brand-tag">Gift Card Rates</div>
+    </div>
+    <div class="header-meta">
+      <div class="meta-chip">📅 <span class="val">Apr 11, 2026</span></div>
+      <div class="meta-chip">NGN <span class="rate-highlight">₦196.2/¥1</span></div>
+    </div>
+  </div>
+
+  <!-- Apple -->
+  <div class="section apple">
+    <div class="section-header">
+      <div class="section-icon">A</div>
+      <div class="section-title">APPLE</div>
+      <div class="section-badge">1$ = ¥ & ₦</div>
+    </div>
+
+    <div class="region-row">
+      <span class="region-tag">USA</span>
+    </div>
+    <div class="data-grid">
+      <div class="data-row"><span class="range">$100-150</span><span class="qty">50X</span><span class="cny">¥5.57</span><span class="ngn ngn-high">₦1,093</span></div>
+      <div class="data-row"><span class="range">$200-450</span><span class="qty">50X</span><span class="cny">¥5.62</span><span class="ngn ngn-high">₦1,103</span></div>
+      <div class="data-row"><span class="range">$300-400</span><span class="qty">100X</span><span class="cny">¥5.62</span><span class="ngn ngn-high">₦1,103</span></div>
+      <div class="data-row"><span class="range">$500</span><span class="qty">500X</span><span class="cny">¥5.62</span><span class="ngn ngn-high">₦1,103</span></div>
+      <div class="data-row"><span class="range">$10-495</span><span class="qty">5X</span><span class="cny">¥5.20</span><span class="ngn ngn-high">₦1,020</span></div>
+    </div>
+
+    <div class="region-row">
+      <span class="region-tag">CAD</span>
+    </div>
+    <div class="data-grid">
+      <div class="data-row"><span class="range">$100-150</span><span class="qty">50X</span><span class="cny">¥3.70</span><span class="ngn ngn-mid">₦726</span></div>
+      <div class="data-row"><span class="range">$200-500</span><span class="qty">50X</span><span class="cny">¥3.70</span><span class="ngn ngn-mid">₦726</span></div>
+      <div class="data-row"><span class="range">$20-495</span><span class="qty">5X</span><span class="cny">¥3.60</span><span class="ngn ngn-mid">₦706</span></div>
+    </div>
+
+    <div class="region-row">
+      <span class="region-tag">AUD</span>
+    </div>
+    <div class="data-grid">
+      <div class="data-row"><span class="range">$100-500</span><span class="qty">50X</span><span class="cny">¥3.30</span><span class="ngn ngn-mid">₦647</span></div>
+      <div class="data-row"><span class="range">$10-495</span><span class="qty">5X</span><span class="cny">¥3.20</span><span class="ngn ngn-mid">₦628</span></div>
+    </div>
+
+    <div class="region-row">
+      <span class="region-tag">UK</span>
+    </div>
+    <div class="data-grid">
+      <div class="data-row"><span class="range">£100-200</span><span class="qty">50X</span><span class="cny">¥5.70</span><span class="ngn ngn-high">₦1,118</span></div>
+      <div class="data-row"><span class="range">£10-495</span><span class="qty">5X</span><span class="cny">¥5.35</span><span class="ngn ngn-high">₦1,050</span></div>
+    </div>
+
+    <div class="region-row">
+      <span class="region-tag">DE</span>
+    </div>
+    <div class="data-grid">
+      <div class="data-row"><span class="range">€100-200</span><span class="qty">50X</span><span class="cny">¥5.03</span><span class="ngn ngn-mid">₦987</span></div>
+      <div class="data-row"><span class="range">€10-495</span><span class="qty">5X</span><span class="cny">¥4.95</span><span class="ngn ngn-mid">₦971</span></div>
+    </div>
+  </div>
+
+  <!-- Steam -->
+  <div class="section steam">
+    <div class="section-header">
+      <div class="section-icon">S</div>
+      <div class="section-title">STEAM</div>
+      <div class="section-badge">10-200 all regions</div>
+    </div>
+    <div class="compact-grid">
+      <div class="compact-item"><span class="cur">USD</span><span class="cny">¥4.85</span><span class="ngn ngn-mid">₦952</span></div>
+      <div class="compact-item"><span class="cur">EUR</span><span class="cny">¥5.72</span><span class="ngn ngn-high">₦1,122</span></div>
+      <div class="compact-item"><span class="cur">GBP</span><span class="cny">¥6.50</span><span class="ngn ngn-high">₦1,275</span></div>
+      <div class="compact-item"><span class="cur">CHF</span><span class="cny">¥6.22</span><span class="ngn ngn-high">₦1,220</span></div>
+      <div class="compact-item"><span class="cur">CAD</span><span class="cny">¥3.45</span><span class="ngn ngn-mid">₦677</span></div>
+      <div class="compact-item"><span class="cur">AUD</span><span class="cny">¥3.32</span><span class="ngn ngn-mid">₦651</span></div>
+      <div class="compact-item"><span class="cur">NZD</span><span class="cny">¥2.80</span><span class="ngn ngn-low">₦549</span></div>
+      <div class="compact-item"><span class="cur">PLN</span><span class="cny">¥1.26</span><span class="ngn ngn-low">₦247</span></div>
+    </div>
+  </div>
+
+  <!-- Razer -->
+  <div class="section razer">
+    <div class="section-header">
+      <div class="section-icon">R</div>
+      <div class="section-title">RAZER</div>
+      <div class="section-badge">10-500 all regions</div>
+    </div>
+    <div class="compact-grid">
+      <div class="compact-item"><span class="cur">USD</span><span class="cny">¥5.55</span><span class="ngn ngn-high">₦1,089</span></div>
+      <div class="compact-item"><span class="cur">EUR</span><span class="cny">¥5.20</span><span class="ngn ngn-high">₦1,020</span></div>
+      <div class="compact-item"><span class="cur">GBP</span><span class="cny">¥5.20</span><span class="ngn ngn-high">₦1,020</span></div>
+      <div class="compact-item"><span class="cur">BRA</span><span class="cny">¥0.90</span><span class="ngn ngn-low">₦177</span></div>
+      <div class="compact-item"><span class="cur">SGD</span><span class="cny">¥4.30</span><span class="ngn ngn-mid">₦844</span></div>
+      <div class="compact-item"><span class="cur">AUD</span><span class="cny">¥3.65</span><span class="ngn ngn-mid">₦716</span></div>
+      <div class="compact-item"><span class="cur">CAD</span><span class="cny">¥3.20</span><span class="ngn ngn-mid">₦628</span></div>
+      <div class="compact-item"><span class="cur">MEX</span><span class="cny">¥0.30</span><span class="ngn ngn-low">₦59</span></div>
+    </div>
+  </div>
+
+  <!-- Xbox -->
+  <div class="section xbox">
+    <div class="section-header">
+      <div class="section-icon">X</div>
+      <div class="section-title">XBOX</div>
+      <div class="section-badge">photo required</div>
+    </div>
+    <div class="compact-grid">
+      <div class="compact-item"><span class="cur">USD</span><span class="cny">¥5.05</span><span class="ngn ngn-mid">₦991</span></div>
+      <div class="compact-item"><span class="cur">GBP</span><span class="cny">¥5.90</span><span class="ngn ngn-high">₦1,158</span></div>
+      <div class="compact-item"><span class="cur">EUR</span><span class="cny">¥5.15</span><span class="ngn ngn-high">₦1,010</span></div>
+      <div class="compact-item"><span class="cur">BRA</span><span class="cny">¥0.74</span><span class="ngn ngn-low">₦145</span></div>
+      <div class="compact-item"><span class="cur">SGD</span><span class="cny">¥3.15</span><span class="ngn ngn-mid">₦618</span></div>
+      <div class="compact-item"><span class="cur">CAD</span><span class="cny">¥3.15</span><span class="ngn ngn-mid">₦618</span></div>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div class="card-footer">
+    <div class="footer-contact">
+      WC: Button-Leo · WA: +852 5700 6866
+    </div>
+    <div class="footer-cta">Refer & Earn</div>
+  </div>
+
+</div>
+</div>
+
+</body>
+</html>

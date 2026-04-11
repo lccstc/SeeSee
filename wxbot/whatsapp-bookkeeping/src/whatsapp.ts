@@ -6,11 +6,11 @@
 import makeWASocket, {
   DisconnectReason,
   useMultiFileAuthState,
-  WASocket,
   makeCacheableSignalKeyStore,
   Browsers,
   fetchLatestBaileysVersion,
 } from "@whiskeysockets/baileys";
+import type { WASocket } from "@whiskeysockets/baileys";
 import { Boom as BoomType } from "@hapi/boom";
 import { basename } from "node:path";
 import pino from "pino";
@@ -257,23 +257,20 @@ export class WhatsAppClient {
       return chatId;
     }
 
-    const cached = this.groupNameCache.get(chatId);
-    if (cached) {
-      return cached;
-    }
+    const cached = this.groupNameCache.get(chatId)?.trim();
 
     if (!this.socket) {
-      return chatId;
+      return cached || chatId;
     }
 
     try {
       const metadata = await this.socket.groupMetadata(chatId);
-      const chatName = metadata.subject?.trim() || chatId;
+      const chatName = metadata.subject?.trim() || cached || chatId;
       this.groupNameCache.set(chatId, chatName);
       return chatName;
     } catch (error) {
       this.logger.debug(`Failed to resolve group name for ${chatId}: ${error}`);
-      return chatId;
+      return cached || chatId;
     }
   }
 

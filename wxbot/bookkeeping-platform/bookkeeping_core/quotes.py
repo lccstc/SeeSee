@@ -41,6 +41,14 @@ _RESTRICTION_KEYWORDS = (
     "先问",
 )
 _MODIFIER_RE = re.compile(r"[-+]\d+(?:\.\d+)?")
+_NON_QUOTE_OPERATIONAL_KEYWORDS = (
+    "当前账单金额",
+    "账单金额",
+    "balance",
+    "closing balance",
+    "current balance",
+    "bill amount",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,14 +82,26 @@ _CARD_TYPE_ALIASES: list[tuple[str, str]] = [
     ("itunes", "Apple"),
     ("i tunes", "Apple"),
     ("apple", "Apple"),
+    ("苹果", "Apple"),
     ("steam", "Steam"),
+    ("黄金雷蛇", "Razer"),
+    ("黄金雷蛇us", "Razer"),
+    ("美国雷蛇", "Razer"),
+    ("绿蛇", "Razer"),
+    ("外卡雷蛇", "Razer"),
     ("razer gold", "Razer"),
     ("razer", "Razer"),
+    ("外卡xbox", "Xbox"),
+    ("美国xb", "Xbox"),
+    ("xb", "Xbox"),
     ("xbox", "Xbox"),
     ("google play", "Google Play"),
     ("google", "Google Play"),
     ("playstation", "PSN"),
     ("psn", "PSN"),
+    ("paysafecard", "Paysafe"),
+    ("安全支付图密同价", "Paysafe"),
+    ("安全支付图密", "Paysafe"),
     ("paysafe", "Paysafe"),
     ("roblox", "Roblox"),
     ("pcs", "PCS"),
@@ -109,6 +129,8 @@ _CARD_TYPE_QUERY_ALIASES: dict[str, str] = {
 }
 
 _COUNTRY_ALIASES: list[tuple[str, str]] = [
+    ("eu", "EUR"),
+    ("欧盟", "EUR"),
     ("usd", "USD"),
     ("usa", "USD"),
     ("us", "USD"),
@@ -133,26 +155,26 @@ _COUNTRY_ALIASES: list[tuple[str, str]] = [
     ("新西兰", "NZD"),
     ("chf", "CHF"),
     ("瑞士", "CHF"),
-    ("希腊", "EUR"),
-    ("葡萄牙", "EUR"),
-    ("意大利", "EUR"),
-    ("意", "EUR"),
-    ("比利时", "EUR"),
-    ("比", "EUR"),
-    ("爱尔兰", "EUR"),
-    ("爱", "EUR"),
-    ("奥地利", "EUR"),
-    ("奥", "EUR"),
-    ("荷兰", "EUR"),
-    ("荷", "EUR"),
-    ("法国", "EUR"),
-    ("法", "EUR"),
-    ("芬兰", "EUR"),
-    ("芬", "EUR"),
-    ("西班牙", "EUR"),
-    ("西", "EUR"),
-    ("斯洛伐克", "EUR"),
-    ("斯洛文尼亚", "EUR"),
+    ("希腊", "希腊"),
+    ("葡萄牙", "葡萄牙"),
+    ("意大利", "意大利"),
+    ("意", "意大利"),
+    ("比利时", "比利时"),
+    ("比", "比利时"),
+    ("爱尔兰", "爱尔兰"),
+    ("爱", "爱尔兰"),
+    ("奥地利", "奥地利"),
+    ("奥", "奥地利"),
+    ("荷兰", "荷兰"),
+    ("荷", "荷兰"),
+    ("法国", "法国"),
+    ("法", "法国"),
+    ("芬兰", "芬兰"),
+    ("芬", "芬兰"),
+    ("西班牙", "西班牙"),
+    ("西", "西班牙"),
+    ("斯洛伐克", "斯洛伐克"),
+    ("斯洛文尼亚", "斯洛文尼亚"),
     ("pln", "PLN"),
     ("波兰", "PLN"),
     ("sgd", "SGD"),
@@ -182,26 +204,80 @@ _COUNTRY_ALIASES: list[tuple[str, str]] = [
     ("哥伦比亚", "COP"),
     ("php", "PHP"),
     ("菲律宾", "PHP"),
-    ("de", "EUR"),
-    ("德国", "EUR"),
+    ("inr", "INR"),
+    ("india", "INR"),
+    ("印度", "INR"),
+    ("thb", "THB"),
+    ("thailand", "THB"),
+    ("泰国", "THB"),
+    ("idr", "IDR"),
+    ("indonesia", "IDR"),
+    ("印尼", "IDR"),
+    ("印度尼西亚", "IDR"),
+    ("try", "TRY"),
+    ("turkey", "TRY"),
+    ("土耳其", "TRY"),
+    ("clp", "CLP"),
+    ("chile", "CLP"),
+    ("智利", "CLP"),
+    ("pkr", "PKR"),
+    ("pakistan", "PKR"),
+    ("巴基斯坦", "PKR"),
+    ("twd", "TWD"),
+    ("taiwan", "TWD"),
+    ("台湾", "TWD"),
+    ("de", "德国"),
+    ("德国", "德国"),
     ("jpy", "JPY"),
+    ("japan", "JPY"),
     ("日元", "JPY"),
+    ("日本", "JPY"),
     ("cny", "CNY"),
     ("rmb", "RMB"),
     ("人民币", "RMB"),
+    ("sar", "SAR"),
+    ("saudi", "SAR"),
+    ("沙特", "SAR"),
+    ("沙特阿拉伯", "SAR"),
+    ("huf", "HUF"),
+    ("hungary", "HUF"),
+    ("匈牙利", "HUF"),
+    ("zar", "ZAR"),
+    ("south africa", "ZAR"),
+    ("南非", "ZAR"),
+    ("ils", "ILS"),
+    ("israel", "ILS"),
+    ("以色列", "ILS"),
+    ("uyu", "UYU"),
+    ("uruguay", "UYU"),
+    ("乌拉圭", "UYU"),
+    ("bgn", "BGN"),
+    ("bulgaria", "BGN"),
+    ("保加利亚", "BGN"),
+    ("ron", "RON"),
+    ("romania", "RON"),
+    ("罗马尼亚", "RON"),
+    ("pt", "葡萄牙"),
 ]
 
 _FORM_FACTORS: list[tuple[str, str]] = [
     ("横白卡", "横白卡"),
     ("横白卡图", "横白卡"),
+    ("白卡", "横白卡"),
     ("横白", "横白卡"),
     ("横卡", "横白卡"),
     ("横板", "横白卡"),
     ("竖卡", "竖卡"),
     ("竖板", "竖卡"),
-    ("电子", "电子"),
+    ("电子", "代码"),
+    ("电子代码", "代码"),
+    ("电子卡图", "代码"),
     ("代码", "代码"),
-    ("图密", "图密"),
+    ("code", "代码"),
+    ("卡密", "代码"),
+    ("纯数字", "代码"),
+    ("图密", "代码"),
+    ("图密同价", "代码"),
     ("卡图", "卡图"),
     ("纸质", "纸质"),
     ("photo", "photo"),
@@ -299,6 +375,20 @@ def normalize_quote_form_factor(value: str) -> str:
     if text == "不限":
         return text
     normalized = _normalize_key(text)
+    code_like = any(
+        alias in normalized
+        for alias in (
+            "代码",
+            "code",
+            "纯数字",
+            "卡密",
+            "图密",
+            "图密同价",
+            "电子",
+            "electronic",
+            "electron",
+        )
+    )
     if any(
         alias in normalized
         for alias in (
@@ -313,17 +403,15 @@ def normalize_quote_form_factor(value: str) -> str:
             "image",
             "card",
         )
-    ):
+    ) and not code_like:
         return "横白卡"
     if any(alias in normalized for alias in ("竖卡", "竖板", "vertical")):
         return "竖卡"
 
     values: list[str] = []
-    if any(alias in normalized for alias in ("代码", "code")):
+    if code_like:
         values.append("代码")
-    if any(alias in normalized for alias in ("电子", "electronic", "electron")):
-        values.append("电子")
-    if any(alias in normalized for alias in ("卡图", "图片", "photo", "image", "card")):
+    if any(alias in normalized for alias in ("卡图", "图片", "photo", "image", "card")) and not code_like:
         values.append("横白卡")
     if any(alias in normalized for alias in ("纸质", "paper")):
         values.append("纸质")
@@ -496,10 +584,68 @@ class QuoteCaptureService:
 
         template_config_raw = str(getattr(group_profile, "template_config", "") or "").strip()
         if not template_config_raw:
-            return {"captured": False, "rows": 0, "exceptions": 0}
+            if not looks_like_quote_message(
+                text,
+                dictionary_aliases=group_profile.dictionary_aliases,
+            ):
+                return {"captured": False, "rows": 0, "exceptions": 0}
+            if self.db.is_quote_exception_suppressed(
+                source_group_key=f"{envelope.platform}:{envelope.chat_id}",
+                reason="missing_group_template",
+                source_line=text.splitlines()[0].strip() if text.splitlines() else text,
+                raw_text=text,
+            ):
+                return {"captured": False, "rows": 0, "exceptions": 0}
+            document_id = self.db.record_quote_document(
+                platform=envelope.platform,
+                source_group_key=f"{envelope.platform}:{envelope.chat_id}",
+                chat_id=envelope.chat_id,
+                chat_name=envelope.chat_name,
+                message_id=envelope.message_id,
+                source_name=envelope.sender_name,
+                sender_id=envelope.sender_id,
+                raw_text=text,
+                message_time=message_time,
+                parser_template=str(getattr(group_profile, "parser_template", "") or "group-parser"),
+                parser_version=PARSER_VERSION,
+                confidence=0.0,
+                parse_status="empty",
+            )
+            recorded_exception_id = self.db.record_quote_exception_unless_suppressed(
+                quote_document_id=document_id,
+                platform=envelope.platform,
+                source_group_key=f"{envelope.platform}:{envelope.chat_id}",
+                chat_id=envelope.chat_id,
+                chat_name=envelope.chat_name,
+                source_name=envelope.sender_name,
+                sender_id=envelope.sender_id,
+                reason="missing_group_template",
+                source_line=text.splitlines()[0].strip() if text.splitlines() else text,
+                raw_text=text,
+                message_time=message_time,
+                parser_template=str(getattr(group_profile, "parser_template", "") or "group-parser"),
+                parser_version=PARSER_VERSION,
+                confidence=0.0,
+            )
+            if not recorded_exception_id:
+                return {"captured": False, "rows": 0, "exceptions": 0}
+            return {
+                "captured": True,
+                "document_id": document_id,
+                "rows": 0,
+                "exceptions": 1,
+                "template": str(getattr(group_profile, "parser_template", "") or "group-parser"),
+                "parse_status": "empty",
+            }
         try:
             tpl = TemplateConfig.from_json(template_config_raw)
         except ValueError:
+            return {"captured": False, "rows": 0, "exceptions": 0}
+        if not should_attempt_template_quote_capture(
+            text,
+            template=tpl,
+            dictionary_aliases=group_profile.dictionary_aliases,
+        ):
             return {"captured": False, "rows": 0, "exceptions": 0}
 
         parsed = parse_message_with_template(
@@ -515,6 +661,34 @@ class QuoteCaptureService:
             message_time=message_time,
         )
         if not parsed.rows and not parsed.exceptions:
+            return {"captured": False, "rows": 0, "exceptions": 0}
+        recordable_parsed_exceptions = [
+            item
+            for item in parsed.exceptions
+            if not self.db.is_quote_exception_suppressed(
+                source_group_key=item.source_group_key,
+                reason=item.reason,
+                source_line=item.source_line,
+                raw_text=item.raw_text,
+            )
+        ]
+        publishable_rows = [
+            item
+            for item in parsed.rows
+            if item.quote_status == "active" and item.confidence >= AUTO_PUBLISH_CONFIDENCE
+        ]
+        recordable_row_exceptions = [
+            item
+            for item in parsed.rows
+            if (item.quote_status != "active" or item.confidence < AUTO_PUBLISH_CONFIDENCE)
+            and not self.db.is_quote_exception_suppressed(
+                source_group_key=item.source_group_key,
+                reason="low_confidence_or_non_active",
+                source_line=item.source_line,
+                raw_text=item.raw_text,
+            )
+        ]
+        if not publishable_rows and not recordable_parsed_exceptions and not recordable_row_exceptions:
             return {"captured": False, "rows": 0, "exceptions": 0}
 
         # 同一群发新消息时，旧报价标记为不活跃
@@ -538,8 +712,9 @@ class QuoteCaptureService:
             confidence=parsed.confidence,
             parse_status=parsed.parse_status,
         )
-        for item in parsed.exceptions:
-            self.db.record_quote_exception(
+        recorded_exceptions = 0
+        for item in recordable_parsed_exceptions:
+            if self.db.record_quote_exception_unless_suppressed(
                 quote_document_id=document_id,
                 platform=item.platform,
                 source_group_key=item.source_group_key,
@@ -554,11 +729,12 @@ class QuoteCaptureService:
                 parser_template=item.parser_template,
                 parser_version=item.parser_version,
                 confidence=item.confidence,
-            )
+            ):
+                recorded_exceptions += 1
         published_rows = 0
         for item in parsed.rows:
             if item.quote_status != "active" or item.confidence < AUTO_PUBLISH_CONFIDENCE:
-                self.db.record_quote_exception(
+                if self.db.record_quote_exception_unless_suppressed(
                     quote_document_id=document_id,
                     platform=item.platform,
                     source_group_key=item.source_group_key,
@@ -573,7 +749,8 @@ class QuoteCaptureService:
                     parser_template=item.parser_template,
                     parser_version=item.parser_version,
                     confidence=item.confidence,
-                )
+                ):
+                    recorded_exceptions += 1
                 continue
             self.db.upsert_quote_price_row_with_history(
                 quote_document_id=document_id,
@@ -606,7 +783,7 @@ class QuoteCaptureService:
             "captured": True,
             "document_id": document_id,
             "rows": published_rows,
-            "exceptions": len(parsed.exceptions),
+            "exceptions": recorded_exceptions,
             "template": parsed.parser_template,
             "parse_status": parsed.parse_status,
         }
@@ -622,11 +799,11 @@ class QuoteCaptureService:
             dictionary_aliases = quote_dictionary_aliases_from_rows(
                 alias_method(platform=envelope.platform, chat_id=envelope.chat_id)
             )
-        # 先通过 chat_id 查找
+        # 优先使用当前 chat_id 对应且 chat_name 一致的记录，避免同名历史群把新骨架抢走。
         method = getattr(self.db, "get_quote_group_profile", None)
         if callable(method):
             row = method(platform=envelope.platform, chat_id=envelope.chat_id)
-            if row:
+            if row and str(row.get("chat_name") or "") == envelope.chat_name:
                 return QuoteGroupProfile(
                     key=f"{envelope.platform}:{envelope.chat_id}",
                     default_card_type=str(row.get("default_card_type") or "") or None,
@@ -640,7 +817,7 @@ class QuoteCaptureService:
                     template_config=str(row.get("template_config") or ""),
                     dictionary_aliases=dictionary_aliases,
                 )
-        # 如果通过 chat_id 找不到，再通过 chat_name 查找
+        # 当前 chat_id 没有同名记录时，再回退到按 chat_name 取最新 profile。
         method_by_name = getattr(self.db, "get_quote_group_profile_by_name", None)
         if callable(method_by_name):
             row = method_by_name(platform=envelope.platform, chat_name=envelope.chat_name)
@@ -1007,12 +1184,21 @@ def _infer_country_or_currency_candidates(
     if not normalized:
         return []
     values: list[str] = []
-    for alias, canonical in (dictionary_aliases or {}).get("country_currency", ()):
+    dictionary_country_aliases = sorted(
+        (dictionary_aliases or {}).get("country_currency", ()),
+        key=lambda item: len(_normalize_key(item[0])),
+        reverse=True,
+    )
+    for alias, canonical in dictionary_country_aliases:
         if _normalize_key(alias) and _normalize_key(alias) in normalized and canonical not in values:
             values.append(canonical)
     if values:
         return values
-    for alias, canonical in _COUNTRY_ALIASES:
+    for alias, canonical in sorted(
+        _COUNTRY_ALIASES,
+        key=lambda item: len(_normalize_key(item[0])),
+        reverse=True,
+    ):
         if _normalize_key(alias) in normalized and canonical not in values:
             values.append(canonical)
     return values
@@ -1038,28 +1224,139 @@ def _infer_form_factor(
     return "/".join(values)
 
 
-def looks_like_quote_message(text: str) -> bool:
-    normalized = str(text or "")
-    if not normalized.strip():
+def _normalized_quote_message_lines(text: str) -> list[str]:
+    return [line.strip() for line in str(text or "").splitlines() if line.strip()]
+
+
+def _is_non_quote_operational_message(text: str) -> bool:
+    normalized = str(text or "").strip()
+    if not normalized:
         return False
-    if any(marker in normalized for marker in ("【", "】", "★★", "———", "===", "价格表", "报价单", "行情")):
+    lowered = normalized.lower()
+    return any(keyword in normalized or keyword in lowered for keyword in _NON_QUOTE_OPERATIONAL_KEYWORDS)
+
+
+def _count_structured_quote_lines(
+    text: str,
+    *,
+    dictionary_aliases: dict[str, tuple[tuple[str, str], ...]] | None = None,
+) -> int:
+    from .template_engine import looks_like_quote_line
+
+    count = 0
+    for line in _normalized_quote_message_lines(text):
+        if not looks_like_quote_line(line):
+            continue
+        if _infer_card_type(line, dictionary_aliases) or _infer_country_or_currency(
+            line, dictionary_aliases
+        ):
+            count += 1
+            continue
+        if re.search(r"(?:^|[:：])\s*\d+(?:\.\d+)?(?:[-/]\d+(?:\.\d+)?)+\s*[:：=]\s*\d+(?:\.\d+)?$", line):
+            count += 1
+    return count
+
+
+def _has_quote_context_signal(
+    text: str,
+    *,
+    dictionary_aliases: dict[str, tuple[tuple[str, str], ...]] | None = None,
+) -> bool:
+    normalized = str(text or "").strip()
+    if not normalized:
+        return False
+    return bool(
+        _infer_card_type(normalized, dictionary_aliases)
+        or _infer_country_or_currency(normalized, dictionary_aliases)
+        or any(marker in normalized for marker in ("【", "】", "价格表", "报价单", "行情", "卡图", "代码", "电子"))
+    )
+
+
+def _template_has_quote_prematch(
+    text: str,
+    *,
+    template: "TemplateConfig",
+) -> bool:
+    from .template_engine import match_pattern, normalize_quote_text
+
+    lines = [
+        normalize_quote_text(line)
+        for line in str(text or "").splitlines()
+        if normalize_quote_text(line)
+    ]
+    if template.version in {"group-parser-v1", "strict-section-v1"}:
+        for section in template.sections:
+            for section_line in section.get("lines", []):
+                pattern = str(section_line.get("pattern") or "").strip()
+                if not pattern:
+                    continue
+                kind = str(section_line.get("kind") or "quote").strip()
+                for line in lines:
+                    if kind in {"literal", "restriction"}:
+                        if line == pattern:
+                            return True
+                    elif kind == "quote" and match_pattern(line, pattern) is not None:
+                        return True
+        return False
+    for rule in template.rules:
+        pattern = str(rule.get("pattern") or "").strip()
+        if not pattern:
+            continue
+        for line in lines:
+            if match_pattern(line, pattern) is not None:
+                return True
+    return False
+
+
+def looks_like_quote_message(
+    text: str,
+    *,
+    dictionary_aliases: dict[str, tuple[tuple[str, str], ...]] | None = None,
+) -> bool:
+    normalized = str(text or "")
+    if not normalized.strip() or _is_non_quote_operational_message(normalized):
+        return False
+    lines = _normalized_quote_message_lines(normalized)
+    quote_line_count = _count_structured_quote_lines(
+        normalized,
+        dictionary_aliases=dictionary_aliases,
+    )
+    if quote_line_count >= 2:
         return True
-    if any(keyword in normalized for keyword in ("问价", "收卡", "收价", "出价")):
-        return True
-    lines = [line.strip() for line in normalized.splitlines() if line.strip()]
-    if len(lines) >= 2 and any(_contains_price(line) for line in lines):
-        return any(
-            _infer_card_type(line) is not None or _infer_country_or_currency(line) is not None
-            for line in lines
-        )
-    if _infer_card_type(normalized) is not None:
-        return True
-    if _infer_country_or_currency(normalized) is not None and (
-        _contains_price(normalized)
-        or any(token in normalized for token in ("=", "：", ":", "【", "】", "￥", "¥", "₦"))
+    if quote_line_count >= 1 and _has_quote_context_signal(
+        normalized,
+        dictionary_aliases=dictionary_aliases,
     ):
         return True
-    return False
+    if any(keyword in normalized for keyword in ("问价", "收卡", "收价", "出价")) and quote_line_count >= 1:
+        return True
+    return len(lines) >= 3 and quote_line_count >= 1 and _has_quote_context_signal(
+        normalized,
+        dictionary_aliases=dictionary_aliases,
+    )
+
+
+def should_attempt_template_quote_capture(
+    text: str,
+    *,
+    template: "TemplateConfig",
+    dictionary_aliases: dict[str, tuple[tuple[str, str], ...]] | None = None,
+) -> bool:
+    normalized = str(text or "").strip()
+    if not normalized or _is_non_quote_operational_message(normalized):
+        return False
+    quote_line_count = _count_structured_quote_lines(
+        normalized,
+        dictionary_aliases=dictionary_aliases,
+    )
+    if quote_line_count >= 2:
+        return True
+    if _template_has_quote_prematch(normalized, template=template):
+        return True
+    return quote_line_count >= 1 and _has_quote_context_signal(
+        normalized,
+        dictionary_aliases=dictionary_aliases,
+    )
 
 
 def _normalize_message_time(value: str | None) -> str:
