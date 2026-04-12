@@ -14,39 +14,47 @@ logger = logging.getLogger(__name__)
 
 
 class AccountingPeriodService:
+    _PERIOD_CLOSE_LOCK_KEYS = (2026, 413)
+
     def __init__(self, db: BookkeepingDB) -> None:
         self.db = db
 
     def settle_group_with_receipts(self, *, group_key: str, closed_by: str, note: str | None = None) -> dict | None:
-        period_id = self.close_group_unsettled(
-            group_key=group_key,
-            closed_by=closed_by,
-            note=note,
-        )
-        if period_id is None:
-            return None
-        summary = self.build_period_close_summary(period_id)
-        receipt_actions = self.build_period_group_receipt_actions(period_id)
-        return {
-            "period_id": period_id,
-            "summary": summary,
-            "receipt_actions": receipt_actions,
-        }
+        def _work() -> dict | None:
+            period_id = self._close_group_unsettled_locked(
+                group_key=group_key,
+                closed_by=closed_by,
+                note=note,
+            )
+            if period_id is None:
+                return None
+            summary = self.build_period_close_summary(period_id)
+            receipt_actions = self.build_period_group_receipt_actions(period_id)
+            return {
+                "period_id": period_id,
+                "summary": summary,
+                "receipt_actions": receipt_actions,
+            }
+
+        return self._with_period_close_lock(_work)
 
     def settle_all_with_receipts(self, *, closed_by: str, note: str | None = None) -> dict | None:
-        period_id = self.close_all_unsettled(
-            closed_by=closed_by,
-            note=note,
-        )
-        if period_id is None:
-            return None
-        summary = self.build_period_close_summary(period_id)
-        receipt_actions = self.build_period_group_receipt_actions(period_id)
-        return {
-            "period_id": period_id,
-            "summary": summary,
-            "receipt_actions": receipt_actions,
-        }
+        def _work() -> dict | None:
+            period_id = self._close_all_unsettled_locked(
+                closed_by=closed_by,
+                note=note,
+            )
+            if period_id is None:
+                return None
+            summary = self.build_period_close_summary(period_id)
+            receipt_actions = self.build_period_group_receipt_actions(period_id)
+            return {
+                "period_id": period_id,
+                "summary": summary,
+                "receipt_actions": receipt_actions,
+            }
+
+        return self._with_period_close_lock(_work)
 
     def build_period_group_receipt_actions(self, period_id: int) -> list[dict[str, object]]:
         actions: list[dict[str, object]] = []
@@ -68,12 +76,23 @@ class AccountingPeriodService:
         return actions
 
     def close_group_unsettled(self, *, group_key: str, closed_by: str, note: str | None = None) -> int | None:
+        return self._with_period_close_lock(
+            lambda: self._close_group_unsettled_locked(
+                group_key=group_key,
+                closed_by=closed_by,
+                note=note,
+            )
+        )
+
+    def _close_group_unsettled_locked(
+        self, *, group_key: str, closed_by: str, note: str | None = None
+    ) -> int | None:
         txs = self.db.get_unsettled_transactions(group_key)
         if not txs:
             return None
         start_at = self._resolve_period_start_at(txs)
         end_at = max(str(tx["created_at"]) for tx in txs)
-        return self.close_period(
+        return self._close_period_locked(
             start_at=start_at,
             end_at=end_at,
             closed_by=closed_by,
@@ -81,6 +100,14 @@ class AccountingPeriodService:
         )
 
     def close_all_unsettled(self, *, closed_by: str, note: str | None = None) -> int | None:
+        return self._with_period_close_lock(
+            lambda: self._close_all_unsettled_locked(
+                closed_by=closed_by,
+                note=note,
+            )
+        )
+
+    def _close_all_unsettled_locked(self, *, closed_by: str, note: str | None = None) -> int | None:
         rows = self.db.get_groups_with_unsettled_transactions()
         if not rows:
             return None
@@ -91,7 +118,7 @@ class AccountingPeriodService:
             return None
         start_at = self._resolve_period_start_at(txs)
         end_at = max(str(tx["created_at"]) for tx in txs)
-        return self.close_period(
+        return self._close_period_locked(
             start_at=start_at,
             end_at=end_at,
             closed_by=closed_by,
@@ -111,9 +138,20 @@ class AccountingPeriodService:
         }
 
     def close_period(self, *, start_at: str, end_at: str, closed_by: str, note: str | None = None) -> int:
+        return self._with_period_close_lock(
+            lambda: self._close_period_locked(
+                start_at=start_at,
+                end_at=end_at,
+                closed_by=closed_by,
+                note=note,
+            )
+        )
+
+    def _close_period_locked(
+        self, *, start_at: str, end_at: str, closed_by: str, note: str | None = None
+    ) -> int:
         groups = self.db.list_groups()
         transaction_ids_to_close: list[int] = []
-        self.db.conn.execute("BEGIN")
         try:
             period_id = self.db.insert_accounting_period(
                 start_at=start_at,
@@ -165,6 +203,22 @@ class AccountingPeriodService:
         except Exception:
             self.db.conn.rollback()
             raise
+
+    def _with_period_close_lock(self, callback):
+        self.db.conn.execute(
+            "SELECT pg_advisory_lock(?, ?)",
+            self._PERIOD_CLOSE_LOCK_KEYS,
+        )
+        try:
+            return callback()
+        finally:
+            try:
+                self.db.conn.execute(
+                    "SELECT pg_advisory_unlock(?, ?)",
+                    self._PERIOD_CLOSE_LOCK_KEYS,
+                )
+            finally:
+                self.db.conn.rollback()
 
     def _backup_postgres_after_period_close(self, *, period_id: int) -> None:
         if str(os.environ.get("BOOKKEEPING_AUTO_BACKUP_ON_CLOSE", "1")).strip().lower() in {"0", "false", "no", "off"}:

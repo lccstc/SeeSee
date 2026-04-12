@@ -745,6 +745,77 @@ class UnifiedRuntimeTests(PostgresTestCase):
         self.assertEqual(rows[0]["classification"], "transaction_like")
         self.assertEqual(rows[0]["parse_status"], "parsed")
 
+    def test_fixed_code_text_does_not_trigger_invalid_transaction_reply(self) -> None:
+        self.db.set_group(
+            platform="wechat",
+            group_key="wechat:room-code",
+            chat_id="room-code",
+            chat_name="卡密群",
+            group_num=3,
+        )
+
+        for message_id, text in (
+            ("msg-code-1", "2V7CQ-FKT6F-KWWK7-V9GRM-N9X9Z"),
+            ("msg-code-2", "2V7CQ-FKT6F-KWWK7-V9GRM-N9X9Z 100 done 5.03"),
+            ("msg-code-3", "KJRVC-XPO7O-GZOPR 20 done"),
+        ):
+            actions = self.runtime.process_envelope(
+                self._message(
+                    platform="wechat",
+                    message_id=message_id,
+                    chat_id="room-code",
+                    chat_name="卡密群",
+                    text=text,
+                )
+            )
+            self.assertEqual(actions, [])
+        self.assertEqual(
+            self.db.get_unsettled_transactions("wechat:room-code"),
+            [],
+        )
+        rows, total = self.db.query_parse_results(
+            platform="wechat",
+            chat_id="room-code",
+            limit=10,
+            offset=0,
+        )
+        self.assertEqual(total, 3)
+        self.assertTrue(
+            all(row["classification"] == "normal_chat" for row in rows)
+        )
+        self.assertTrue(
+            all(row["parse_status"] == "unparsable" for row in rows)
+        )
+
+    def test_ls_and_hd_categories_are_accepted(self) -> None:
+        self.db.set_group(
+            platform="wechat",
+            group_key="wechat:room-ls-hd",
+            chat_id="room-ls-hd",
+            chat_name="卡种群",
+            group_num=3,
+        )
+
+        for index, text in enumerate(("+500ls3", "+80hd2.5"), start=1):
+            actions = self.runtime.process_envelope(
+                self._message(
+                    platform="wechat",
+                    message_id=f"msg-ls-hd-{index}",
+                    chat_id="room-ls-hd",
+                    chat_name="卡种群",
+                    text=text,
+                )
+            )
+            self.assertEqual(len(actions), 1)
+            self.assertEqual(actions[0]["action_type"], "send_text")
+            self.assertEqual(actions[0]["chat_id"], "room-ls-hd")
+
+        rows = self.db.get_unsettled_transactions("wechat:room-ls-hd")
+        categories = [str(row["category"]) for row in rows]
+        self.assertEqual(categories, ["ls", "hd"])
+        self.assertEqual(round(float(rows[0]["rmb_value"]), 2), -1500.00)
+        self.assertEqual(round(float(rows[1]["rmb_value"]), 2), -200.00)
+
     def test_command_message_records_parse_result(self) -> None:
         self.db.set_group(
             platform="wechat",

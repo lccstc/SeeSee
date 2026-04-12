@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import threading
 import unittest
+from unittest.mock import patch
 
 from bookkeeping_core.database import BookkeepingDB
 from bookkeeping_core.periods import AccountingPeriodService
@@ -220,6 +222,83 @@ class PeriodLifecycleTests(PostgresTestCase):
         self.assertEqual(round(float(card_rows[1]["rate"]), 2), 5.63)
         self.assertEqual(round(float(card_rows[1]["usd_amount"]), 2), 300.00)
         self.assertEqual(round(float(card_rows[1]["unit_count"]), 2), 300.00)
+
+    def test_settle_all_with_receipts_serializes_concurrent_requests(self) -> None:
+        _make_tx(
+            self.db,
+            group_key="wechat:g-periods",
+            chat_id="g-periods",
+            chat_name="账期群",
+            created_at="2026-03-20 09:30:00",
+            input_sign=1,
+            amount=300,
+            category="rmb",
+            rate=None,
+            rmb_value=300,
+            raw="+300rmb",
+        )
+        other_db = BookkeepingDB(self.make_dsn("periods-lifecycle"))
+        self.addCleanup(other_db.close)
+        first_entered = threading.Event()
+        release_first = threading.Event()
+        results: list[dict | None] = []
+        errors: list[Exception] = []
+        original_close_period = AccountingPeriodService._close_period_locked
+
+        def delayed_close_period(self, *, start_at: str, end_at: str, closed_by: str, note: str | None = None) -> int:
+            if not first_entered.is_set():
+                first_entered.set()
+                release_first.wait(timeout=2)
+            return original_close_period(
+                self,
+                start_at=start_at,
+                end_at=end_at,
+                closed_by=closed_by,
+                note=note,
+            )
+
+        def worker(db: BookkeepingDB, closed_by: str) -> None:
+            try:
+                result = AccountingPeriodService(db).settle_all_with_receipts(
+                    closed_by=closed_by,
+                    note=closed_by,
+                )
+                results.append(result)
+            except Exception as exc:  # pragma: no cover - assertion below surfaces payload
+                errors.append(exc)
+
+        with patch.object(
+            AccountingPeriodService,
+            "_backup_postgres_after_period_close",
+            return_value=None,
+        ):
+            with patch.object(
+                AccountingPeriodService,
+                "_close_period_locked",
+                delayed_close_period,
+            ):
+                first = threading.Thread(
+                    target=worker,
+                    args=(self.db, "finance-periods-a"),
+                )
+                second = threading.Thread(
+                    target=worker,
+                    args=(other_db, "finance-periods-b"),
+                )
+                first.start()
+                self.assertTrue(first_entered.wait(timeout=2))
+                second.start()
+                release_first.set()
+                first.join(timeout=5)
+                second.join(timeout=5)
+
+        self.assertEqual(errors, [])
+        settled_results = [item for item in results if item is not None]
+        empty_results = [item for item in results if item is None]
+        self.assertEqual(len(settled_results), 1)
+        self.assertEqual(len(empty_results), 1)
+        self.assertEqual(len(self.db.list_accounting_periods()), 1)
+        self.assertEqual(self.db.get_unsettled_transactions("wechat:g-periods"), [])
 
 
 if __name__ == "__main__":

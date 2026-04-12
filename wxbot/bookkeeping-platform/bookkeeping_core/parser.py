@@ -8,7 +8,7 @@ from .models import ParsedTransaction
 NEGATIVE_CATEGORIES = {
     "rg", "sp", "gs", "xb", "it", "st", "ft", "mx", "gg", "dg", "ae",
     "lulu", "dk", "ebay", "rb", "uber", "xc", "cvs", "ymx", "psn", "chime",
-    "ks", "tt", "nike", "nd", "cash", "ps",
+    "ks", "tt", "nike", "nd", "cash", "ps", "ls", "hd",
 }
 POSITIVE_CATEGORIES = {"rmb"}
 ALL_CATEGORIES = NEGATIVE_CATEGORIES | POSITIVE_CATEGORIES
@@ -16,6 +16,7 @@ ALL_CATEGORIES = NEGATIVE_CATEGORIES | POSITIVE_CATEGORIES
 PATTERN1 = re.compile(r"^([+-])(\d+(?:\.\d+)?)\s*([a-zA-Z]+)?\s*(\d+(?:\.\d+)?)?$")
 PATTERN2 = re.compile(r"^(\d+(?:\.\d+)?)\s*([a-zA-Z]+)?\s*([+-])(\d+(?:\.\d+)?)?$")
 PATTERN3 = re.compile(r"^([a-zA-Z]+)?\s*([+-])(\d+(?:\.\d+)?)\s*(\d+(?:\.\d+)?)?$")
+FIXED_CODE_PATTERN = re.compile(r"^[A-Za-z0-9]{5}(?:-[A-Za-z0-9]{5}){2,}$")
 
 
 def parse_transaction(text: str) -> ParsedTransaction | None:
@@ -44,6 +45,9 @@ def parse_transaction(text: str) -> ParsedTransaction | None:
 def looks_like_transaction(text: str) -> bool:
     trimmed = text.strip()
     if len(trimmed) < 2:
+        return False
+    first_token = trimmed.split(None, 1)[0]
+    if FIXED_CODE_PATTERN.fullmatch(first_token):
         return False
     return bool(
         trimmed[0] in "+-"

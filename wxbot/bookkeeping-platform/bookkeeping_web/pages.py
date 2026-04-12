@@ -4,77 +4,208 @@ from __future__ import annotations
 _STYLE = """
 <style>
   :root {
-    color-scheme: light;
-    --bg: #e5e7eb;
-    --panel: #ffffff;
-    --ink: #111827;
-    --muted: #4b5563;
-    --line: #cbd5e1;
-    --accent: #0f766e;
-    --accent-soft: #ccfbf1;
-    --warn: #b91c1c;
-    --shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+    color-scheme: dark;
+    --bg: #05080b;
+    --bg-deep: #0a0f14;
+    --bg-mesh: rgba(243, 165, 47, 0.08);
+    --panel: rgba(13, 19, 25, 0.96);
+    --panel-strong: #111820;
+    --panel-soft: #161e27;
+    --ink: #e6dcc4;
+    --ink-soft: #c3b99f;
+    --muted: #8f8a79;
+    --line: rgba(243, 165, 47, 0.16);
+    --line-strong: rgba(243, 165, 47, 0.26);
+    --accent: #f3a52f;
+    --accent-strong: #ffc14d;
+    --accent-soft: rgba(243, 165, 47, 0.12);
+    --accent-wash: rgba(243, 165, 47, 0.08);
+    --gold: #ffc14d;
+    --gold-soft: rgba(255, 193, 77, 0.14);
+    --warn: #ff6b4a;
+    --warn-soft: rgba(255, 107, 74, 0.12);
+    --ok: #32c48d;
+    --ok-soft: rgba(50, 196, 141, 0.16);
+    --info: #76a9ff;
+    --info-soft: rgba(118, 169, 255, 0.14);
+    --shadow: 0 26px 60px rgba(0, 0, 0, 0.34);
+    --shadow-soft: 0 12px 26px rgba(0, 0, 0, 0.22);
+    --radius-lg: 22px;
+    --radius-md: 16px;
+    --radius-sm: 10px;
+    --sans: "Avenir Next Condensed", "DIN Alternate", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    --serif: "Songti SC", "STSong", "Noto Serif CJK SC", serif;
+    --mono: "SFMono-Regular", "Menlo", monospace;
   }
   * { box-sizing: border-box; }
   body {
     margin: 0;
-    font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-family: var(--sans);
     color: var(--ink);
     background: var(--bg);
+    background-image:
+      radial-gradient(circle at top left, rgba(243, 165, 47, 0.08), transparent 22%),
+      radial-gradient(circle at top right, rgba(80, 104, 125, 0.12), transparent 28%),
+      linear-gradient(180deg, #071017 0%, #05080b 48%, #030507 100%);
+    min-height: 100vh;
+  }
+  body::before {
+    content: "";
+    inset: 0;
+    pointer-events: none;
+    position: fixed;
+    background-image:
+      linear-gradient(rgba(243, 165, 47, 0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(243, 165, 47, 0.03) 1px, transparent 1px);
+    background-size: 26px 26px;
+    opacity: 0.7;
+    mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.72), transparent 88%);
   }
   a { color: inherit; }
+  .app-shell {
+    margin: 0 auto;
+    max-width: 1520px;
+  }
   header {
-    padding: 28px 28px 12px;
+    padding: 24px 28px 14px;
   }
   .hero {
     display: flex;
-    justify-content: space-between;
-    gap: 18px;
-    align-items: end;
+    flex-direction: column;
+    gap: 22px;
+    position: relative;
     flex-wrap: wrap;
   }
+  .hero::after {
+    content: "";
+    position: absolute;
+    right: 0;
+    top: 8px;
+    width: 200px;
+    height: 200px;
+    border-radius: 999px;
+    background:
+      radial-gradient(circle at center, rgba(243, 165, 47, 0.16), rgba(243, 165, 47, 0.02) 58%, transparent 70%);
+    filter: blur(10px);
+    pointer-events: none;
+  }
+  .hero-copy {
+    max-width: 900px;
+    position: relative;
+    z-index: 1;
+  }
+  .hero-kicker {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 14px;
+    border-radius: 999px;
+    background: rgba(17, 24, 32, 0.9);
+    border: 1px solid rgba(243, 165, 47, 0.18);
+    color: var(--accent-strong);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+  }
   .hero h1 {
-    margin: 0;
-    font-size: 30px;
+    margin: 14px 0 0;
+    font-family: var(--sans);
+    font-size: clamp(34px, 4.6vw, 52px);
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    line-height: 0.98;
+    text-transform: uppercase;
   }
   .hero p {
-    margin: 10px 0 0;
+    margin: 14px 0 0;
     color: var(--muted);
-    max-width: 720px;
-    line-height: 1.6;
+    max-width: 780px;
+    line-height: 1.72;
+    font-size: 15px;
+  }
+  .nav-scroll {
+    overflow-x: auto;
+    padding-bottom: 4px;
   }
   nav {
     display: flex;
-    gap: 10px;
-    flex-wrap: wrap;
-    margin-top: 18px;
+    gap: 12px;
+    flex-wrap: nowrap;
+    margin-top: 0;
+    min-width: max-content;
   }
   nav a {
     text-decoration: none;
-    padding: 10px 14px;
-    border-radius: 8px;
-    background: #ffffff;
-    border: 1px solid var(--line);
+    padding: 12px 16px;
+    border-radius: 999px;
+    background: rgba(17, 24, 32, 0.82);
+    border: 1px solid rgba(243, 165, 47, 0.1);
+    color: var(--ink-soft);
+    box-shadow: inset 0 1px 0 rgba(255, 193, 77, 0.06);
+    transition: transform 160ms ease, border-color 160ms ease, background 160ms ease, color 160ms ease;
+  }
+  nav a:hover {
+    transform: translateY(-1px);
+    border-color: rgba(243, 165, 47, 0.24);
+    background: rgba(18, 26, 34, 0.98);
   }
   nav a.active {
-    background: var(--accent);
-    color: white;
-    border-color: var(--accent);
+    background: linear-gradient(135deg, #3a2a0a, #6b4a12 42%, #f3a52f);
+    color: #120f08;
+    border-color: transparent;
+    box-shadow: 0 10px 24px rgba(243, 165, 47, 0.14);
   }
   main {
     display: grid;
-    gap: 18px;
-    padding: 12px 28px 36px;
+    gap: 20px;
+    padding: 6px 28px 40px;
   }
   .panel {
     background: var(--panel);
     border: 1px solid var(--line);
-    border-radius: 8px;
-    padding: 18px;
+    border-radius: var(--radius-lg);
+    padding: 24px;
     box-shadow: var(--shadow);
+    backdrop-filter: blur(10px);
+    position: relative;
+    overflow: hidden;
+  }
+  .panel::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(243, 165, 47, 0.35), transparent);
   }
   .panel h2, .panel h3 {
     margin: 0 0 12px;
+  }
+  .panel h2 {
+    font-family: var(--sans);
+    font-size: 25px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .panel h3 {
+    font-size: 16px;
+    font-weight: 700;
+  }
+  .panel-heading {
+    display: flex;
+    align-items: end;
+    justify-content: space-between;
+    gap: 18px;
+    flex-wrap: wrap;
+    margin-bottom: 18px;
+  }
+  .section-kicker {
+    color: var(--gold);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
   }
   .muted {
     color: var(--muted);
@@ -85,33 +216,37 @@ _STYLE = """
   }
   .cards {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 14px;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 16px;
   }
   .card {
-    padding: 16px;
-    border-radius: 8px;
-    background: #ffffff;
-    border: 1px solid var(--line);
+    padding: 18px;
+    border-radius: var(--radius-md);
+    background: linear-gradient(180deg, rgba(17, 24, 32, 0.98), rgba(12, 17, 23, 0.96));
+    border: 1px solid rgba(243, 165, 47, 0.12);
+    box-shadow: var(--shadow-soft);
   }
   .card .label {
-    font-size: 13px;
+    font-size: 12px;
     color: var(--muted);
-    margin-bottom: 8px;
+    margin-bottom: 10px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
   }
   .card .value {
-    font-size: 28px;
-    font-weight: 600;
+    font-size: 30px;
+    font-weight: 700;
+    letter-spacing: -0.04em;
   }
   .stack {
     display: grid;
-    gap: 18px;
+    gap: 20px;
   }
   .toolbar {
     display: flex;
-    gap: 12px;
+    gap: 16px;
     justify-content: space-between;
-    align-items: center;
+    align-items: end;
     flex-wrap: wrap;
   }
   form {
@@ -124,22 +259,43 @@ _STYLE = """
     font: inherit;
   }
   input, textarea, select {
-    padding: 10px 12px;
-    border-radius: 8px;
-    border: 1px solid var(--line);
-    background: #ffffff;
+    padding: 12px 14px;
+    border-radius: 14px;
+    border: 1px solid rgba(243, 165, 47, 0.14);
+    background: rgba(9, 13, 18, 0.92);
+    color: var(--ink);
+    transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
+  }
+  input::placeholder, textarea::placeholder {
+    color: rgba(195, 185, 159, 0.58);
+  }
+  input:focus, textarea:focus, select:focus {
+    border-color: rgba(243, 165, 47, 0.48);
+    box-shadow: 0 0 0 4px rgba(243, 165, 47, 0.12);
+    outline: none;
   }
   textarea {
     min-height: 88px;
     resize: vertical;
   }
   button {
-    border: 0;
-    border-radius: 8px;
-    padding: 10px 14px;
-    background: var(--accent);
-    color: white;
+    border: 1px solid transparent;
+    border-radius: 14px;
+    padding: 12px 16px;
+    background: linear-gradient(135deg, #50350d, #87611d 44%, #f3a52f);
+    color: #120f08;
     cursor: pointer;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    transition: transform 160ms ease, box-shadow 160ms ease, opacity 160ms ease;
+    box-shadow: 0 10px 22px rgba(243, 165, 47, 0.16);
+  }
+  button:hover {
+    transform: translateY(-1px);
+  }
+  button:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 4px rgba(31, 92, 79, 0.16);
   }
   table {
     width: 100%;
@@ -148,55 +304,134 @@ _STYLE = """
   }
   th, td {
     text-align: left;
-    padding: 10px 8px;
-    border-bottom: 1px solid var(--line);
+    padding: 14px 10px;
+    border-bottom: 1px solid rgba(243, 165, 47, 0.08);
     vertical-align: top;
   }
   th {
     color: var(--muted);
-    font-weight: 600;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
   }
   .table-wrap {
     overflow-x: auto;
+    border-radius: 18px;
+    border: 1px solid rgba(243, 165, 47, 0.08);
+    background: rgba(8, 12, 16, 0.78);
+  }
+  .table-primary {
+    font-weight: 700;
+    line-height: 1.35;
+  }
+  .table-secondary {
+    color: var(--muted);
+    display: block;
+    font-size: 12px;
+    line-height: 1.45;
+    margin-top: 3px;
+  }
+  .table-num {
+    font-feature-settings: "tnum";
+    font-variant-numeric: tabular-nums;
+    font-weight: 700;
+  }
+  .signed-pos {
+    color: var(--ok);
+  }
+  .signed-neg {
+    color: var(--warn);
+  }
+  .signed-neutral {
+    color: var(--ink-soft);
   }
   .status-chip {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 72px;
-    padding: 4px 10px;
-    border-radius: 8px;
+    min-width: 78px;
+    padding: 5px 10px;
+    border-radius: 999px;
     font-size: 12px;
     font-weight: 600;
   }
   .status-chip.settled {
     background: var(--accent-soft);
-    color: var(--accent);
+    color: var(--accent-strong);
   }
   .status-chip.unsettled {
-    background: rgba(155, 44, 44, 0.12);
-    color: var(--warn);
+    background: var(--gold-soft);
+    color: var(--gold);
+  }
+  .pill-muted {
+    display: inline-flex;
+    align-items: center;
+    padding: 5px 10px;
+    border-radius: 999px;
+    background: rgba(255, 193, 77, 0.09);
+    color: var(--ink-soft);
+    font-size: 12px;
+    font-weight: 600;
   }
   .mono {
-    font-family: "SFMono-Regular", "Menlo", monospace;
+    font-family: var(--mono);
     font-size: 12px;
   }
-  .entry-grid {
-    display: grid;
-    gap: 14px;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+  .dashboard-hero {
+    padding: 28px;
   }
-  .entry-card {
-    display: grid;
-    gap: 6px;
-    padding: 18px;
-    border-radius: 8px;
-    text-decoration: none;
-    background: #ffffff;
-    border: 1px solid var(--line);
+  .dashboard-brief {
+    max-width: 420px;
+    padding: 14px 16px;
+    border-radius: 18px;
+    background: linear-gradient(135deg, rgba(15, 21, 27, 0.98), rgba(26, 36, 46, 0.92));
+    color: var(--ink);
+    box-shadow: 0 18px 34px rgba(0, 0, 0, 0.24);
+    border: 1px solid rgba(243, 165, 47, 0.12);
   }
-  .entry-card strong {
-    font-size: 18px;
+  .dashboard-brief strong {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 12px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+  .dashboard-summary-grid {
+    display: grid;
+    grid-template-columns: 1.35fr 1.15fr repeat(3, minmax(0, 0.85fr));
+    gap: 16px;
+  }
+  .stat-card {
+    position: relative;
+    overflow: hidden;
+  }
+  .stat-card::after {
+    content: "";
+    position: absolute;
+    inset: auto -12% -44% auto;
+    width: 150px;
+    height: 150px;
+    border-radius: 999px;
+    background: radial-gradient(circle, rgba(164, 107, 45, 0.2), transparent 65%);
+  }
+  .stat-card.primary {
+    background: linear-gradient(145deg, #0f141a, #16202a 72%);
+    color: #f7f1e8;
+    border-color: rgba(243, 165, 47, 0.16);
+  }
+  .stat-card.primary .label,
+  .stat-card.primary .table-secondary {
+    color: rgba(247, 241, 232, 0.74);
+  }
+  .stat-card.primary .value {
+    color: #fffdf8;
+  }
+  .stat-card.secondary {
+    background: linear-gradient(180deg, rgba(19, 27, 35, 0.96), rgba(11, 16, 21, 0.94));
+  }
+  .stat-card .table-secondary {
+    max-width: 260px;
   }
   .subgrid {
     display: grid;
@@ -204,10 +439,164 @@ _STYLE = """
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .subpanel {
-    padding: 16px;
-    border-radius: 8px;
-    background: #f8fafc;
-    border: 1px solid var(--line);
+    padding: 18px;
+    border-radius: 22px;
+    background:
+      linear-gradient(180deg, rgba(16, 22, 29, 0.98), rgba(11, 16, 22, 0.92));
+    border: 1px solid rgba(243, 165, 47, 0.1);
+    box-shadow: var(--shadow-soft);
+  }
+  .ops-grid {
+    display: grid;
+    gap: 20px;
+    grid-template-columns: 1.2fr 0.8fr;
+  }
+  .recon-hero-grid {
+    display: grid;
+    gap: 18px;
+    grid-template-columns: 1.05fr 0.95fr;
+  }
+  .terminal-note {
+    display: grid;
+    gap: 10px;
+    padding: 18px;
+    border-radius: 18px;
+    background: linear-gradient(145deg, rgba(17, 24, 32, 0.98), rgba(10, 15, 20, 0.94));
+    border: 1px solid rgba(243, 165, 47, 0.12);
+    box-shadow: var(--shadow-soft);
+  }
+  .terminal-note strong {
+    color: var(--accent-strong);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+  }
+  .terminal-note p {
+    margin: 0;
+    color: var(--ink-soft);
+    line-height: 1.68;
+  }
+  .terminal-note ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 8px;
+  }
+  .terminal-note li {
+    color: var(--muted);
+    font-size: 13px;
+  }
+  .recon-filter-form {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .recon-adjust-form {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .recon-ledger-panel .table-wrap,
+  .trace-terminal .subpanel {
+    background: rgba(8, 12, 16, 0.9);
+  }
+  .trace-terminal .trace-status-list li {
+    background: rgba(9, 13, 18, 0.92);
+    border-color: rgba(243, 165, 47, 0.08);
+  }
+  .recon-alert {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 10px;
+    border-radius: 999px;
+    background: rgba(243, 165, 47, 0.1);
+    color: var(--accent-strong);
+    font-size: 12px;
+    font-weight: 700;
+  }
+  .panel-config {
+    box-shadow: inset 0 0 0 1px rgba(118, 169, 255, 0.06), var(--shadow);
+  }
+  .panel-assist {
+    box-shadow: inset 0 0 0 1px rgba(50, 196, 141, 0.05), var(--shadow);
+  }
+  .panel-risk {
+    box-shadow: inset 0 0 0 1px rgba(255, 107, 74, 0.08), var(--shadow);
+  }
+  .subpanel-header {
+    align-items: baseline;
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 10px;
+  }
+  .ledger-panel .table-wrap,
+  .quote-board-shell .table-wrap {
+    background: rgba(8, 12, 16, 0.88);
+  }
+  .action-stack {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .action-stack button,
+  .action-stack a {
+    width: auto;
+    flex: 0 0 auto;
+  }
+  .action-row {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .action-ghost,
+  .action-danger {
+    width: auto;
+    box-shadow: none;
+    padding: 8px 12px;
+    font-size: 12px;
+  }
+  .action-ghost {
+    background: rgba(243, 165, 47, 0.1);
+    border-color: rgba(243, 165, 47, 0.16);
+    color: var(--accent-strong);
+  }
+  .action-danger {
+    background: rgba(166, 63, 44, 0.14);
+    border-color: rgba(166, 63, 44, 0.16);
+    color: var(--warn);
+  }
+  .entry-grid {
+    display: grid;
+    gap: 16px;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .entry-card {
+    display: grid;
+    gap: 10px;
+    padding: 22px;
+    border-radius: 24px;
+    text-decoration: none;
+    background:
+      linear-gradient(165deg, rgba(16, 23, 30, 0.98), rgba(10, 15, 20, 0.92));
+    border: 1px solid rgba(243, 165, 47, 0.1);
+    box-shadow: var(--shadow-soft);
+    transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+  }
+  .entry-card:hover {
+    transform: translateY(-2px);
+    border-color: rgba(243, 165, 47, 0.2);
+    box-shadow: 0 22px 44px rgba(0, 0, 0, 0.22);
+  }
+  .entry-card .entry-tag {
+    color: var(--gold);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+  .entry-card strong {
+    font-size: 20px;
+    line-height: 1.2;
   }
   .action-stack {
     display: flex;
@@ -251,17 +640,54 @@ _STYLE = """
     justify-content: space-between;
     gap: 12px;
     align-items: center;
-    padding: 8px 10px;
-    border-radius: 8px;
-    background: #ffffff;
-    border: 1px solid var(--line);
+    padding: 10px 12px;
+    border-radius: 14px;
+    background: rgba(255, 252, 247, 0.88);
+    border: 1px solid rgba(23, 53, 47, 0.08);
   }
   .table-note {
     margin-top: 8px;
   }
   .quote-stack {
     display: grid;
-    gap: 16px;
+    gap: 18px;
+  }
+  .quote-hero {
+    padding: 26px;
+  }
+  .quote-hero-grid {
+    display: grid;
+    grid-template-columns: 1.3fr 0.95fr;
+    gap: 18px;
+    margin-bottom: 18px;
+  }
+  .quote-command {
+    display: grid;
+    gap: 14px;
+    padding: 18px;
+    border-radius: 22px;
+    background: linear-gradient(145deg, rgba(16, 23, 30, 0.98), rgba(10, 15, 20, 0.94));
+    border: 1px solid rgba(243, 165, 47, 0.1);
+  }
+  .quote-command p {
+    margin: 0;
+    line-height: 1.7;
+    color: var(--ink-soft);
+  }
+  .quote-insight-list {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .quote-insight-list span {
+    display: inline-flex;
+    align-items: center;
+    padding: 7px 10px;
+    border-radius: 999px;
+    background: rgba(243, 165, 47, 0.09);
+    color: var(--accent-strong);
+    font-size: 12px;
+    font-weight: 600;
   }
   .quote-metrics {
     display: grid;
@@ -269,29 +695,38 @@ _STYLE = """
     gap: 12px;
   }
   .quote-metric {
-    padding: 14px;
-    border-radius: 8px;
-    background: #ffffff;
-    border: 1px solid var(--line);
+    padding: 18px;
+    border-radius: 20px;
+    background:
+      linear-gradient(180deg, rgba(17, 24, 32, 0.98), rgba(10, 15, 20, 0.94));
+    border: 1px solid rgba(243, 165, 47, 0.1);
+    box-shadow: var(--shadow-soft);
   }
   .quote-metric .label {
     font-size: 12px;
     color: var(--muted);
-    margin-bottom: 6px;
+    margin-bottom: 8px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
   }
   .quote-metric .value {
-    font-size: 24px;
-    font-weight: 600;
+    font-size: 30px;
+    font-weight: 700;
+    letter-spacing: -0.05em;
   }
   .quote-filter-grid {
     display: grid;
-    grid-template-columns: 1.4fr 1fr 1fr 1fr 0.8fr;
+    grid-template-columns: 1.6fr repeat(3, 1fr) 0.9fr 0.9fr auto auto;
     gap: 10px;
+    padding: 16px;
+    border-radius: 22px;
+    background: rgba(10, 15, 20, 0.88);
+    border: 1px solid rgba(243, 165, 47, 0.08);
   }
   .quote-filter-grid input,
   .quote-filter-grid select,
   .quote-filter-grid button {
-    border-radius: 8px;
+    border-radius: 14px;
   }
   .quote-table th,
   .quote-table td {
@@ -308,62 +743,67 @@ _STYLE = """
   .quote-status-chip {
     display: inline-flex;
     align-items: center;
-    padding: 4px 8px;
-    border-radius: 8px;
+    padding: 6px 10px;
+    border-radius: 999px;
     font-size: 12px;
     font-weight: 600;
   }
   .quote-status-chip.live {
-    background: var(--accent-soft);
-    color: var(--accent);
+    background: var(--ok-soft);
+    color: var(--ok);
   }
   .quote-status-chip.watch {
-    background: rgba(209, 157, 94, 0.18);
-    color: #8a5200;
+    background: var(--gold-soft);
+    color: var(--gold);
   }
   .quote-status-chip.stale {
-    background: #fee2e2;
-    color: #b91c1c;
+    background: var(--warn-soft);
+    color: var(--warn);
   }
   .quote-status-chip.blocked {
-    background: rgba(155, 44, 44, 0.12);
+    background: rgba(94, 33, 23, 0.26);
     color: var(--warn);
   }
   .quote-status-chip.pending {
-    background: rgba(99, 113, 124, 0.14);
-    color: var(--muted);
+    background: rgba(49, 95, 141, 0.12);
+    color: var(--info);
   }
   .quote-change-chip {
     display: inline-flex;
     align-items: center;
-    padding: 4px 8px;
-    border-radius: 8px;
+    padding: 6px 10px;
+    border-radius: 999px;
     font-size: 12px;
-    font-weight: 600;
+    font-weight: 700;
   }
   .quote-change-chip.new {
-    background: #dbeafe;
-    color: #1d4ed8;
+    background: var(--info-soft);
+    color: var(--info);
   }
   .quote-change-chip.up {
-    background: #dcfce7;
-    color: #15803d;
+    background: var(--ok-soft);
+    color: var(--ok);
   }
   .quote-change-chip.down {
-    background: #fee2e2;
-    color: #b91c1c;
+    background: var(--warn-soft);
+    color: var(--warn);
   }
   .quote-change-chip.flat {
-    background: #f1f5f9;
-    color: #475569;
+    background: rgba(255, 193, 77, 0.09);
+    color: var(--muted);
   }
   .quote-note {
     color: var(--muted);
     font-size: 12px;
-    line-height: 1.45;
+    line-height: 1.55;
+    white-space: normal;
+  }
+  .quote-age {
+    color: var(--ink-soft);
+    font-weight: 600;
   }
   .quote-age.stale {
-    color: #b91c1c;
+    color: var(--warn);
     font-weight: 700;
   }
   .quote-link {
@@ -371,32 +811,159 @@ _STYLE = """
     align-items: center;
     justify-content: center;
     width: auto;
-    padding: 10px 12px;
-    border-radius: 8px;
-    background: var(--accent);
-    color: white;
+    padding: 12px 14px;
+    border-radius: 14px;
+    background: rgba(243, 165, 47, 0.1);
+    color: var(--accent-strong);
     text-decoration: none;
-    border: 1px solid var(--accent);
+    border: 1px solid rgba(243, 165, 47, 0.14);
+    box-shadow: none;
   }
   .quote-source-detail {
     color: var(--muted);
     display: block;
     font-size: 12px;
-    margin-top: 3px;
+    margin-top: 4px;
+    line-height: 1.45;
   }
   .quote-template-help {
-    background: #f8fafc;
-    border: 1px solid var(--line);
-    border-radius: 8px;
+    background: rgba(10, 15, 20, 0.84);
+    border: 1px solid rgba(243, 165, 47, 0.08);
+    border-radius: 18px;
     padding: 12px;
   }
   .quote-template-help strong {
     display: block;
     margin-bottom: 6px;
   }
+  .quote-desk-layout {
+    display: grid;
+    gap: 14px;
+    grid-template-columns: minmax(220px, 0.68fr) minmax(0, 1.32fr);
+    align-items: start;
+  }
+  .quote-desk-rail,
+  .quote-desk-main,
+  .quote-desk-form,
+  .quote-desk-flow {
+    display: grid;
+    gap: 12px;
+  }
+  .quote-desk-note {
+    display: grid;
+    gap: 8px;
+    padding: 14px;
+    border-radius: 18px;
+    background: linear-gradient(180deg, rgba(12, 18, 24, 0.94), rgba(8, 12, 16, 0.9));
+    border: 1px solid rgba(243, 165, 47, 0.08);
+  }
+  .quote-desk-note strong,
+  .quote-desk-note h3 {
+    margin: 0;
+    font-size: 13px;
+    color: var(--ink);
+  }
+  .quote-desk-note ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 6px;
+  }
+  .quote-desk-note li {
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.55;
+  }
+  .quote-desk-preset {
+    display: grid;
+    gap: 6px;
+    padding: 10px 12px;
+    border-radius: 14px;
+    background: rgba(6, 10, 14, 0.88);
+    border: 1px solid rgba(243, 165, 47, 0.08);
+  }
+  .quote-desk-preset strong {
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .quote-desk-preset .muted {
+    font-size: 12px;
+    line-height: 1.55;
+  }
+  .quote-desk-block {
+    display: grid;
+    gap: 12px;
+    padding: 14px;
+    border-radius: 18px;
+    background: rgba(10, 15, 20, 0.88);
+    border: 1px solid rgba(243, 165, 47, 0.08);
+  }
+  .quote-desk-block-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    align-items: baseline;
+    flex-wrap: wrap;
+  }
+  .quote-desk-block-head h3 {
+    margin: 0;
+  }
+  .quote-desk-grid {
+    display: grid;
+    gap: 10px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .quote-desk-grid-3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .quote-desk-grid-4 {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .quote-desk-field {
+    display: grid;
+    gap: 6px;
+    min-width: 0;
+  }
+  .quote-desk-field span {
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .quote-desk-field.full {
+    grid-column: 1 / -1;
+  }
+  .quote-desk-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .quote-desk-actions button {
+    width: auto;
+    flex: 1 1 180px;
+  }
+  .quote-desk-inline {
+    display: grid;
+    gap: 10px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .quote-desk-inline .quote-desk-note {
+    height: 100%;
+  }
+  .quote-desk-table-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
   .quote-modal-backdrop {
     align-items: center;
-    background: rgba(15, 23, 42, 0.38);
+    background: rgba(3, 6, 10, 0.76);
+    backdrop-filter: blur(8px);
     bottom: 0;
     display: none;
     justify-content: center;
@@ -411,22 +978,67 @@ _STYLE = """
     display: flex;
   }
   .quote-modal {
-    background: #ffffff;
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    box-shadow: 0 20px 60px rgba(15, 23, 42, 0.25);
+    background: linear-gradient(180deg, rgba(18, 24, 31, 0.98), rgba(11, 16, 22, 0.98));
+    border: 1px solid rgba(243, 165, 47, 0.14);
+    border-radius: 24px;
+    box-shadow: 0 26px 68px rgba(0, 0, 0, 0.42);
+    display: flex;
+    flex-direction: column;
     max-height: 86vh;
     max-width: 980px;
-    overflow: auto;
-    padding: 18px;
+    overflow: hidden;
+    padding: 22px;
     width: min(980px, 100%);
+  }
+  .quote-modal-wide {
+    max-width: 1280px;
+    width: min(1280px, 100%);
+    max-height: 92vh;
+  }
+  .quote-modal h2 {
+    font-size: 18px;
+    letter-spacing: 0.04em;
+  }
+  .quote-modal h3 {
+    font-size: 14px;
+  }
+  .quote-modal .panel {
+    padding: 16px;
+    border-radius: 18px;
+  }
+  .quote-modal .muted {
+    font-size: 12px;
+    line-height: 1.5;
+  }
+  .quote-modal input,
+  .quote-modal textarea,
+  .quote-modal select {
+    padding: 9px 12px;
+    border-radius: 12px;
+    font-size: 13px;
+  }
+  .quote-modal textarea {
+    min-height: 180px;
+  }
+  .quote-modal button {
+    width: auto;
+    flex: 0 0 auto;
+    padding: 9px 12px;
+    border-radius: 12px;
+    font-size: 13px;
+    box-shadow: none;
   }
   .quote-modal-header {
     align-items: start;
     display: flex;
     gap: 12px;
     justify-content: space-between;
-    margin-bottom: 12px;
+    margin-bottom: 8px;
+  }
+  .quote-modal-header-copy {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
   }
   .quote-modal-header h2 {
     margin: 0;
@@ -434,13 +1046,247 @@ _STYLE = """
   .quote-modal-close {
     width: auto;
   }
+  .quote-harvest-modebar {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+    padding: 6px 0 8px;
+    border-bottom: 1px solid rgba(243, 165, 47, 0.08);
+    margin-bottom: 4px;
+  }
+  .quote-modal-body {
+    padding: 8px 0;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+  }
+  .quote-modal-wide .quote-modal-body {
+    overflow: hidden;
+  }
+  .quote-modal-footer {
+    display: flex;
+    gap: 8px;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: 10px;
+    margin-top: 8px;
+    border-top: 1px solid rgba(243, 165, 47, 0.12);
+    flex: 0 0 auto;
+  }
+  .quote-modal-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .quote-modal-actions input {
+    min-width: 140px;
+  }
+  .quote-modal-save {
+    background: linear-gradient(135deg, #18483d, #1f6e5b 44%, #32c48d);
+    color: #05120d;
+    box-shadow: 0 10px 24px rgba(50, 196, 141, 0.18);
+  }
+  .exc-card {
+    border: 1px solid rgba(255, 107, 74, 0.14);
+    border-radius: 18px;
+    padding: 14px;
+    background: linear-gradient(180deg, rgba(22, 17, 18, 0.96), rgba(13, 16, 20, 0.96));
+    box-shadow: inset 0 0 0 1px rgba(255, 107, 74, 0.04), var(--shadow-soft);
+  }
+  .exc-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 10px;
+    flex-wrap: wrap;
+  }
+  .exc-card-meta {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .exc-card-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .exc-card-brief {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 8px;
+    font-size: 12px;
+    color: var(--muted);
+    flex-wrap: wrap;
+  }
+  .exc-lines {
+    display: grid;
+    gap: 8px;
+  }
+  .exc-line {
+    padding: 8px 10px;
+    border-radius: 12px;
+    border: 1px solid rgba(243, 165, 47, 0.1);
+    background: rgba(8, 12, 16, 0.86);
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--ink-soft);
+  }
+  .quote-harvest-grid {
+    display: grid;
+    grid-template-columns: minmax(320px, 0.92fr) minmax(420px, 1.08fr);
+    gap: 12px;
+    align-items: stretch;
+    height: min(68vh, 760px);
+    min-height: 0;
+  }
+  .quote-harvest-workflow {
+    display: grid;
+    grid-template-columns: minmax(300px, 0.82fr) minmax(360px, 0.98fr) minmax(320px, 0.92fr);
+    gap: 12px;
+    align-items: stretch;
+    height: min(70vh, 780px);
+    min-height: 0;
+  }
+  .quote-harvest-side {
+    margin: 0;
+    min-height: 0;
+  }
+  .quote-harvest-side.primary {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    height: 100%;
+  }
+  .quote-harvest-lines {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-right: 4px;
+  }
+  .quote-harvest-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    height: 100%;
+    min-height: 0;
+  }
+  .quote-harvest-column {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    height: 100%;
+    min-height: 0;
+  }
+  .quote-harvest-column-scroll {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    height: 100%;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-right: 4px;
+  }
+  .quote-harvest-preview-col {
+    min-width: 0;
+  }
+  .quote-harvest-workbench {
+    display: grid;
+    grid-template-columns: minmax(320px, 0.84fr) minmax(600px, 1.16fr);
+    gap: 10px;
+    align-items: stretch;
+    height: min(74vh, 860px);
+    min-height: 0;
+  }
+  .quote-harvest-workspace {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    height: 100%;
+    min-height: 0;
+  }
+  .quote-harvest-workspace-scroll {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-right: 4px;
+  }
+  .quote-harvest-pane-tabs {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .quote-harvest-modebar .quote-harvest-pane-tabs {
+    width: 100%;
+  }
+  .quote-harvest-pane-tab {
+    width: auto;
+    flex: 0 0 auto;
+    padding: 7px 12px;
+    border-radius: 999px;
+    border: 1px solid rgba(243, 165, 47, 0.12);
+    background: rgba(8, 12, 16, 0.84);
+    color: var(--ink-soft);
+    box-shadow: none;
+  }
+  .quote-harvest-pane-tab.active {
+    background: linear-gradient(135deg, #3a2a0a, #6b4a12 42%, #f3a52f);
+    color: #120f08;
+    border-color: transparent;
+  }
+  .quote-harvest-modebar .quote-harvest-pane-tab {
+    min-width: 140px;
+    justify-content: center;
+  }
+  .quote-harvest-step-compact {
+    display: grid;
+    gap: 8px;
+    padding: 12px;
+    border-radius: 14px;
+    border: 1px solid rgba(243, 165, 47, 0.1);
+    background: rgba(8, 12, 16, 0.84);
+  }
+  .quote-harvest-lines > div {
+    padding: 6px 8px;
+  }
+  .quote-modal th,
+  .quote-modal td {
+    padding: 10px 8px;
+  }
+  .quote-harvest-scroll {
+    height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-right: 4px;
+  }
+  .quote-result-lines {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+  }
   .diff-highlight {
-    color: #b42318;
-    font-weight: 600;
+    color: var(--warn);
+    font-weight: 700;
   }
   .diff-safe {
-    color: #067647;
-    font-weight: 600;
+    color: var(--ok);
+    font-weight: 700;
   }
   .full {
     grid-column: 1 / -1;
@@ -451,9 +1297,9 @@ _STYLE = """
     justify-content: center;
     width: auto;
     padding: 10px 14px;
-    border-radius: 8px;
-    background: var(--accent);
-    color: white;
+    border-radius: 14px;
+    background: linear-gradient(135deg, #50350d, #87611d 44%, #f3a52f);
+    color: #120f08;
     text-decoration: none;
     border: 1px solid var(--accent);
   }
@@ -471,17 +1317,47 @@ _STYLE = """
     width: auto;
     flex: 0 0 auto;
   }
+  #quote-board-table tbody tr,
+  #latest-transactions-table tbody tr {
+    transition: background 140ms ease;
+  }
+  #quote-board-table tbody tr:hover,
+  #latest-transactions-table tbody tr:hover {
+    background: rgba(243, 165, 47, 0.05);
+  }
   @media (max-width: 980px) {
+    .hero h1 {
+      font-size: 38px;
+    }
+    .dashboard-summary-grid,
+    .quote-hero-grid {
+      grid-template-columns: 1fr;
+    }
     .cards {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
     .quote-metrics,
-    .quote-filter-grid {
+    .quote-filter-grid,
+    .recon-filter-form,
+    .recon-adjust-form {
       grid-template-columns: 1fr;
     }
     .entry-grid,
-    .subgrid {
+    .subgrid,
+    .ops-grid,
+    .recon-hero-grid,
+    .quote-harvest-grid,
+    .quote-desk-layout,
+    .quote-desk-inline {
       grid-template-columns: 1fr;
+    }
+    .quote-harvest-workflow {
+      grid-template-columns: 1fr;
+      height: auto;
+    }
+    .quote-harvest-workbench {
+      grid-template-columns: 1fr;
+      height: auto;
     }
     form {
       grid-template-columns: 1fr;
@@ -489,13 +1365,75 @@ _STYLE = """
     .full {
       grid-column: auto;
     }
+    .quote-modal-wide .quote-modal-body {
+      overflow: auto;
+    }
+    .quote-harvest-grid {
+      height: auto;
+    }
+    .quote-harvest-column,
+    .quote-harvest-column-scroll {
+      height: auto;
+    }
+    .quote-harvest-side.primary,
+    .quote-harvest-stack,
+    .quote-harvest-scroll,
+    .quote-harvest-lines,
+    .quote-harvest-scroll,
+    .quote-result-lines {
+      height: auto;
+      max-height: none;
+    }
+    .quote-desk-grid-3,
+    .quote-desk-grid-4 {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+  @media (max-width: 1280px) {
+    .quote-harvest-workflow {
+      grid-template-columns: minmax(300px, 0.92fr) minmax(360px, 1.08fr);
+      height: auto;
+    }
+    .quote-harvest-workbench {
+      grid-template-columns: 1fr;
+      height: auto;
+    }
+    .quote-harvest-preview-col {
+      grid-column: 1 / -1;
+    }
   }
   @media (max-width: 640px) {
     header, main {
       padding-left: 16px;
       padding-right: 16px;
     }
+    .panel {
+      padding: 18px;
+      border-radius: 22px;
+    }
     .cards {
+      grid-template-columns: 1fr;
+    }
+    nav {
+      gap: 10px;
+    }
+    nav a {
+      padding: 10px 13px;
+    }
+    .quote-modal,
+    .quote-modal-wide {
+      padding: 16px;
+      max-height: 96vh;
+    }
+    .quote-modal-footer {
+      align-items: stretch;
+    }
+    .quote-modal-actions {
+      width: 100%;
+    }
+    .quote-desk-grid,
+    .quote-desk-grid-3,
+    .quote-desk-grid-4 {
       grid-template-columns: 1fr;
     }
   }
@@ -505,48 +1443,60 @@ _STYLE = """
 
 def render_dashboard_page() -> str:
     body = """
-<section class="panel stack">
-  <div class="toolbar">
+<section class="panel stack dashboard-hero">
+  <div class="panel-heading">
     <div>
-      <h2>首页驾驶舱</h2>
+      <div class="section-kicker">Ledger Terminal</div>
+      <h2>总账主屏</h2>
       <div class="muted" id="dashboard-range">口径加载中</div>
     </div>
-    <div class="muted">当前余额按实时交易余额；今日已实现利润只看结算账期；当前实时预估利润单独展示。</div>
+    <div class="dashboard-brief">
+      <strong>主屏口径</strong>
+      先看实时余额、已实现利润和当前窗口预估，再决定今天是进账期工作台、对账台，还是先处理异常与映射。
+    </div>
   </div>
-  <div class="cards">
-    <article class="card">
+  <div class="dashboard-summary-grid">
+    <article class="card stat-card primary">
       <div class="label">当前总余额</div>
       <div class="value" id="summary-total-balance">0.00</div>
+      <span class="table-secondary">实时群余额合并后的当前视角，不掺入历史已关账期。</span>
     </article>
-    <article class="card">
-      <div class="label">今日已实现利润</div>
-      <div class="value" id="summary-profit">0.00</div>
-    </article>
-    <article class="card">
+    <article class="card stat-card secondary">
       <div class="label">当前实时预估利润</div>
       <div class="value" id="summary-estimated-profit">0.00</div>
+      <span class="table-secondary">主屏只看当前窗口的结构化交易和卡面差额。</span>
     </article>
-    <article class="card">
+    <article class="card stat-card">
+      <div class="label">今日已实现利润</div>
+      <div class="value" id="summary-profit">0.00</div>
+      <span class="table-secondary">只算今天已经结算的账期。</span>
+    </article>
+    <article class="card stat-card">
       <div class="label">实时账期总计刀数</div>
       <div class="value" id="summary-vendor-usd">0.00</div>
+      <span class="table-secondary">当前窗口内已识别刀数。</span>
     </article>
-    <article class="card">
-      <div class="label">未归属/待处理群数</div>
+    <article class="card stat-card">
+      <div class="label">未归属 / 待处理群数</div>
       <div class="value" id="summary-unassigned">0</div>
+      <span class="table-secondary">用于判断是否需要先做治理。</span>
     </article>
   </div>
 </section>
 <section class="panel stack">
-  <div class="toolbar">
+  <div class="panel-heading">
     <div>
-      <h2>当前实时卡统计</h2>
-      <div class="muted">用最新实时交易估算本轮客户卖卡、供应商拿卡和预估利润。</div>
+      <div class="section-kicker">Live Book</div>
+      <h2>实时卡面</h2>
+      <div class="muted">把客户侧和供应商侧放在同一个主屏里对照，快速看出缺口、利润和偏移。</div>
     </div>
   </div>
   <div class="subgrid">
     <section class="subpanel">
-      <h3>客户侧</h3>
-      <div class="muted" id="dashboard-current-customer-summary">加载中</div>
+      <div class="subpanel-header">
+        <h3>客户侧</h3>
+        <span class="pill-muted" id="dashboard-current-customer-summary">加载中</span>
+      </div>
       <div class="table-wrap">
         <table id="dashboard-current-customer-table">
           <thead>
@@ -557,8 +1507,10 @@ def render_dashboard_page() -> str:
       </div>
     </section>
     <section class="subpanel">
-      <h3>供应商侧</h3>
-      <div class="muted" id="dashboard-current-vendor-summary">加载中</div>
+      <div class="subpanel-header">
+        <h3>供应商侧</h3>
+        <span class="pill-muted" id="dashboard-current-vendor-summary">加载中</span>
+      </div>
       <div class="table-wrap">
         <table id="dashboard-current-vendor-table">
           <thead>
@@ -570,13 +1522,14 @@ def render_dashboard_page() -> str:
     </section>
   </div>
 </section>
-<section class="panel stack">
-  <div class="toolbar">
+<section class="panel stack ledger-panel">
+  <div class="panel-heading">
     <div>
-      <h2>最新识别交易流</h2>
-      <div class="muted">默认展示最近识别的全部结构化交易，快速确认采集、解析和关账状态。</div>
+      <div class="section-kicker">Execution Tape</div>
+      <h2>最新入账流</h2>
+      <div class="muted">按时间带看最近识别到的结构化交易，用来确认采集、解析和账期状态有没有跑偏。</div>
     </div>
-    <div class="muted">首页只做观察，不在这里发起修正或治理动作。</div>
+    <div class="muted">主屏只做观察，不在这里直接改账。</div>
   </div>
   <div class="table-wrap">
     <table id="latest-transactions-table">
@@ -589,25 +1542,30 @@ def render_dashboard_page() -> str:
 </section>
 <section class="panel stack">
   <div>
-    <h2>工作入口</h2>
-    <div class="muted">首页给信号，真正的账期查看、关账、修正和组合治理都进入工作台处理。</div>
+    <div class="section-kicker">Desk Routes</div>
+    <h2>工作面入口</h2>
+    <div class="muted">主屏只负责给信号，真正的关账、对账、治理和复盘都应该进入对应工作面处理。</div>
   </div>
   <div class="entry-grid">
     <a class="entry-card" href="/workbench">
-      <strong>进入账期工作台</strong>
-      <span>查看账期摘要、结构化交易明细、群快照和卡种统计，并承接关账与治理动作。</span>
+      <span class="entry-tag">Main</span>
+      <strong>账期工作面</strong>
+      <span>承接关账、账期回查、群快照和实时治理，是日常操作的主工作面。</span>
     </a>
     <a class="entry-card" href="/reconciliation">
-      <strong>进入对账中心</strong>
-      <span>按逐笔台账检查汇率、RMB 加减、修改痕迹和财务补录，并一键导出给财务核对。</span>
+      <span class="entry-tag">Finance</span>
+      <strong>对账工作面</strong>
+      <span>逐笔核对汇率、RMB 加减、修改痕迹和财务补录，用来做最终账务确认。</span>
     </a>
     <a class="entry-card" href="/role-mapping">
-      <strong>进入角色映射页</strong>
-      <span>专门核对群角色、组号默认规则和口语别名归一化，不再把映射表塞在首页或工作台里。</span>
+      <span class="entry-tag">Governance</span>
+      <strong>映射治理台</strong>
+      <span>集中处理群角色、组号规则和别名归一化，先把口径统一，再谈利润和报价。</span>
     </a>
     <a class="entry-card" href="/history">
-      <strong>进入跑账历史页</strong>
-      <span>按时间区间比较利润与卡种结构变化，做复盘和趋势分析。</span>
+      <span class="entry-tag">Review</span>
+      <strong>历史回放台</strong>
+      <span>按账期和时间区间复盘利润、卡种结构和趋势变化，用来做复盘和校正。</span>
     </a>
   </div>
 </section>
@@ -659,8 +1617,25 @@ function signedMoney(value) {
   return `${number > 0 ? '+' : ''}${money(number)}`;
 }
 
+function signedClass(value) {
+  const number = Number(value || 0);
+  if (number > 0) return 'signed-pos';
+  if (number < 0) return 'signed-neg';
+  return 'signed-neutral';
+}
+
+function moneySpan(value, options = {}) {
+  const number = Number(value || 0);
+  const classes = ['table-num'];
+  if (options.signed) {
+    classes.push(signedClass(number));
+  }
+  const text = options.showPlus ? signedMoney(number) : money(number);
+  return `<span class="${classes.join(' ')}">${text}</span>`;
+}
+
 function diffClass(value) {
-  return Number(value || 0) === 0 ? 'diff-safe' : 'diff-highlight';
+  return signedClass(value);
 }
 
 function buildCardRowMap(rows) {
@@ -766,14 +1741,14 @@ async function loadDashboard() {
   document.querySelector('#latest-transactions-table tbody').innerHTML = transactions.length
     ? transactions.map((row) => `
       <tr>
-        <td>${row.chat_name}</td>
-        <td>${roleText(row.business_role)}</td>
-        <td>${row.sender_name}</td>
-        <td>${row.category}</td>
-        <td>${rateText(row.rate)}</td>
-        <td>${money(row.display_usd_amount)}</td>
-        <td>${money(row.display_rmb_amount ?? row.rmb_value)}</td>
-        <td>${row.created_at}</td>
+        <td><span class="table-primary">${row.chat_name}</span><span class="table-secondary">${row.chat_id || row.group_key || '—'}</span></td>
+        <td><span class="pill-muted">${roleText(row.business_role)}</span></td>
+        <td><span class="table-primary">${row.sender_name || '—'}</span><span class="table-secondary">${row.sender_id || '—'}</span></td>
+        <td><span class="table-primary">${row.category}</span><span class="table-secondary">${row.message_id || '—'}</span></td>
+        <td><span class="table-num">${rateText(row.rate)}</span></td>
+        <td><span class="table-num">${money(row.display_usd_amount)}</span></td>
+        <td><span class="table-num">${money(row.display_rmb_amount ?? row.rmb_value)}</span></td>
+        <td><span class="table-primary">${row.created_at}</span><span class="table-secondary">${row.is_edited ? '已修改' : '原始识别'}</span></td>
         <td>${statusChip(row.period_status)}</td>
       </tr>
     `).join('')
@@ -783,8 +1758,8 @@ async function loadDashboard() {
 loadDashboard();
 """
     return _render_layout(
-        title="总账中心",
-        subtitle="驾驶舱先给信号，再决定进入哪个账期工作台或历史分析页。",
+        title="Ledger Terminal",
+        subtitle="先看实时口径、风险信号和账期状态，再决定今天进入哪个工作面。",
         active_path="/",
         body=body,
         script=script,
@@ -793,30 +1768,41 @@ loadDashboard();
 
 def render_quotes_page() -> str:
     body = """
-<section class="panel stack">
-  <div class="toolbar">
+<section class="panel stack quote-hero">
+  <div class="panel-heading">
     <div>
-      <h2>报价墙</h2>
+      <div class="section-kicker">Quote Terminal</div>
+      <h2>报价主屏</h2>
       <div class="muted" id="quote-board-range">当前客人报价加载中</div>
     </div>
     <div class="toolbar-actions">
       <button type="button" id="quote-refresh-btn">刷新</button>
-      <a class="quote-link" href="#quote-exceptions">查看异常</a>
+      <a class="quote-link" href="#quote-exceptions">转到风险池</a>
     </div>
   </div>
-  <div class="quote-metrics">
-    <article class="quote-metric">
-      <div class="label">当前可用</div>
-      <div class="value" id="quote-live-count">0</div>
-    </article>
-    <article class="quote-metric">
-      <div class="label">来源客人群</div>
-      <div class="value" id="quote-source-count">0</div>
-    </article>
-    <article class="quote-metric">
-      <div class="label">异常数量</div>
-      <div class="value" id="quote-exception-count">0</div>
-    </article>
+  <div class="quote-hero-grid">
+    <div class="quote-command">
+      <p>主屏只做一件事：先看当前最高价，再判断是继续收、切换来源群，还是进入模板治理和异常处理。价格、变动、来源、时效必须一眼扫出来。</p>
+      <div class="quote-insight-list">
+        <span>主屏按精确 SKU 取最高价</span>
+        <span>超时与禁收单独警示</span>
+        <span>风险池保持近手可达</span>
+      </div>
+    </div>
+    <div class="quote-metrics">
+      <article class="quote-metric">
+        <div class="label">当前可用</div>
+        <div class="value" id="quote-live-count">0</div>
+      </article>
+      <article class="quote-metric">
+        <div class="label">有效来源群</div>
+        <div class="value" id="quote-source-count">0</div>
+      </article>
+      <article class="quote-metric">
+        <div class="label">待处理异常</div>
+        <div class="value" id="quote-exception-count">0</div>
+      </article>
+    </div>
   </div>
   <form id="quote-filter-form" class="quote-filter-grid">
     <input name="search" id="quote-search" type="search" placeholder="搜卡种 / 国家 / 面额 / 形态 / 限制" autocomplete="off" />
@@ -843,53 +1829,137 @@ def render_quotes_page() -> str:
     <button type="submit">筛选</button>
     <button type="button" id="quote-filter-clear">清空</button>
   </form>
-  <div class="muted" id="quote-filter-status">按精确 SKU 看当前最高价；离散面额和区间分开显示，点“排名”看更低价格。</div>
-  <div class="table-wrap">
+  <div class="muted" id="quote-filter-status">主屏按精确 SKU 显示当前最高价；离散面额与区间分开，点“深度”看同 SKU 其余来源。</div>
+  <div class="quote-board-shell">
+    <div class="table-wrap">
     <table id="quote-board-table" class="quote-table">
       <thead>
-        <tr><th>卡种</th><th>国家 / 币种</th><th>面额 / 条件</th><th>形态</th><th>当前最高价</th><th>组实时</th><th>来源</th><th>更新时间</th><th>已存在</th><th>状态</th><th>限制</th><th>操作</th></tr>
+        <tr><th>卡种</th><th>国家 / 币种</th><th>面额 / 条件</th><th>形态</th><th>主价</th><th>组实时</th><th>来源台</th><th>信号时刻</th><th>时效</th><th>状态</th><th>限制</th><th>动作</th></tr>
       </thead>
       <tbody></tbody>
     </table>
-  </div>
-</section>
-<section class="panel stack" id="quote-profile-panel">
-  <div class="toolbar">
-    <div>
-      <h2>客人群模板</h2>
-      <div class="muted">先配置群默认卡种、解析模板和超时时间；实机测试时按测试群逐个补。</div>
     </div>
   </div>
-  <form id="quote-profile-form" class="quote-filter-grid">
-    <input name="platform" placeholder="平台，如 whatsapp" />
-    <input name="chat_id" placeholder="群ID / chat_id" required />
-    <input name="chat_name" placeholder="群名" />
-    <input name="default_card_type" placeholder="默认卡种，如 Apple" />
-    <input name="default_country_or_currency" placeholder="默认国家/币种，如 USD" />
-    <input name="default_form_factor" placeholder="默认形态，如 横白/竖卡/代码" />
-    <input name="default_multiplier" placeholder="默认倍数，可空，如 50X" />
-    <input name="parser_template" placeholder="模板，如 apple_modifier_sheet" list="quote-template-options" />
-    <datalist id="quote-template-options">
-      <option value="sectioned_group_sheet"></option>
-      <option value="group_fixed_sheet"></option>
-      <option value="apple_modifier_sheet"></option>
-      <option value="section_sheet"></option>
-      <option value="simple_sheet"></option>
-      <option value="supermarket-card"></option>
-    </datalist>
-    <input name="stale_after_minutes" placeholder="超时分钟，如 30" />
-    <textarea name="template_config" placeholder="高级模板配置，可先留空"></textarea>
-    <button type="submit">保存模板</button>
-    <button type="button" id="quote-profile-clear">清空表单</button>
-  </form>
-  <div class="muted" id="quote-profile-prefill-status">可从异常区一键填充群模板。</div>
-  <div class="quote-template-help">
-    <strong>group_fixed_sheet</strong>
-    <div class="muted">群专用固定模板：建议配好默认卡种 + 默认币种；按 `100=5.55` / `300/400/500=5.55` 解析，`#...` 作为限制说明，`#竖卡-0.1` 可派生形态价。</div>
+</section>
+<div class="ops-grid">
+<section class="panel stack panel-config" id="quote-profile-panel">
+  <div class="toolbar">
+    <div>
+      <div class="section-kicker">Parsing Desk</div>
+      <h2>群模板配置台</h2>
+      <div class="muted">这里不是“填配置”，而是给一个群定稳定口径。先认群，再定默认值，再选最接近的模板。</div>
+    </div>
   </div>
-  <div class="quote-template-help">
-    <strong>apple_modifier_sheet</strong>
-    <div class="muted">Apple 群模板：默认卡种 Apple；识别 US横白卡 基准价；识别 50X 倍数；#竖卡-0.1 / #电子-0.15 / #代码-0.3 按同一上下文派生价格；默认 30 分钟超时。</div>
+  <div class="quote-desk-note">
+    <strong>最短路径</strong>
+    <ul>
+      <li>先填平台、群 ID、群名，锁定这个群是谁。</li>
+      <li>再填默认卡种、币种、形态、倍数和超时，补齐群里省略信息。</li>
+      <li>最后选最接近的模板，不够再补高级配置。</li>
+    </ul>
+  </div>
+  <form id="quote-profile-form" class="quote-desk-form">
+    <section class="quote-desk-block">
+      <div class="quote-desk-block-head">
+        <h3>群信息</h3>
+        <div class="muted">先认这个群，后面异常才能一键回填到这里。</div>
+      </div>
+      <div class="quote-desk-grid quote-desk-grid-3">
+        <label class="quote-desk-field">
+          <span>平台</span>
+          <input name="platform" placeholder="如 whatsapp" />
+        </label>
+        <label class="quote-desk-field">
+          <span>群 ID / chat_id</span>
+          <input name="chat_id" placeholder="必填" required />
+        </label>
+        <label class="quote-desk-field">
+          <span>群名</span>
+          <input name="chat_name" placeholder="给运营看的名字" />
+        </label>
+      </div>
+    </section>
+    <section class="quote-desk-block">
+      <div class="quote-desk-block-head">
+        <h3>默认口径</h3>
+        <div class="muted">这些值会补齐群里省略写法，减少短句掉进异常池。</div>
+      </div>
+      <div class="quote-desk-grid quote-desk-grid-4">
+        <label class="quote-desk-field">
+          <span>默认卡种</span>
+          <input name="default_card_type" placeholder="如 Apple" />
+        </label>
+        <label class="quote-desk-field">
+          <span>默认国家 / 币种</span>
+          <input name="default_country_or_currency" placeholder="如 USD" />
+        </label>
+        <label class="quote-desk-field">
+          <span>默认形态</span>
+          <input name="default_form_factor" placeholder="如 横白 / 竖卡 / 代码" />
+        </label>
+        <label class="quote-desk-field">
+          <span>默认倍数</span>
+          <input name="default_multiplier" placeholder="可空，如 50X" />
+        </label>
+        <label class="quote-desk-field">
+          <span>超时分钟</span>
+          <input name="stale_after_minutes" placeholder="如 30" />
+        </label>
+      </div>
+    </section>
+    <section class="quote-desk-block">
+      <div class="quote-desk-block-head">
+        <h3>解析模板</h3>
+        <div class="muted">先选模板，再决定是否需要高级配置。</div>
+      </div>
+      <div class="quote-desk-grid">
+        <label class="quote-desk-field">
+          <span>模板名</span>
+          <input name="parser_template" placeholder="如 apple_modifier_sheet" list="quote-template-options" />
+        </label>
+        <label class="quote-desk-field full">
+          <span>高级模板配置</span>
+          <textarea name="template_config" placeholder="默认模板不够时再填，没把握先留空"></textarea>
+        </label>
+      </div>
+      <datalist id="quote-template-options">
+        <option value="sectioned_group_sheet"></option>
+        <option value="group_fixed_sheet"></option>
+        <option value="apple_modifier_sheet"></option>
+        <option value="section_sheet"></option>
+        <option value="simple_sheet"></option>
+        <option value="supermarket-card"></option>
+      </datalist>
+    </section>
+    <section class="quote-desk-block">
+      <div class="quote-desk-block-head">
+        <h3>常用模板参考</h3>
+        <div class="muted">只保留最常用三类，避免把这块做成说明文档。</div>
+      </div>
+      <div class="quote-desk-grid quote-desk-grid-3">
+        <div class="quote-desk-preset">
+          <strong>group_fixed_sheet</strong>
+          <div class="muted">固定群表，适合整齐报价和形态差价。</div>
+        </div>
+        <div class="quote-desk-preset">
+          <strong>apple_modifier_sheet</strong>
+          <div class="muted">Apple 群专用，先基准价，再按修饰词派生。</div>
+        </div>
+        <div class="quote-desk-preset">
+          <strong>supermarket-card</strong>
+          <div class="muted">超市卡混合群，多个品牌混在一条原文里时用。</div>
+        </div>
+      </div>
+    </section>
+    <div class="quote-desk-actions">
+      <button type="submit">保存模板</button>
+      <button type="button" id="quote-profile-clear">清空表单</button>
+    </div>
+  </form>
+  <div class="muted" id="quote-profile-prefill-status">可从风险池把当前异常一键带入配置台，补成稳定模板。</div>
+  <div class="quote-desk-table-head">
+    <h3>当前已生效模板</h3>
+    <div class="muted">这里看已经进入主线解析的群口径，支持继续编辑或删除。</div>
   </div>
   <div class="table-wrap">
     <table id="quote-profile-table" class="quote-table">
@@ -900,24 +1970,79 @@ def render_quotes_page() -> str:
     </table>
   </div>
 </section>
-<section class="panel stack" id="quote-inquiry-panel">
+<section class="panel stack panel-assist" id="quote-inquiry-panel">
   <div class="toolbar">
     <div>
-      <h2>短回复上下文</h2>
-      <div class="muted">供应商或同事问完价格后，先建上下文；同一个客人群下一条短回复如 6.25 才能补成完整报价。</div>
+      <div class="section-kicker">Relay Desk</div>
+      <h2>短回复接力台</h2>
+      <div class="muted">这块只处理一种情况: 客人先问完整需求，群里下一条只回一个裸价。先把上下文挂住，再等短回复回主屏。</div>
     </div>
   </div>
-  <form id="quote-inquiry-form" class="quote-filter-grid">
-    <input name="chat_id" placeholder="回复客人群ID / chat_id" required />
-    <input name="chat_name" placeholder="回复客人群名" />
-    <input name="card_type" placeholder="卡种，如 Apple" required />
-    <input name="country_or_currency" placeholder="国家 / 币种，如 UK" required />
-    <input name="amount_range" placeholder="面额，如 10" required />
-    <input name="form_factor" placeholder="形态，如 不限 / 代码" />
-    <input name="multiplier" placeholder="倍数，可空" />
-    <input name="prompt_text" placeholder="原始询价，如 Apple UK 10 现在什么价" />
-    <button type="submit">创建上下文</button>
+  <div class="quote-desk-note">
+    <strong>最短路径</strong>
+    <ul>
+      <li>只在“客人先问完整需求，群里下一条只回裸价”时使用。</li>
+      <li>先定客人群，再挂卡种、国家、面额、形态这几个上下文。</li>
+      <li>创建后，系统会在有效期内等下一条短回复来接力。</li>
+    </ul>
+  </div>
+  <form id="quote-inquiry-form" class="quote-desk-form">
+    <section class="quote-desk-block">
+      <div class="quote-desk-block-head">
+        <h3>客人群</h3>
+        <div class="muted">短回复最后会回到这个群。</div>
+      </div>
+      <div class="quote-desk-grid">
+        <label class="quote-desk-field">
+          <span>回复客人群 ID / chat_id</span>
+          <input name="chat_id" placeholder="必填" required />
+        </label>
+        <label class="quote-desk-field">
+          <span>回复客人群名</span>
+          <input name="chat_name" placeholder="方便识别，可空" />
+        </label>
+      </div>
+    </section>
+    <section class="quote-desk-block">
+      <div class="quote-desk-block-head">
+        <h3>询价上下文</h3>
+        <div class="muted">这些值就是下一条裸价要补回主屏的上下文。</div>
+      </div>
+      <div class="quote-desk-grid quote-desk-grid-4">
+        <label class="quote-desk-field">
+          <span>卡种</span>
+          <input name="card_type" placeholder="如 Apple" required />
+        </label>
+        <label class="quote-desk-field">
+          <span>国家 / 币种</span>
+          <input name="country_or_currency" placeholder="如 UK" required />
+        </label>
+        <label class="quote-desk-field">
+          <span>面额</span>
+          <input name="amount_range" placeholder="如 10" required />
+        </label>
+        <label class="quote-desk-field">
+          <span>形态</span>
+          <input name="form_factor" placeholder="如 不限 / 代码" />
+        </label>
+        <label class="quote-desk-field">
+          <span>倍数</span>
+          <input name="multiplier" placeholder="可空" />
+        </label>
+        <label class="quote-desk-field full">
+          <span>原始询价</span>
+          <input name="prompt_text" placeholder="如 Apple UK 10 现在什么价" />
+        </label>
+      </div>
+    </section>
+    <div class="quote-desk-actions">
+      <button type="submit">创建上下文</button>
+    </div>
   </form>
+  <div class="quote-desk-table-head">
+    <h3>当前有效上下文</h3>
+    <div class="muted">只有在有效期内的上下文才会接住下一条裸价。</div>
+  </div>
   <div class="table-wrap">
     <table id="quote-inquiry-table" class="quote-table">
       <thead>
@@ -927,11 +2052,13 @@ def render_quotes_page() -> str:
     </table>
   </div>
 </section>
-<section class="panel stack" id="quote-exceptions">
+</div>
+<section class="panel stack panel-risk" id="quote-exceptions">
   <div class="toolbar">
     <div>
-      <h2>异常区</h2>
-      <div class="muted" id="quote-exception-range">默认只看待处理异常，每页 10 条；已处理异常可切换查看。</div>
+      <div class="section-kicker">Risk Pool</div>
+      <h2>异常风险池</h2>
+      <div class="muted" id="quote-exception-range">默认只看待处理异常，每页 10 条；已处理异常可切换查看。这里是人工补洞入口，不是主解析链路。</div>
     </div>
     <div class="toolbar-actions">
       <button type="button" id="quote-exception-toggle">查看已处理</button>
@@ -946,8 +2073,8 @@ def render_quotes_page() -> str:
   <div class="quote-modal" role="dialog" aria-modal="true" aria-labelledby="quote-ranking-title">
     <div class="quote-modal-header">
       <div>
-        <h2>报价排名</h2>
-        <div class="muted" id="quote-ranking-title">点击报价墙任意一行查看同 SKU 客人排名。</div>
+        <h2>同 SKU 深度屏</h2>
+        <div class="muted" id="quote-ranking-title">点击主屏任意一行查看同 SKU 的来源深度。</div>
       </div>
       <button class="quote-modal-close" type="button" id="quote-ranking-close">关闭</button>
     </div>
@@ -962,30 +2089,31 @@ def render_quotes_page() -> str:
   </div>
 </div>
 <div class="quote-modal-backdrop" id="quote-harvest-modal" aria-hidden="true">
-  <div class="quote-modal" role="dialog" aria-modal="true" style="max-width:1280px;max-height:92vh;overflow-y:auto;">
+  <div class="quote-modal quote-modal-wide" role="dialog" aria-modal="true">
     <div class="quote-modal-header">
-      <div>
+      <div class="quote-modal-header-copy">
         <h2>异常整理台</h2>
         <div class="muted" id="quote-harvest-subtitle">默认先用标准模板整理；复杂混合原文可切换到分段收割，逐段预览并保存。</div>
       </div>
       <button class="quote-modal-close" type="button" id="quote-harvest-close">关闭</button>
     </div>
-    <div id="quote-harvest-body" style="padding:12px 0;">
+    <div id="quote-harvest-modes" class="quote-harvest-modebar"></div>
+    <div id="quote-harvest-body" class="quote-modal-body">
       <div class="muted">加载中...</div>
     </div>
-    <div style="display:flex;gap:8px;justify-content:space-between;align-items:center;padding-top:8px;border-top:1px solid #eee;">
+    <div class="quote-modal-footer">
       <div id="quote-harvest-summary" class="muted" style="font-size:13px;"></div>
-      <div style="display:flex;gap:8px;align-items:center;">
+      <div class="quote-modal-actions">
         <input type="password" id="quote-harvest-admin-password" placeholder="管理口令" style="min-width:180px;" />
         <button type="button" id="quote-harvest-preview">生成预览</button>
         <button type="button" id="quote-harvest-cancel">取消</button>
-        <button type="button" id="quote-harvest-save" style="font-weight:bold;background:#00897b;color:#fff;border:none;padding:8px 20px;border-radius:4px;cursor:pointer;">保存模板</button>
+        <button type="button" class="quote-modal-save" id="quote-harvest-save">保存模板</button>
       </div>
     </div>
   </div>
 </div>
 <div class="quote-modal-backdrop" id="quote-profile-edit-modal" aria-hidden="true">
-  <div class="quote-modal" role="dialog" aria-modal="true" style="max-width:980px;max-height:90vh;overflow-y:auto;">
+  <div class="quote-modal" role="dialog" aria-modal="true">
     <div class="quote-modal-header">
       <div>
         <h2>编辑模板</h2>
@@ -993,14 +2121,14 @@ def render_quotes_page() -> str:
       </div>
       <button class="quote-modal-close" type="button" id="quote-profile-edit-close">关闭</button>
     </div>
-    <div id="quote-profile-edit-body" style="padding:12px 0;">
+    <div id="quote-profile-edit-body" class="quote-modal-body">
       <div class="muted">加载中...</div>
     </div>
-    <div style="display:flex;gap:8px;justify-content:space-between;align-items:center;padding-top:8px;border-top:1px solid #eee;">
+    <div class="quote-modal-footer">
       <div id="quote-profile-edit-summary" class="muted" style="font-size:13px;"></div>
-      <div style="display:flex;gap:8px;align-items:center;">
+      <div class="quote-modal-actions">
         <button type="button" id="quote-profile-edit-cancel">取消</button>
-        <button type="button" id="quote-profile-edit-save" style="font-weight:bold;background:#00897b;color:#fff;border:none;padding:8px 20px;border-radius:4px;cursor:pointer;">保存模板</button>
+        <button type="button" class="quote-modal-save" id="quote-profile-edit-save">保存模板</button>
       </div>
     </div>
   </div>
@@ -1292,33 +2420,33 @@ function renderQuoteBoard(rows, loadError = '') {
   document.querySelector('#quote-source-count').textContent = String(new Set(filteredRows.map((row) => quoteSourceText(row))).size);
   if (loadError) {
     document.querySelector('#quote-board-range').textContent = `报价墙加载失败: ${loadError}`;
-    document.querySelector('#quote-filter-status').textContent = '报价墙渲染已降级；其他区块不受影响，点“刷新”可重试。';
+    document.querySelector('#quote-filter-status').textContent = '主屏渲染已降级；其他工作面不受影响，点“刷新”可重试。';
     document.querySelector('#quote-board-table tbody').innerHTML = `<tr><td colspan="12" class="muted">报价墙加载失败: ${textValue(loadError, '未知错误')}</td></tr>`;
     bindQuoteRankingButtons();
     bindQuoteDeleteButtons();
     return;
   }
   document.querySelector('#quote-board-range').textContent = filteredRows.length
-    ? `已加载 ${filteredRows.length} 个 SKU 的当前最高报价，最新更新时间 ${latestQuoteTime(filteredRows) || '—'}。`
-    : '当前没有可用报价。';
+    ? `主屏已加载 ${filteredRows.length} 个 SKU 的当前最高价，最新信号时刻 ${latestQuoteTime(filteredRows) || '—'}。`
+    : '当前主屏没有可用报价。';
   document.querySelector('#quote-filter-status').textContent = filteredRows.length
-    ? `当前显示的是每个精确 SKU 的最高价；离散面额和区间分开，组实时显示该群最新一笔是涨还是跌。`
+    ? `当前显示的是每个精确 SKU 的主屏最高价；离散面额和区间分开，变动列展示该来源群最新一笔是涨还是跌。`
     : '没有匹配的报价。';
   document.querySelector('#quote-board-table tbody').innerHTML = filteredRows.length
     ? filteredRows.map((row) => `
       <tr>
-        <td>${textValue(row.card_type)}</td>
-        <td>${quoteCountryText(row)}</td>
-        <td>${quoteAmountText(row)}</td>
-        <td>${quoteFormFactorText(row.form_factor || row.quote_form_factor)}</td>
-        <td>${compactNumber(row.price ?? row.rate ?? row.quote_price ?? '')}</td>
+        <td><span class="table-primary">${textValue(row.card_type)}</span><span class="table-secondary">${textValue(row.parser_template || row.parser_version || '标准解析')}</span></td>
+        <td><span class="table-primary">${quoteCountryText(row)}</span><span class="table-secondary">${textValue(row.country_or_currency || row.currency || row.region || '标准地区')}</span></td>
+        <td><span class="table-primary">${quoteAmountText(row)}</span><span class="table-secondary">${textValue(row.multiplier ? `倍数 ${row.multiplier}` : row.source_line || '精确 SKU')}</span></td>
+        <td><span class="table-primary">${quoteFormFactorText(row.form_factor || row.quote_form_factor)}</span></td>
+        <td><span class="table-num">${compactNumber(row.price ?? row.rate ?? row.quote_price ?? '')}</span></td>
         <td><span class="quote-change-chip ${quoteChangeClass(row.change_status)}">${quoteChangeText(row)}</span></td>
-        <td>${quoteSourceText(row)}<span class="quote-source-detail">${textValue(row.sender_id)} / ${quoteSourceDetailText(row)}</span></td>
-        <td>${formatQuoteTime(row.updated_at || row.effective_at || row.created_at || row.message_time || row.received_at)}</td>
+        <td><span class="table-primary">${quoteSourceText(row)}</span><span class="quote-source-detail">${textValue(row.source_name || row.sender_id)} / ${quoteSourceDetailText(row)}</span></td>
+        <td><span class="table-primary">${formatQuoteTime(row.updated_at || row.effective_at || row.created_at || row.message_time || row.received_at)}</span><span class="table-secondary">${textValue(row.message_id || '—')}</span></td>
         <td class="${quoteAgeClass(row)}">${quoteAgeText(row.effective_at || row.message_time || row.created_at || row.updated_at || row.received_at)}</td>
         <td><span class="quote-status-chip ${quoteDisplayStatusClass(row)}">${quoteDisplayStatusText(row)}</span></td>
         <td class="quote-note">${quoteRestrictionText(row)}</td>
-        <td><button type="button" data-quote-ranking-id="${row.id}">排名</button> <button type="button" class="quote-delete-btn" data-quote-delete-id="${row.id}" style="color:#c0392b;border-color:#c0392b">删除</button></td>
+        <td><div class="action-row"><button type="button" class="action-ghost" data-quote-ranking-id="${row.id}">深度</button><button type="button" class="action-danger quote-delete-btn" data-quote-delete-id="${row.id}">删除</button></div></td>
       </tr>
     `).join('')
     : '<tr><td colspan="12" class="muted">暂无可用报价</td></tr>';
@@ -1371,7 +2499,7 @@ async function loadQuoteRanking(row) {
   document.querySelector('#quote-ranking-modal').classList.add('open');
   document.querySelector('#quote-ranking-modal').setAttribute('aria-hidden', 'false');
   document.querySelector('#quote-ranking-title').textContent = `${textValue(row.card_type)} / ${quoteCountryText(row)} / ${quoteAmountText(row)} / ${quoteFormFactorText(row.form_factor)}：加载中`;
-  document.querySelector('#quote-ranking-table tbody').innerHTML = '<tr><td colspan="7" class="muted">正在加载排名</td></tr>';
+  document.querySelector('#quote-ranking-table tbody').innerHTML = '<tr><td colspan="7" class="muted">正在加载同 SKU 来源深度</td></tr>';
   const params = new URLSearchParams({
     card_type: row.card_type || '',
     country_or_currency: row.country_or_currency || '',
@@ -1397,7 +2525,7 @@ async function loadQuoteRanking(row) {
         <td class="quote-note">${quoteRestrictionText(item)}</td>
       </tr>
     `).join('')
-    : '<tr><td colspan="7" class="muted">没有同 SKU 排名数据</td></tr>';
+    : '<tr><td colspan="7" class="muted">没有同 SKU 来源深度数据</td></tr>';
 }
 
 function closeQuoteRankingModal() {
@@ -1885,24 +3013,26 @@ function renderQuoteExceptions(payload) {
     const sourceLines = String(row.source_line || '').split('\\n').filter(Boolean);
     const linesHtml = sourceLines.map((line, idx) => {
       const escaped = line.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-      return `<div class="exc-line" data-exc-id="${row.id}" data-line-idx="${idx}" style="padding:4px 8px;border-radius:3px;font-family:monospace;font-size:13px;">${escaped}</div>`;
+      return `<div class="exc-line" data-exc-id="${row.id}" data-line-idx="${idx}">${escaped}</div>`;
     }).join('');
     const note = displayQuoteResolutionNote(row.resolution_note);
     const noteHtml = note ? `<div class="muted" style="font-size:12px;margin-top:4px;white-space:pre-wrap;">${textValue(note)}</div>` : '';
-    return `<div class="exc-card" data-exc-row-id="${row.id}" style="border:1px solid #ddd;border-radius:6px;padding:12px;background:#fafafa;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+    return `<div class="exc-card" data-exc-row-id="${row.id}">
+      <div class="exc-card-header">
         <div>
           <strong>${textValue(row.source_group_name || row.chat_name || row.source_group_key)}</strong>
-          <span class="muted" style="margin-left:8px;">${textValue(row.sender_id)}</span>
-          <span class="muted" style="margin-left:8px;">${formatQuoteTime(row.message_time || row.created_at)}</span>
-          <span class="quote-status-chip ${quoteStatusClass(status)}" style="margin-left:8px;">${quoteStatusText(status)}</span>
+          <div class="exc-card-meta">
+            <span class="muted">${textValue(row.sender_id)}</span>
+            <span class="muted">${formatQuoteTime(row.message_time || row.created_at)}</span>
+            <span class="quote-status-chip ${quoteStatusClass(status)}">${quoteStatusText(status)}</span>
+          </div>
         </div>
-        <div style="display:flex;gap:4px;">
-          <button type="button" data-quote-exception-harvest="${row.id}" style="font-size:12px;font-weight:bold;background:#00897b;color:#fff;border:none;padding:4px 12px;border-radius:3px;cursor:pointer;">人工整理</button>
-          <button type="button" data-quote-exception-ignore="${row.id}" style="font-size:12px;">忽略</button>
+        <div class="exc-card-actions">
+          <button type="button" class="action-ghost" data-quote-exception-harvest="${row.id}">人工整理</button>
+          <button type="button" class="action-danger" data-quote-exception-ignore="${row.id}">忽略</button>
         </div>
       </div>
-      <div style="display:flex;justify-content:space-between;gap:12px;margin-bottom:6px;font-size:12px;color:#666;">
+      <div class="exc-card-brief">
         <span>${quoteExceptionHarvestStatus(row)}</span>
         <span>${textValue(row.suggested_action || '直接把右侧整理成最终正确结果；不确定的不要上墙。')}</span>
       </div>
@@ -2098,6 +3228,7 @@ function openQuoteHarvestModal(row) {
     result: sharedResultState,
     supermarket: sharedResultState,
     harvest: {
+      activePane: 'edit',
       sectionStart: null,
       sectionEnd: null,
       defaults: {
@@ -2368,6 +3499,7 @@ async function requestQuoteHarvestPreview() {
       harvest.preview = data;
       harvest.previewError = '';
       harvest.previewDirty = false;
+      harvest.activePane = 'preview';
     }
   } catch (error) {
     if (_quoteHarvestState && token === _quoteHarvestPreviewToken) {
@@ -2433,7 +3565,7 @@ async function requestQuoteResultPreview() {
 
 function renderQuoteHarvestTabs() {
   const mode = _quoteHarvestState?.mode || 'result';
-  const buttonStyle = (active) => `padding:8px 14px;border-radius:999px;border:1px solid ${active ? '#00897b' : '#d0d7de'};background:${active ? '#e0f2f1' : '#fff'};color:${active ? '#00695c' : '#455a64'};font-weight:${active ? '700' : '500'};cursor:pointer;`;
+  const buttonStyle = (active) => `width:auto;flex:0 0 auto;padding:7px 12px;border-radius:999px;border:1px solid ${active ? 'rgba(243,165,47,0.22)' : 'rgba(243,165,47,0.12)'};background:${active ? 'linear-gradient(135deg,#3a2a0a,#6b4a12 42%,#f3a52f)' : 'rgba(10,15,20,0.92)'};color:${active ? '#120f08' : 'var(--ink-soft)'};font-weight:${active ? '700' : '600'};cursor:pointer;box-shadow:${active ? '0 6px 14px rgba(243,165,47,0.14)' : 'none'};font-size:13px;`;
   return `
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
       <button type="button" data-quote-harvest-mode="result" style="${buttonStyle(mode === 'result')}">标准模板整理</button>
@@ -2451,8 +3583,8 @@ function renderQuoteResultPane() {
   const highlightedIndexes = new Set((result?.highlightedIndexes || []).map((value) => Number(value)));
   const linesHtml = (_quoteHarvestState?.rawLines || []).map((item) => {
     const highlighted = highlightedIndexes.has(item.index);
-    return `<div data-result-line="${item.index}" style="border:1px solid ${highlighted ? '#90caf9' : '#e0e0e0'};background:${highlighted ? '#eef7ff' : '#fff'};border-radius:6px;padding:8px;cursor:pointer;">
-      <div style="font-size:12px;color:#666;margin-bottom:4px;">#${item.index + 1}</div>
+    return `<div data-result-line="${item.index}" style="border:1px solid ${highlighted ? 'rgba(118,169,255,0.36)' : 'rgba(243,165,47,0.1)'};background:${highlighted ? 'rgba(118,169,255,0.12)' : 'rgba(8,12,16,0.84)'};border-radius:12px;padding:8px;cursor:pointer;">
+      <div style="font-size:12px;color:var(--muted);margin-bottom:4px;">#${item.index + 1}</div>
       <div style="white-space:pre-wrap;font-family:monospace;font-size:13px;">${escapeHtml(item.normalized || item.raw || ' ')}</div>
     </div>`;
   }).join('');
@@ -2471,29 +3603,29 @@ function renderQuoteResultPane() {
     ? preview.notes.map((item) => `<div style="font-family:monospace;font-size:12px;white-space:pre-wrap;">${escapeHtml(item)}</div>`).join('')
     : '<div class="muted">未上墙的非价格文本会自动忽略。</div>';
   const warningsHtml = Array.isArray(preview?.warnings) && preview.warnings.length
-    ? preview.warnings.map((item) => `<div style="font-size:12px;color:#8a5200;">${escapeHtml(item)}</div>`).join('')
+    ? preview.warnings.map((item) => `<div style="font-size:12px;color:var(--gold);">${escapeHtml(item)}</div>`).join('')
     : '<div class="muted">暂无警告</div>';
   const errorsHtml = Array.isArray(preview?.errors) && preview.errors.length
-    ? preview.errors.map((item) => `<div style="font-size:12px;color:#c62828;">${escapeHtml(item)}</div>`).join('')
+    ? preview.errors.map((item) => `<div style="font-size:12px;color:var(--warn);">${escapeHtml(item)}</div>`).join('')
     : '<div class="muted">当前没有校验错误</div>';
   const suggestionHtml = quoteHarvestSuggestionActive()
-    ? `<div style="border:1px solid #ffcc80;background:#fff8e1;border-radius:8px;padding:10px 12px;">
-        <div style="font-weight:700;color:#8a5200;margin-bottom:4px;">这条原文更适合分段收割</div>
+    ? `<div style="border:1px solid rgba(243,165,47,0.16);background:linear-gradient(180deg,rgba(44,31,10,0.96),rgba(18,16,14,0.96));border-radius:14px;padding:10px 12px;">
+        <div style="font-weight:700;color:var(--gold);margin-bottom:4px;">这条原文更适合分段收割</div>
         <div class="muted" style="font-size:12px;">当前原文包含多段或多国家结构；标准模板区仍可保留给主流单国家消息，复杂消息建议按段预览并保存。</div>
         <div style="margin-top:8px;"><button type="button" id="quote-harvest-switch-button">切换到分段收割</button></div>
       </div>`
     : '';
   return `
     ${suggestionHtml}
-    <div style="display:grid;grid-template-columns:minmax(320px,1fr) minmax(360px,1.1fr);gap:12px;align-items:start;">
-      <section class="panel" style="margin:0;display:flex;flex-direction:column;gap:12px;">
+    <div class="quote-harvest-grid">
+      <section class="panel quote-harvest-side primary">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
           <strong>原文区</strong>
           <div class="muted" style="font-size:12px;">点击行可高亮参考，不参与保存。</div>
         </div>
-        <div style="display:flex;flex-direction:column;gap:8px;max-height:62vh;overflow:auto;">${linesHtml}</div>
+        <div class="quote-result-lines">${linesHtml}</div>
       </section>
-      <section class="panel" style="margin:0;display:flex;flex-direction:column;gap:12px;">
+      <section class="panel quote-harvest-side primary">
         <strong>${isSupermarketMode ? '超市卡模板区' : '结果模板区'}</strong>
         <div class="muted" style="font-size:12px;">${isSupermarketMode ? '适合超长、多卡种、多国家的混合报价。右侧写法不变，但保存时不受 3 套骨架上限。' : '只适合整洁单国家原文。固定块格式：只写 [默认] 和卡种块；默认里只填 国家 / 币种、形态；报价统一写成 50=5.3、10-195=5.25、100/150=5.43 这种格式。'}</div>
         <textarea id="quote-harvest-editor" style="min-height:280px;font-family:monospace;">${escapeHtml(result?.editorText || '')}</textarea>
@@ -2526,6 +3658,7 @@ function renderQuoteResultPane() {
 function renderQuoteSectionHarvestPane() {
   const harvest = currentSectionHarvestState();
   const preview = harvest?.preview;
+  const activePane = harvest?.activePane || 'edit';
   const selectedIndexes = harvestSelectedIndexes();
   const boundIndexes = harvestBoundIndexSet();
   const ignoredIndexes = new Set((harvest?.ignoredLineIndexes || []).map((value) => Number(value)));
@@ -2541,38 +3674,38 @@ function renderQuoteSectionHarvestPane() {
     const handled = handledIndexes.has(item.index);
     const remaining = remainingIndexes.has(item.index);
     let label = '普通文本';
-    let badgeColor = '#eceff1';
+    let badgeColor = 'rgba(143,138,121,0.18)';
     if (bound) {
       label = '已绑定';
-      badgeColor = '#e8f5e9';
+      badgeColor = 'rgba(50,196,141,0.16)';
     } else if (ignored) {
       label = '已忽略';
-      badgeColor = '#f5f5f5';
+      badgeColor = 'rgba(143,138,121,0.14)';
     } else if (selected) {
       label = '当前选区';
-      badgeColor = '#e3f2fd';
+      badgeColor = 'rgba(118,169,255,0.18)';
     } else if (handled) {
       label = '已处理';
-      badgeColor = '#f1f8e9';
+      badgeColor = 'rgba(50,196,141,0.14)';
     } else if (remaining) {
       label = '待处理';
-      badgeColor = '#fff3e0';
+      badgeColor = 'rgba(243,165,47,0.16)';
     } else if (restrictionCandidateIndexes.has(item.index)) {
       label = '说明';
-      badgeColor = '#fff3e0';
+      badgeColor = 'rgba(243,165,47,0.16)';
     } else if (quoteCandidateIndexes.has(item.index) || item.quoteCandidate) {
       label = '报价候选';
-      badgeColor = '#e3f2fd';
+      badgeColor = 'rgba(118,169,255,0.18)';
     } else if (literalIndexes.has(item.index)) {
       label = '普通文本';
-      badgeColor = '#eceff1';
+      badgeColor = 'rgba(143,138,121,0.18)';
     }
-    const background = selected ? '#eef7ff' : (handled ? '#f9fff8' : '#fff');
-    const border = selected ? '#90caf9' : (handled ? '#c5e1a5' : '#e0e0e0');
-    return `<div data-harvest-line="${item.index}" style="border:1px solid ${border};background:${background};border-radius:6px;padding:8px;cursor:pointer;">
+    const background = selected ? 'rgba(118,169,255,0.12)' : (handled ? 'rgba(50,196,141,0.08)' : 'rgba(8,12,16,0.84)');
+    const border = selected ? 'rgba(118,169,255,0.36)' : (handled ? 'rgba(50,196,141,0.24)' : 'rgba(243,165,47,0.1)');
+    return `<div data-harvest-line="${item.index}" style="border:1px solid ${border};background:${background};border-radius:12px;padding:8px;cursor:pointer;">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-        <strong style="font-size:12px;color:#666;">#${item.index + 1}</strong>
-        <span style="font-size:11px;padding:2px 6px;border-radius:999px;background:${badgeColor};color:#455a64;">${label}</span>
+        <strong style="font-size:12px;color:var(--muted);">#${item.index + 1}</strong>
+        <span style="font-size:11px;padding:2px 6px;border-radius:999px;background:${badgeColor};color:var(--ink-soft);">${label}</span>
       </div>
       <div style="white-space:pre-wrap;font-family:monospace;font-size:13px;margin:6px 0 8px 0;">${escapeHtml(item.normalized || item.raw || ' ')}</div>
       <div style="display:flex;justify-content:flex-end;">
@@ -2588,7 +3721,7 @@ function renderQuoteSectionHarvestPane() {
     : '还没选 section';
   const rowsHtml = harvest?.rows?.length
     ? harvest.rows.map((row, idx) => `
-      <div style="border:1px solid ${idx === harvest.activeRowIndex ? '#90caf9' : '#dfe6ee'};border-radius:8px;padding:10px;background:${idx === harvest.activeRowIndex ? '#eef7ff' : '#fff'};">
+      <div style="border:1px solid ${idx === harvest.activeRowIndex ? 'rgba(118,169,255,0.36)' : 'rgba(243,165,47,0.1)'};border-radius:12px;padding:10px;background:${idx === harvest.activeRowIndex ? 'rgba(118,169,255,0.12)' : 'rgba(8,12,16,0.84)'};">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;">
           <strong>报价 ${idx + 1}</strong>
           <div style="display:flex;gap:8px;align-items:center;">
@@ -2619,29 +3752,87 @@ function renderQuoteSectionHarvestPane() {
     && preview.errors.some((item) => String(item || '') === 'no_quote_rows')
   );
   const remainingHtml = Array.isArray(harvest?.remainingLines) && harvest.remainingLines.length
-    ? harvest.remainingLines.map((line) => `<div style="font-size:12px;color:#8a5200;">${escapeHtml(line)}</div>`).join('')
+    ? harvest.remainingLines.map((line) => `<div style="font-size:12px;color:var(--gold);">${escapeHtml(line)}</div>`).join('')
     : '<div class="muted">没有剩余待处理行。</div>';
   const unhandledHtml = Array.isArray(preview?.unhandled_lines) && preview.unhandled_lines.length
-    ? preview.unhandled_lines.map((item) => `<div style="color:#c62828;">#${Number(item.source_line_index) + 1} ${escapeHtml(item.line)} (${escapeHtml(translateHarvestUnhandledReason(item.reason))})</div>`).join('')
+    ? preview.unhandled_lines.map((item) => `<div style="color:var(--warn);">#${Number(item.source_line_index) + 1} ${escapeHtml(item.line)} (${escapeHtml(translateHarvestUnhandledReason(item.reason))})</div>`).join('')
     : '<div class="muted">当前选区没有未处理风险行。</div>';
   const errorHtml = staleNoQuoteRows
     ? '<div class="muted">当前已经录入了报价行，但预览结果已过期。请点“生成预览”重新计算。</div>'
     : harvest?.previewError
-    ? `<div style="color:#c62828;">${escapeHtml(harvest.previewError)}</div>`
+    ? `<div style="color:var(--warn);">${escapeHtml(harvest.previewError)}</div>`
     : (Array.isArray(preview?.errors) && preview.errors.length
-      ? preview.errors.map((item) => `<div style="color:#c62828;">${escapeHtml(translateHarvestError(item))}</div>`).join('')
+      ? preview.errors.map((item) => `<div style="color:var(--warn);">${escapeHtml(translateHarvestError(item))}</div>`).join('')
       : (harvest?.previewDirty && hasDraftRows
         ? '<div class="muted">当前已经录入了报价行，请点“生成预览”重新计算。</div>'
         : '<div class="muted">先框一段、录入报价，再点“预览这一段”。</div>'));
   const latestText = preview
     ? (preview.is_latest_for_group ? '当前是该群最新消息：保存这一段时只推进本次选区；只有整条整理完成后才会按最新原文统一回放上墙。' : '当前不是该群最新消息：保存这一段后仅追加模板。')
     : '同一条异常可连续分段整理；每次只保存当前选中的 section。';
+  const editPaneHtml = `
+    <div class="quote-harvest-workspace-scroll">
+      <div class="quote-harvest-step-compact">
+        <strong>第 1 步：先选这一段</strong>
+        <div class="muted" style="font-size:12px;">选区里识别到 ${quoteItems.length} 条报价候选，${restrictionItems.length} 条说明行。</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button type="button" id="quote-harvest-seed-rows" ${!quoteItems.length ? 'disabled' : ''}>按选区自动生成报价行</button>
+          <button type="button" id="quote-harvest-add-row">手动新增一行</button>
+        </div>
+      </div>
+      <section class="panel stack quote-harvest-side">
+        <strong>第 2 步：补这一段的固定信息</strong>
+        <div class="quote-filter-grid" style="grid-template-columns:repeat(2,minmax(0,1fr));">
+          <input data-harvest-default="section_label" value="${escapeHtml(harvest?.defaults?.section_label || '')}" placeholder="段名，如 UK快卡" />
+          <input data-harvest-default="card_type" value="${escapeHtml(harvest?.defaults?.card_type || '')}" placeholder="卡种，如 Apple" />
+          <input data-harvest-default="country_or_currency" value="${escapeHtml(harvest?.defaults?.country_or_currency || '')}" placeholder="只有整段同一国家 / 币种才填" />
+          <input data-harvest-default="form_factor" value="${escapeHtml(harvest?.defaults?.form_factor || '')}" placeholder="整段共用形态，如 横白卡" />
+        </div>
+        <div class="muted" style="font-size:12px;">这里只填这一整段都一样的东西。例子：UK快卡 这种整段同一币种时可以填 GBP；欧盟国家 这种每行国家都不同，就把“国家 / 币种”留空，不要忽略。卡种一般要填，形态如果整段都一样就填。</div>
+      </section>
+      <section class="panel stack quote-harvest-side">
+        <strong>第 3 步：确认报价行</strong>
+        <div class="muted" style="font-size:12px;">先用“按选区自动生成报价行”，再把每行的面额和价格补上。国家覆盖、形态覆盖只有少数情况才需要填。</div>
+        <div style="display:flex;flex-direction:column;gap:10px;">${rowsHtml}</div>
+      </section>
+    </div>
+  `;
+  const previewPaneHtml = `
+    <div class="quote-harvest-workspace-scroll">
+      <section class="panel stack quote-harvest-side">
+        <strong>预览区</strong>
+        <div class="muted" style="font-size:12px;">${latestText}</div>
+        <div>${harvest?.previewLoading ? '<div class="muted">预览计算中...</div>' : errorHtml}</div>
+        <div>
+          <strong style="font-size:12px;">已确认结果</strong>
+          <div class="muted" style="font-size:12px;">前面已经保存过的 section 会累计显示在这里，方便你继续核对整条原文。</div>
+          ${renderHarvestPreviewRowsTable(confirmedPreviewRows, '前面还没有已确认结果。')}
+        </div>
+        <div>
+          <strong style="font-size:12px;">本次预览结果</strong>
+          ${renderHarvestPreviewRowsTable(currentPreviewRows, '当前这一段还没有预览报价。')}
+        </div>
+        <div>
+          <strong style="font-size:12px;">累计预览结果</strong>
+          <div class="muted" style="font-size:12px;">最终保存前，看这里是否和整条原文想要上墙的结果一致。</div>
+          ${renderHarvestPreviewRowsTable(combinedPreviewRows, '累计预览结果为空。')}
+        </div>
+        <div>
+          <strong style="font-size:12px;">剩余待处理行</strong>
+          <div style="font-size:12px;white-space:pre-wrap;">${remainingHtml}</div>
+        </div>
+        <div>
+          <strong style="font-size:12px;">当前选区风险行</strong>
+          <div style="font-size:12px;white-space:pre-wrap;">${unhandledHtml}</div>
+        </div>
+      </section>
+    </div>
+  `;
   return `
-    <div style="display:grid;grid-template-columns:minmax(340px,1fr) minmax(420px,1.15fr);gap:12px;align-items:start;">
-      <section class="panel" style="margin:0;align-self:start;height:78vh;overflow:hidden;display:flex;flex-direction:column;gap:12px;">
+    <div class="quote-harvest-workbench">
+      <section class="panel quote-harvest-side primary" style="align-self:start;">
         <strong>原文区</strong>
-        <div style="border:1px solid #dfe6ee;border-radius:8px;padding:10px;background:#f8fbff;">
-          <div style="font-size:12px;color:#5f6b7a;margin-bottom:4px;">当前选取</div>
+        <div style="border:1px solid rgba(243,165,47,0.1);border-radius:12px;padding:10px;background:rgba(8,12,16,0.84);">
+          <div style="font-size:12px;color:var(--muted);margin-bottom:4px;">当前选取</div>
           <div style="font-size:14px;font-weight:600;">${selectionSummary}</div>
         </div>
         <div class="muted" style="font-size:12px;">先在左边点出这一段。第一次点击定开始行，第二次点击定结束行；如果要重选，直接再点新的开始行。</div>
@@ -2649,60 +3840,21 @@ function renderQuoteSectionHarvestPane() {
           <button type="button" id="quote-harvest-clear-section">清空 section</button>
           <button type="button" id="quote-harvest-clear-ignore">清空忽略</button>
         </div>
-        <div id="quote-harvest-lines" style="display:flex;flex-direction:column;gap:8px;flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;padding-right:4px;">${linesHtml}</div>
+        <div id="quote-harvest-lines" class="quote-harvest-lines">${linesHtml}</div>
       </section>
-      <div style="display:flex;flex-direction:column;gap:12px;height:78vh;overflow-y:auto;overflow-x:hidden;padding-right:4px;">
-        <section class="panel stack" style="margin:0;">
-          <strong>第 1 步：先选这一段</strong>
-          <div class="muted" style="font-size:12px;">选区里识别到 ${quoteItems.length} 条报价候选，${restrictionItems.length} 条说明行。</div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;">
-            <button type="button" id="quote-harvest-seed-rows" ${!quoteItems.length ? 'disabled' : ''}>按选区自动生成报价行</button>
-            <button type="button" id="quote-harvest-add-row">手动新增一行</button>
-          </div>
-        </section>
-        <section class="panel stack" style="margin:0;">
-          <strong>第 2 步：补这一段的固定信息</strong>
-          <div class="quote-filter-grid" style="grid-template-columns:repeat(2,minmax(0,1fr));">
-            <input data-harvest-default="section_label" value="${escapeHtml(harvest?.defaults?.section_label || '')}" placeholder="段名，如 UK快卡" />
-            <input data-harvest-default="card_type" value="${escapeHtml(harvest?.defaults?.card_type || '')}" placeholder="卡种，如 Apple" />
-            <input data-harvest-default="country_or_currency" value="${escapeHtml(harvest?.defaults?.country_or_currency || '')}" placeholder="只有整段同一国家 / 币种才填" />
-            <input data-harvest-default="form_factor" value="${escapeHtml(harvest?.defaults?.form_factor || '')}" placeholder="整段共用形态，如 横白卡" />
-          </div>
-          <div class="muted" style="font-size:12px;">这里只填这一整段都一样的东西。例子：UK快卡 这种整段同一币种时可以填 GBP；欧盟国家 这种每行国家都不同，就把“国家 / 币种”留空，不要忽略。卡种一般要填，形态如果整段都一样就填。</div>
-        </section>
-        <section class="panel stack" style="margin:0;">
-          <strong>第 3 步：确认报价行</strong>
-          <div class="muted" style="font-size:12px;">先用“按选区自动生成报价行”，再把每行的面额和价格补上。国家覆盖、形态覆盖只有少数情况才需要填。</div>
-          <div style="display:flex;flex-direction:column;gap:10px;">${rowsHtml}</div>
-        </section>
-        <section class="panel stack" style="margin:0;">
-          <strong>预览区</strong>
-          <div class="muted" style="font-size:12px;">${latestText}</div>
-          <div>${harvest?.previewLoading ? '<div class="muted">预览计算中...</div>' : errorHtml}</div>
+      <section class="panel quote-harvest-workspace">
+        <div class="panel-heading" style="margin-bottom:0;">
           <div>
-            <strong style="font-size:12px;">已确认结果</strong>
-            <div class="muted" style="font-size:12px;">前面已经保存过的 section 会累计显示在这里，方便你继续核对整条原文。</div>
-            ${renderHarvestPreviewRowsTable(confirmedPreviewRows, '前面还没有已确认结果。')}
+            <div class="section-kicker">Harvest Workspace</div>
+            <h3 style="margin:6px 0 0;">录入与预览分开操作</h3>
           </div>
-          <div>
-            <strong style="font-size:12px;">本次预览结果</strong>
-            ${renderHarvestPreviewRowsTable(currentPreviewRows, '当前这一段还没有预览报价。')}
+          <div class="quote-harvest-pane-tabs">
+            <button type="button" class="quote-harvest-pane-tab ${activePane === 'edit' ? 'active' : ''}" data-harvest-pane="edit">录入</button>
+            <button type="button" class="quote-harvest-pane-tab ${activePane === 'preview' ? 'active' : ''}" data-harvest-pane="preview">预览</button>
           </div>
-          <div>
-            <strong style="font-size:12px;">累计预览结果</strong>
-            <div class="muted" style="font-size:12px;">最终保存前，看这里是否和整条原文想要上墙的结果一致。</div>
-            ${renderHarvestPreviewRowsTable(combinedPreviewRows, '累计预览结果为空。')}
-          </div>
-          <div>
-            <strong style="font-size:12px;">剩余待处理行</strong>
-            <div style="font-size:12px;white-space:pre-wrap;">${remainingHtml}</div>
-          </div>
-          <div>
-            <strong style="font-size:12px;">当前选区风险行</strong>
-            <div style="font-size:12px;white-space:pre-wrap;">${unhandledHtml}</div>
-          </div>
-        </section>
-      </div>
+        </div>
+        ${activePane === 'preview' ? previewPaneHtml : editPaneHtml}
+      </section>
     </div>
   `;
 }
@@ -2737,6 +3889,12 @@ function bindResultPaneEvents() {
 
 function bindSectionHarvestEvents() {
   const harvest = currentSectionHarvestState();
+  document.querySelectorAll('[data-harvest-pane]').forEach((button) => {
+    button.addEventListener('click', () => {
+      harvest.activePane = button.dataset.harvestPane || 'edit';
+      renderQuoteHarvestModal();
+    });
+  });
   document.querySelector('#quote-harvest-clear-section')?.addEventListener('click', () => {
     harvest.sectionStart = null;
     harvest.sectionEnd = null;
@@ -2853,6 +4011,7 @@ function renderQuoteHarvestModal() {
     rememberHarvestScroll();
   }
   const body = document.querySelector('#quote-harvest-body');
+  const modebar = document.querySelector('#quote-harvest-modes');
   const summary = document.querySelector('#quote-harvest-summary');
   const previewButton = document.querySelector('#quote-harvest-preview');
   const saveButton = document.querySelector('#quote-harvest-save');
@@ -2864,12 +4023,13 @@ function renderQuoteHarvestModal() {
     : (_quoteHarvestState.mode === 'supermarket'
       ? `${textValue(_quoteHarvestState.row.chat_name || _quoteHarvestState.row.source_group_key)} / ${formatQuoteTime(_quoteHarvestState.row.message_time || _quoteHarvestState.row.created_at)} / 超市卡：超长混合报价可保存为不限套数骨架`
       : `${textValue(_quoteHarvestState.row.chat_name || _quoteHarvestState.row.source_group_key)} / ${formatQuoteTime(_quoteHarvestState.row.message_time || _quoteHarvestState.row.created_at)} / 标准模板整理：主流单国家优先`);
+  modebar.innerHTML = renderQuoteHarvestTabs();
   body.innerHTML = `
     <div class="stack" style="gap:12px;">
-      ${renderQuoteHarvestTabs()}
       ${_quoteHarvestState.mode === 'harvest' ? renderQuoteSectionHarvestPane() : renderQuoteResultPane()}
     </div>
   `;
+  body.scrollTop = 0;
   document.querySelectorAll('[data-quote-harvest-mode]').forEach((button) => {
     button.addEventListener('click', () => setQuoteHarvestMode(button.dataset.quoteHarvestMode));
   });
@@ -3072,10 +4232,10 @@ async function loadQuotesData() {
     }
   };
   const [boardPayload, exceptionPayload, profilePayload, inquiryPayload] = await Promise.all([
-    fetchQuotePayload('/api/quotes/board', { rows: [], total: 0 }, '报价墙'),
-    fetchQuotePayload(`/api/quotes/exceptions?${exceptionParams.toString()}`, { rows: [], total: 0 }, '异常区'),
-    fetchQuotePayload('/api/quotes/group-profiles', { rows: [], total: 0 }, '群模板'),
-    fetchQuotePayload('/api/quotes/inquiries', { rows: [], total: 0 }, '短回复上下文'),
+    fetchQuotePayload('/api/quotes/board', { rows: [], total: 0 }, '报价主屏'),
+    fetchQuotePayload(`/api/quotes/exceptions?${exceptionParams.toString()}`, { rows: [], total: 0 }, '异常风险池'),
+    fetchQuotePayload('/api/quotes/group-profiles', { rows: [], total: 0 }, '群模板配置台'),
+    fetchQuotePayload('/api/quotes/inquiries', { rows: [], total: 0 }, '短回复接力台'),
   ]);
   if (
     !exceptionPayload?._load_error
@@ -3144,7 +4304,7 @@ document.querySelector('#quote-profile-form').addEventListener('submit', async (
 
 document.querySelector('#quote-profile-clear').addEventListener('click', () => {
   document.querySelector('#quote-profile-form').reset();
-  document.querySelector('#quote-profile-prefill-status').textContent = '可从异常区一键填充群模板。';
+  document.querySelector('#quote-profile-prefill-status').textContent = '可从风险池一键带入群模板草稿。';
 });
 
 document.querySelector('#quote-profile-edit-close').addEventListener('click', closeQuoteProfileEditModal);
@@ -3265,8 +4425,8 @@ setInterval(() => {
 }, 60000);
 """
     return _render_layout(
-        title="报价墙",
-        subtitle="先看当前同卡最高价，再下钻到来源群、条件和异常。",
+        title="Quote Terminal",
+        subtitle="先看主屏最高价，再下钻来源群、模板配置和异常处理链。",
         active_path="/quotes",
         body=body,
         script=script,
@@ -3278,8 +4438,9 @@ def render_quote_dictionary_page() -> str:
 <section class="panel stack">
   <div class="toolbar">
     <div>
-      <h2>报价字典</h2>
-      <div class="muted">维护国家/币种、卡种和形态别名；群级别名优先于全局别名。</div>
+      <div class="section-kicker">Dictionary Desk</div>
+      <h2>标准映射台</h2>
+      <div class="muted">维护国家/币种、卡种和形态别名；群级别名优先于全局别名。这里定义一条口语最终映射到什么标准值。</div>
     </div>
     <label>
       <span class="muted">类别筛选</span>
@@ -3292,7 +4453,7 @@ def render_quote_dictionary_page() -> str:
     </label>
   </div>
   <div class="muted">
-    使用说明：1) 表格会显示“内置+自定义”映射。2) 点“编辑/复制到表单”可回填。3) 只有“自定义”支持停用；内置项请用同名自定义覆盖。
+    使用说明：1) 表格会显示“内置 + 自定义”映射。2) 点“编辑/复制到表单”可回填。3) 只有“自定义”支持停用；内置项请用同名自定义覆盖。
   </div>
   <form id="quote-dictionary-form" class="quote-filter-grid">
     <select name="category" id="dict-category" required>
@@ -3450,13 +4611,13 @@ if (Object.values(prefill).some(Boolean)) {
   if (prefill.category) {
     document.querySelector('#dict-filter-category').value = prefill.category;
   }
-  document.querySelector('#dict-prefill-status').textContent = '已从异常区带入字典草稿，确认标准值后输入管理口令保存。';
+  document.querySelector('#dict-prefill-status').textContent = '已从风险池带入字典草稿，确认标准值后输入管理口令保存。';
 }
 loadDictionary();
 """
     return _render_layout(
-        title="报价字典",
-        subtitle="把群里的叫法映射到标准卡种、币种和形态。",
+        title="Dictionary Desk",
+        subtitle="把群里的叫法压到统一标准值，避免模板、异常和主屏口径分叉。",
         active_path="/quote-dictionary",
         body=body,
         script=script,
@@ -3466,91 +4627,142 @@ loadDictionary();
 def render_workbench_page() -> str:
     body = """
 <section class="panel stack">
-  <div class="toolbar">
+  <div class="panel-heading">
     <div>
-      <h2>账期工作台</h2>
+      <div class="section-kicker">Workbench Terminal</div>
+      <h2>账期工作面</h2>
       <div class="muted" id="workbench-range">请选择一个账期</div>
     </div>
-    <label>
-      <span class="muted">账期</span>
-      <select id="period-select"></select>
-    </label>
+    <div class="terminal-note" style="max-width:420px;">
+      <strong>Desk Logic</strong>
+      <p>这个工作面承接结账、广播、实时回查和交易治理。先选口径，再决定是结账、群发，还是直接处理实时交易。</p>
+    </div>
   </div>
-  <form id="close-period-form">
+  <div class="recon-hero-grid">
+    <div class="cards">
+      <article class="card stat-card primary">
+        <div class="label" id="workbench-profit-label">账期利润</div>
+        <div class="value" id="workbench-profit">0.00</div>
+        <span class="table-secondary">当前账期或实时窗口下的核心利润口径。</span>
+      </article>
+      <article class="card stat-card">
+        <div class="label" id="workbench-customer-label">账期客户卡金额</div>
+        <div class="value" id="workbench-customer-amount">0.00</div>
+        <span class="table-secondary">客户侧金额合计，用来和供应商侧对照。</span>
+      </article>
+      <article class="card stat-card">
+        <div class="label" id="workbench-vendor-label">账期供应商卡金额</div>
+        <div class="value" id="workbench-vendor-amount">0.00</div>
+        <span class="table-secondary">供应商侧金额合计，不直接等同利润。</span>
+      </article>
+      <article class="card stat-card">
+        <div class="label">群数量</div>
+        <div class="value" id="workbench-groups">0</div>
+        <span class="table-secondary">当前工作面口径下命中的活跃群。</span>
+      </article>
+      <article class="card stat-card">
+        <div class="label">客户交易</div>
+        <div class="value" id="workbench-customer-transactions">0</div>
+        <span class="table-secondary">客户侧交易笔数。</span>
+      </article>
+      <article class="card stat-card">
+        <div class="label">供应商交易</div>
+        <div class="value" id="workbench-vendor-transactions">0</div>
+        <span class="table-secondary">供应商侧交易笔数。</span>
+      </article>
+    </div>
+    <aside class="terminal-note">
+      <strong>Period Selector</strong>
+      <p>你可以在这里切换实时窗口和已结账期。实时窗口用于今天的操作，已结账期用于回放和对照。</p>
+      <label>
+        <span class="muted">账期</span>
+        <select id="period-select"></select>
+      </label>
+    </aside>
+  </div>
+</section>
+<div class="ops-grid">
+<section class="panel stack panel-config">
+  <div class="panel-heading">
+    <div>
+      <div class="section-kicker">Settlement Desk</div>
+      <h2>结账台</h2>
+      <div class="muted">直接调用后端关账服务，口径等同 `/alljs`；本次实际参与结账的群会各自收到一条结账回执。</div>
+    </div>
+  </div>
+  <form id="close-period-form" class="recon-adjust-form">
     <input name="closed_by" placeholder="结账人备注" required />
     <button type="submit">一键结账</button>
   </form>
-  <div id="close-period-status" class="muted">直接调用后端关账服务，口径等同 `/alljs`；本次实际参与结账的群会各自收到一条结账回执。</div>
-  <form id="group-broadcast-form">
+  <div id="close-period-status" class="muted">当前工作面只做结账入口，真正口径以后端结账结果为准。</div>
+</section>
+<section class="panel stack panel-assist">
+  <div class="panel-heading">
+    <div>
+      <div class="section-kicker">Outbound Desk</div>
+      <h2>出站群发台</h2>
+      <div class="muted">Web 群发会进入统一出站队列，由各平台适配器依次投递到该分组下的所有群；“群发人备注”只用于审计记录。</div>
+    </div>
+  </div>
+  <form id="group-broadcast-form" class="recon-adjust-form">
     <input name="created_by" placeholder="群发人备注" required />
     <input name="group_num" type="number" min="0" max="9" step="1" placeholder="分组号，如 1" required />
     <textarea class="full" name="message" placeholder="群发内容，等同 `/diy 1 自定义内容` 里的消息正文" required></textarea>
     <button type="submit">群发到分组</button>
   </form>
-  <div id="group-broadcast-status" class="muted">Web 群发会进入统一出站队列，由各平台适配器依次投递到该分组下的所有群；“群发人备注”只用于审计记录。</div>
-  <div class="cards">
-    <article class="card">
-      <div class="label" id="workbench-profit-label">账期利润</div>
-      <div class="value" id="workbench-profit">0.00</div>
-    </article>
-    <article class="card">
-      <div class="label" id="workbench-customer-label">账期客户卡金额</div>
-      <div class="value" id="workbench-customer-amount">0.00</div>
-    </article>
-    <article class="card">
-      <div class="label" id="workbench-vendor-label">账期供应商卡金额</div>
-      <div class="value" id="workbench-vendor-amount">0.00</div>
-    </article>
-    <article class="card">
-      <div class="label">群数量</div>
-      <div class="value" id="workbench-groups">0</div>
-    </article>
-    <article class="card">
-      <div class="label">客户交易</div>
-      <div class="value" id="workbench-customer-transactions">0</div>
-    </article>
-    <article class="card">
-      <div class="label">供应商交易</div>
-      <div class="value" id="workbench-vendor-transactions">0</div>
-    </article>
-  </div>
+  <div id="group-broadcast-status" class="muted">广播只负责排队，不在这里判断业务结果。</div>
 </section>
+</div>
 <section class="panel">
-  <div class="toolbar">
+  <div class="panel-heading">
     <div>
+      <div class="section-kicker">Role Card Spread</div>
       <h2 id="workbench-role-card-title">账期客户/供应商卡统计</h2>
       <div class="muted">利润 = 客户正数金额 + 供应商负数金额。客户余额和供应商欠款继续体现在群快照，不直接并入利润。</div>
     </div>
   </div>
-  <div class="subgrid">
-    <section class="subpanel">
-      <h3>客户侧</h3>
-      <div class="muted" id="workbench-customer-summary">加载中</div>
-      <div class="table-wrap">
-        <table id="workbench-customer-cards-table">
-          <thead>
-            <tr><th>卡种</th><th>刀数</th><th>金额</th><th>差额</th><th>利润</th></tr>
-          </thead>
-          <tbody></tbody>
-        </table>
-      </div>
-    </section>
-    <section class="subpanel">
-      <h3>供应商侧</h3>
-      <div class="muted" id="workbench-vendor-summary">加载中</div>
-      <div class="table-wrap">
-        <table id="workbench-vendor-cards-table">
-          <thead>
-            <tr><th>卡种</th><th>刀数</th><th>金额</th><th>利润</th></tr>
-          </thead>
-          <tbody></tbody>
-        </table>
-      </div>
-    </section>
+  <div class="cards">
+    <div class="subgrid">
+      <section class="subpanel">
+        <div class="subpanel-header">
+          <h3>客户侧</h3>
+          <span class="pill-muted" id="workbench-customer-summary">加载中</span>
+        </div>
+        <div class="table-wrap">
+          <table id="workbench-customer-cards-table">
+            <thead>
+              <tr><th>卡种</th><th>刀数</th><th>金额</th><th>差额</th><th>利润</th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+      <section class="subpanel">
+        <div class="subpanel-header">
+          <h3>供应商侧</h3>
+          <span class="pill-muted" id="workbench-vendor-summary">加载中</span>
+        </div>
+        <div class="table-wrap">
+          <table id="workbench-vendor-cards-table">
+            <thead>
+              <tr><th>卡种</th><th>刀数</th><th>金额</th><th>利润</th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
   </div>
 </section>
-<section class="panel">
-  <h2>群快照</h2>
+<div class="ops-grid">
+<section class="panel stack panel-config">
+  <div class="panel-heading">
+    <div>
+      <div class="section-kicker">Group Tape</div>
+      <h2>群快照</h2>
+      <div class="muted">按群看期初、收款、使用、期末和交易笔数，是账期面的组级快照。</div>
+    </div>
+  </div>
   <div class="table-wrap">
     <table id="workbench-groups-table">
       <thead>
@@ -3560,8 +4772,14 @@ def render_workbench_page() -> str:
     </table>
   </div>
 </section>
-<section class="panel">
-  <h2>卡种统计</h2>
+<section class="panel stack panel-assist">
+  <div class="panel-heading">
+    <div>
+      <div class="section-kicker">Card Tape</div>
+      <h2>卡种统计</h2>
+      <div class="muted">按卡种和角色看账期分布，用来确认卡面结构是不是和预期一致。</div>
+    </div>
+  </div>
   <div class="table-wrap">
     <table id="workbench-cards-table">
       <thead>
@@ -3571,9 +4789,11 @@ def render_workbench_page() -> str:
     </table>
   </div>
 </section>
-<section class="panel">
-  <div class="toolbar">
+</div>
+<section class="panel stack ledger-panel">
+  <div class="panel-heading">
     <div>
+      <div class="section-kicker">Realtime Tape</div>
       <h2>当前实时窗口</h2>
       <div class="muted" id="workbench-live-range">显示最近一次结算之后到现在的实时交易，用于本轮结算前回查。</div>
     </div>
@@ -3587,14 +4807,18 @@ def render_workbench_page() -> str:
     </table>
   </div>
 </section>
-<section class="panel stack">
+<section class="panel stack panel-risk">
   <div>
+    <div class="section-kicker">Governance Desk</div>
     <h2>治理操作</h2>
     <div class="muted">治理动作跟随上方实时窗口中的当前交易。交易修改直接落在原始账单上，组合管理继续保留在这里。</div>
   </div>
   <div class="subgrid">
     <section class="subpanel">
-      <h3>交易修改</h3>
+      <div class="subpanel-header">
+        <h3>交易修改</h3>
+        <span class="recon-alert">直接写回原账单</span>
+      </div>
       <p class="muted">先在上方实时窗口选择一条交易。这里只修改单笔账单字段，提交前会二次确认，并记录修改人、修改时间和修改痕迹。</p>
       <form id="transaction-edit-form">
         <input type="hidden" name="transaction_id" id="transaction-edit-id" />
@@ -3615,7 +4839,10 @@ def render_workbench_page() -> str:
       <div class="table-note muted" id="transaction-edit-hint">请先从上方实时窗口选择一条交易。</div>
     </section>
     <section class="subpanel">
-      <h3>组合管理</h3>
+      <div class="subpanel-header">
+        <h3>组合管理</h3>
+        <span class="pill-muted">治理视图</span>
+      </div>
       <div class="table-wrap">
         <table id="combos-table">
           <thead>
@@ -3684,8 +4911,25 @@ function signedMoney(value) {
   return `${number > 0 ? '+' : ''}${money(number)}`;
 }
 
+function signedClass(value) {
+  const number = Number(value || 0);
+  if (number > 0) return 'signed-pos';
+  if (number < 0) return 'signed-neg';
+  return 'signed-neutral';
+}
+
+function moneySpan(value, options = {}) {
+  const number = Number(value || 0);
+  const classes = ['table-num'];
+  if (options.signed) {
+    classes.push(signedClass(number));
+  }
+  const text = options.showPlus ? signedMoney(number) : money(number);
+  return `<span class="${classes.join(' ')}">${text}</span>`;
+}
+
 function diffClass(value) {
-  return Number(value || 0) === 0 ? 'diff-safe' : 'diff-highlight';
+  return signedClass(value);
 }
 
 function buildCardRowMap(rows) {
@@ -3738,10 +4982,10 @@ function renderRoleCardTable(tableId, rows, emptyText, options = {}) {
       return `
       <tr>
         <td>${row.card_type}</td>
-        <td>${money(row.usd_amount)}</td>
-        <td>${money(amount)}</td>
-        ${showProfit ? `<td>${money(profit)}</td>` : ''}
-        ${showDiff ? `<td><span class="${diffClass(diffKnife)}">${signedMoney(diffKnife)}</span></td><td>${signedMoney(profit)}</td>` : ''}
+        <td>${moneySpan(row.usd_amount)}</td>
+        <td>${moneySpan(amount)}</td>
+        ${showProfit ? `<td>${moneySpan(profit, { signed: true })}</td>` : ''}
+        ${showDiff ? `<td><span class="${diffClass(diffKnife)}">${signedMoney(diffKnife)}</span></td><td>${moneySpan(profit, { signed: true, showPlus: true })}</td>` : ''}
       </tr>
     `;
     }).join('')
@@ -3858,9 +5102,9 @@ async function loadWorkbench(periodId) {
     setTransactionEditHint('当前为实时视图：请从上方实时窗口选择一条交易后再修改。');
   }
 
-  document.querySelector('#workbench-profit').textContent = money(summary.profit);
-  document.querySelector('#workbench-customer-amount').textContent = money(summary.customer_card_rmb_amount);
-  document.querySelector('#workbench-vendor-amount').textContent = money(summary.vendor_card_rmb_amount);
+  document.querySelector('#workbench-profit').innerHTML = moneySpan(summary.profit, { signed: true });
+  document.querySelector('#workbench-customer-amount').innerHTML = moneySpan(summary.customer_card_rmb_amount, { signed: true });
+  document.querySelector('#workbench-vendor-amount').innerHTML = moneySpan(summary.vendor_card_rmb_amount, { signed: true });
   document.querySelector('#workbench-groups').textContent = String(summary.group_count || 0);
   const transactions = data.transactions || [];
   const customerTransactionCount = Number(
@@ -3926,20 +5170,20 @@ async function loadWorkbench(periodId) {
   document.querySelector('#workbench-transactions-table tbody').innerHTML = transactions.length
     ? transactions.map((row) => `
       <tr>
-        <td>${row.platform}</td>
-        <td>${row.chat_name}</td>
-        <td>${roleText(row.business_role)}</td>
-        <td>${row.sender_name}</td>
+        <td><span class="table-primary">${row.platform}</span></td>
+        <td><span class="table-primary">${row.chat_name}</span><span class="table-secondary">${roleSourceText(row.role_source)}</span></td>
+        <td><span class="pill-muted">${roleText(row.business_role)}</span></td>
+        <td><span class="table-primary">${row.sender_name}</span></td>
         <td class="mono">${row.message_id || ''}</td>
-        <td>${money(row.amount)}</td>
-        <td>${row.category}</td>
-        <td>${rateText(row.rate)}</td>
-        <td>${money(row.display_rmb_amount ?? row.rmb_value)}</td>
-        <td>${money(row.display_usd_amount)}</td>
-        <td>${row.raw}</td>
-        <td>${row.created_at}</td>
+        <td>${moneySpan(row.amount)}</td>
+        <td><span class="table-primary">${row.category}</span></td>
+        <td><span class="table-num">${rateText(row.rate)}</span></td>
+        <td>${moneySpan(row.display_rmb_amount ?? row.rmb_value)}</td>
+        <td>${moneySpan(row.display_usd_amount)}</td>
+        <td class="quote-note">${row.raw}</td>
+        <td><span class="table-primary">${row.created_at}</span></td>
         <td>${statusChip(row.period_status)}${formatEditTrail(row)}</td>
-        <td><button type="button" data-action="edit-transaction" data-transaction-id="${row.id}">修改</button></td>
+        <td><button type="button" class="action-ghost" data-action="edit-transaction" data-transaction-id="${row.id}">修改</button></td>
       </tr>
     `).join('')
     : '<tr><td colspan="14" class="muted">当前实时窗口暂无交易</td></tr>';
@@ -3971,24 +5215,24 @@ async function loadWorkbench(periodId) {
   document.querySelector('#workbench-groups-table tbody').innerHTML = visibleGroupRows.length
     ? visibleGroupRows.map((row) => `
     <tr>
-      <td>${row.chat_name}</td>
-      <td>${row.business_role || ''}</td>
-      <td>${money(row.opening_balance)}</td>
-      <td>${money(row.income)}</td>
-      <td>${money(row.expense)}</td>
-      <td>${money(row.closing_balance)}</td>
-      <td>${money(row.total_usd_amount)}</td>
-      <td>${row.transaction_count}</td>
+      <td><span class="table-primary">${row.chat_name}</span></td>
+      <td><span class="pill-muted">${row.business_role || ''}</span></td>
+      <td>${moneySpan(row.opening_balance)}</td>
+      <td>${moneySpan(row.income)}</td>
+      <td>${moneySpan(row.expense)}</td>
+      <td>${moneySpan(row.closing_balance)}</td>
+      <td>${moneySpan(row.total_usd_amount)}</td>
+      <td><span class="table-num">${row.transaction_count}</span></td>
     </tr>
   `).join('')
     : '<tr><td colspan="8" class="muted">当前口径下暂无有交易的群快照</td></tr>';
 
   document.querySelector('#workbench-cards-table tbody').innerHTML = (data.card_stats || []).map((row) => `
     <tr>
-      <td>${row.card_type}</td>
-      <td>${roleText(row.business_role)}</td>
-      <td>${money(row.usd_amount)}</td>
-      <td>${money(row.display_rmb_amount ?? row.rmb_amount)}</td>
+      <td><span class="table-primary">${row.card_type}</span></td>
+      <td><span class="pill-muted">${roleText(row.business_role)}</span></td>
+      <td>${moneySpan(row.usd_amount)}</td>
+      <td>${moneySpan(row.display_rmb_amount ?? row.rmb_amount)}</td>
     </tr>
   `).join('');
 }
@@ -4016,6 +5260,8 @@ document.querySelector('#close-period-form').addEventListener('submit', async (e
   event.preventDefault();
   const form = event.currentTarget;
   const payload = Object.fromEntries(new FormData(form).entries());
+  const submitButton = form.querySelector('button[type="submit"]');
+  const submitLabel = submitButton ? submitButton.textContent : '';
   if (!String(payload.closed_by || '').trim()) {
     setWorkbenchStatus('结账人不能为空。', true, 'close-period-status');
     return;
@@ -4025,27 +5271,39 @@ document.querySelector('#close-period-form').addEventListener('submit', async (e
     setWorkbenchStatus('已取消一键结账。', false, 'close-period-status');
     return;
   }
-  const response = await fetch('/api/accounting-periods/settle-all', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
-  const result = await response.json();
-  if (!response.ok) {
-    setWorkbenchStatus(result.error || '一键结账失败', true, 'close-period-status');
-    return;
+  if (submitButton) {
+    submitButton.disabled = true;
+    submitButton.textContent = '结账中...';
   }
-  if (!result.closed) {
-    setWorkbenchStatus(result.message || '当前没有可结账的实时交易', false, 'close-period-status');
-    return;
+  setWorkbenchStatus('一键结账提交中，请勿重复点击。', false, 'close-period-status');
+  try {
+    const response = await fetch('/api/accounting-periods/settle-all', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const result = await response.json();
+    if (!response.ok) {
+      setWorkbenchStatus(result.error || '一键结账失败', true, 'close-period-status');
+      return;
+    }
+    if (!result.closed) {
+      setWorkbenchStatus(result.message || '当前没有可结账的实时交易', false, 'close-period-status');
+      return;
+    }
+    setWorkbenchStatus(
+      `一键结账完成，账期 ID=${result.period_id}，已排队 ${result.queued_action_count} 条群回执。`,
+      false,
+      'close-period-status'
+    );
+    form.reset();
+    await loadWorkbench(result.period_id);
+  } finally {
+    if (submitButton) {
+      submitButton.disabled = false;
+      submitButton.textContent = submitLabel;
+    }
   }
-  setWorkbenchStatus(
-    `一键结账完成，账期 ID=${result.period_id}，已排队 ${result.queued_action_count} 条群回执。`,
-    false,
-    'close-period-status'
-  );
-  form.reset();
-  await loadWorkbench(result.period_id);
 });
 
 document.querySelector('#group-broadcast-form').addEventListener('submit', async (event) => {
@@ -4153,8 +5411,8 @@ loadWorkbench(initialPeriodId);
 loadCombinations();
 """
     return _render_layout(
-        title="账期工作台",
-        subtitle="工作台承接关账、对账和治理动作；先看账期摘要，再做结构化明细回查。",
+        title="Workbench Terminal",
+        subtitle="工作面承接结账、广播、实时回查和治理动作；先定账期，再下钻到实时带和改单台。",
         active_path="/workbench",
         body=body,
         script=script,
@@ -4462,9 +5720,10 @@ loadRoleMapping();
 def render_reconciliation_page() -> str:
     body = """
 <section class="panel stack">
-  <div class="toolbar">
+  <div class="panel-heading">
     <div>
-      <h2>财务对账中心</h2>
+      <div class="section-kicker">Finance Terminal</div>
+      <h2>财务对账工作面</h2>
       <div class="muted" id="reconciliation-range">按当前口径加载逐笔台账</div>
     </div>
     <div class="toolbar-actions">
@@ -4472,33 +5731,50 @@ def render_reconciliation_page() -> str:
       <a class="inline-link" id="reconciliation-export-summary-link" href="/api/reconciliation/export?scope=realtime&export_mode=summary">导出汇总 CSV</a>
     </div>
   </div>
-  <div class="cards">
-    <article class="card">
-      <div class="label">未对账笔数</div>
-      <div class="value" id="reconciliation-unreconciled">0</div>
-    </article>
-    <article class="card">
-      <div class="label">汇率公式异常</div>
-      <div class="value" id="reconciliation-rate-error">0</div>
-    </article>
-    <article class="card">
-      <div class="label">缺失汇率</div>
-      <div class="value" id="reconciliation-missing-rate">0</div>
-    </article>
-    <article class="card">
-      <div class="label">已修改未复核</div>
-      <div class="value" id="reconciliation-edited">0</div>
-    </article>
+  <div class="recon-hero-grid">
+    <div class="cards">
+      <article class="card stat-card primary">
+        <div class="label">未对账笔数</div>
+        <div class="value" id="reconciliation-unreconciled">0</div>
+        <span class="table-secondary">当前口径下仍需人工确认的逐笔记录。</span>
+      </article>
+      <article class="card stat-card">
+        <div class="label">汇率公式异常</div>
+        <div class="value" id="reconciliation-rate-error">0</div>
+        <span class="table-secondary">应算人民币与台账结果存在公式偏差。</span>
+      </article>
+      <article class="card stat-card">
+        <div class="label">缺失汇率</div>
+        <div class="value" id="reconciliation-missing-rate">0</div>
+        <span class="table-secondary">台账存在金额，但汇率链路没有补齐。</span>
+      </article>
+      <article class="card stat-card">
+        <div class="label">已修改未复核</div>
+        <div class="value" id="reconciliation-edited">0</div>
+        <span class="table-secondary">已经被人工改写，但还没二次确认。</span>
+      </article>
+    </div>
+    <aside class="terminal-note">
+      <strong>Desk Logic</strong>
+      <p>这个工作面不负责解释业务，只负责把逐笔台账、财务补录和追踪链路放在一个屏里，方便你快速定位差额来自哪里。</p>
+      <ul>
+        <li>先定口径，再下钻组合、组号和具体群。</li>
+        <li>调账项进入台账后会立刻影响导出。</li>
+        <li>追踪链路只读，用来验证消息、解析和修改痕迹。</li>
+      </ul>
+    </aside>
   </div>
 </section>
-<section class="panel stack">
-  <div class="toolbar">
+<div class="ops-grid">
+<section class="panel stack panel-config">
+  <div class="panel-heading">
     <div>
-      <h2>筛选口径</h2>
-      <div class="muted">支持实时、指定账期、日期区间三种口径；可先按组合或组号汇总，再下钻到具体群；导出会沿用当前筛选。</div>
+      <div class="section-kicker">Filter Desk</div>
+      <h2>筛选口径台</h2>
+      <div class="muted">支持实时窗口、指定账期、日期区间三种口径；可先按组合或组号汇总，再下钻到具体群，导出默认沿用当前筛选。</div>
     </div>
   </div>
-  <form id="reconciliation-filter-form">
+  <form id="reconciliation-filter-form" class="recon-filter-form">
     <select name="scope" id="reconciliation-scope">
       <option value="realtime">实时窗口</option>
       <option value="period">指定账期</option>
@@ -4542,14 +5818,16 @@ def render_reconciliation_page() -> str:
   </form>
   <div class="muted" id="reconciliation-filter-status">默认先看最近一次结账之后的实时窗口，可按组合或组号汇总。</div>
 </section>
-<section class="panel stack">
-  <div class="toolbar">
+<section class="panel stack panel-assist">
+  <div class="panel-heading">
     <div>
-      <h2>逐笔财务调账</h2>
+      <div class="section-kicker">Adjustment Desk</div>
+      <h2>逐笔调账台</h2>
       <div class="muted">用于补录 RMB 加减、额外费用或独立调账项；保存后会立刻进入逐笔台账和导出。</div>
     </div>
+    <span class="recon-alert">保存后立即进入财务口径</span>
   </div>
-  <form id="reconciliation-adjustment-form">
+  <form id="reconciliation-adjustment-form" class="recon-adjust-form">
     <input type="hidden" name="linked_transaction_id" id="reconciliation-linked-transaction-id" />
     <input type="hidden" name="period_id" id="reconciliation-adjustment-period-id" />
     <select name="group_key" id="reconciliation-adjustment-group" required>
@@ -4566,26 +5844,29 @@ def render_reconciliation_page() -> str:
   </form>
   <div class="muted" id="reconciliation-adjustment-status">可从下方逐笔台账点击“引用”快速带入一行，再补充说明后保存。</div>
 </section>
-<section class="panel stack">
-  <div class="toolbar">
+</div>
+<section class="panel stack ledger-panel recon-ledger-panel">
+  <div class="panel-heading">
     <div>
-      <h2>逐笔台账</h2>
+      <div class="section-kicker">Ledger Tape</div>
+      <h2>逐笔台账带</h2>
       <div class="muted" id="reconciliation-ledger-summary">加载中</div>
     </div>
   </div>
   <div class="table-wrap">
     <table id="reconciliation-ledger-table">
       <thead>
-        <tr><th>时间</th><th>来源</th><th>群</th><th>角色</th><th>卡种</th><th>刀数</th><th>汇率</th><th>应算人民币</th><th>人民币</th><th>异常</th><th>备注 / 修改痕迹</th><th>操作</th></tr>
+        <tr><th>时间</th><th>来源</th><th>群</th><th>角色</th><th>卡种</th><th>刀数</th><th>汇率</th><th>应算人民币</th><th>人民币</th><th>异常</th><th>备注 / 修改痕迹</th><th>动作</th></tr>
       </thead>
       <tbody></tbody>
     </table>
   </div>
 </section>
-<section class="panel stack" id="reconciliation-trace-panel">
-  <div class="toolbar">
+<section class="panel stack panel-risk trace-terminal" id="reconciliation-trace-panel">
+  <div class="panel-heading">
     <div>
-      <h2>差额追踪</h2>
+      <div class="section-kicker">Trace Chain</div>
+      <h2>差额追踪链路</h2>
       <div class="muted" id="reconciliation-trace-status">点击上方逐笔台账里的“追踪”，直接查看这笔交易从原始消息到记账结果的只读链路。</div>
     </div>
   </div>
@@ -4880,7 +6161,7 @@ function renderDifferenceTrace(payload) {
 
 async function loadDifferenceTrace(transactionId) {
   document.querySelector('#reconciliation-trace-status').className = 'muted';
-  document.querySelector('#reconciliation-trace-status').textContent = `正在加载交易 ${transactionId} 的差额追踪...`;
+  document.querySelector('#reconciliation-trace-status').textContent = `正在加载交易 ${transactionId} 的追踪链路...`;
   const response = await fetch(`/api/reconciliation/difference-trace?transaction_id=${transactionId}`);
   const payload = await response.json();
   if (!response.ok) {
@@ -4986,21 +6267,21 @@ function renderLedgerRows(rows) {
   tbody.innerHTML = rows.length
     ? rows.map((row) => `
       <tr>
-        <td>${row.created_at || ''}</td>
-        <td>${row.row_type === 'finance_adjustment' ? '财务调账' : '原始交易'}</td>
-        <td>${row.chat_name || row.group_key}</td>
-        <td>${roleText(row.business_role)}</td>
-        <td>${row.card_type}</td>
-        <td>${money(row.usd_amount)}</td>
-        <td>${row.rate === null || row.rate === undefined ? '—' : compactNumber(row.rate)}</td>
-        <td>${row.expected_rmb_value === null || row.expected_rmb_value === undefined ? '—' : money(row.expected_rmb_value)}</td>
-        <td>${money(row.rmb_value)}</td>
-        <td>${issueCell(row)}</td>
-        <td>${noteCell(row)}</td>
+        <td><span class="table-primary">${row.created_at || '—'}</span><span class="table-secondary">${row.period_id || '实时窗口'}</span></td>
+        <td><span class="table-primary">${row.row_type === 'finance_adjustment' ? '财务调账' : '原始交易'}</span><span class="table-secondary">${row.source_table || 'transactions'}</span></td>
+        <td><span class="table-primary">${row.chat_name || row.group_key}</span><span class="table-secondary">${row.group_num === null || row.group_num === undefined ? '未归组' : `组 ${row.group_num}`}</span></td>
+        <td><span class="pill-muted">${roleText(row.business_role)}</span></td>
+        <td><span class="table-primary">${row.card_type}</span><span class="table-secondary">${row.row_type === 'finance_adjustment' ? '人工补录' : '自动入账'}</span></td>
+        <td><span class="table-num">${money(row.usd_amount)}</span></td>
+        <td><span class="table-num">${row.rate === null || row.rate === undefined ? '—' : compactNumber(row.rate)}</span></td>
+        <td><span class="table-num">${row.expected_rmb_value === null || row.expected_rmb_value === undefined ? '—' : money(row.expected_rmb_value)}</span></td>
+        <td><span class="table-num">${money(row.rmb_value)}</span></td>
+        <td class="quote-note">${issueCell(row)}</td>
+        <td class="quote-note">${noteCell(row)}</td>
         <td>
-          <div class="action-stack">
-            <button type="button" data-action="quote-row" data-row-id="${row.row_id}" data-row-type="${row.row_type}">引用</button>
-            ${row.row_type === 'transaction' ? `<button type="button" data-action="trace-row" data-row-id="${row.row_id}">追踪</button>` : ''}
+          <div class="action-row">
+            <button type="button" class="action-ghost" data-action="quote-row" data-row-id="${row.row_id}" data-row-type="${row.row_type}">引用</button>
+            ${row.row_type === 'transaction' ? `<button type="button" class="action-ghost" data-action="trace-row" data-row-id="${row.row_id}">追踪</button>` : ''}
           </div>
         </td>
       </tr>
@@ -5055,7 +6336,7 @@ async function loadLedger(pushUrl = false) {
   document.querySelector('#reconciliation-edited').textContent = String((data.summary || {}).edited_unreviewed_count || 0);
   document.querySelector('#reconciliation-range').textContent = `当前口径：${scopeRangeText(data)} / ${filterTrailText(data)}`;
   document.querySelector('#reconciliation-ledger-summary').textContent =
-    `当前 ${latestRows.length} 行，财务口径 ${Number((data.summary || {}).financial_row_count || 0)} 行。导出会沿用 ${filterTrailText(data)}。未对账=${Number((data.summary || {}).unreconciled_count || 0)}，汇率公式异常=${Number((data.summary || {}).rate_formula_error_count || 0)}。`;
+    `当前 ${latestRows.length} 行，财务口径 ${Number((data.summary || {}).financial_row_count || 0)} 行。导出沿用 ${filterTrailText(data)}。未对账=${Number((data.summary || {}).unreconciled_count || 0)}，汇率公式异常=${Number((data.summary || {}).rate_formula_error_count || 0)}。`;
   document.querySelector('#reconciliation-adjustment-period-id').value =
     scope === 'period' && data.selected_period_id ? String(data.selected_period_id) : '';
   renderLedgerRows(latestRows);
@@ -5083,7 +6364,7 @@ async function loadLedger(pushUrl = false) {
       await loadDifferenceTrace(transactionId);
     });
   });
-  setLedgerStatus(`已加载 ${scopeText(scope)} / ${filterTrailText(data)} 下的逐笔台账。`);
+  setLedgerStatus(`已加载 ${scopeText(scope)} / ${filterTrailText(data)} 下的逐笔台账带。`);
   initialHydration = false;
 }
 
@@ -5170,8 +6451,8 @@ renderTracePlaceholder();
 loadLedger(false);
 """
     return _render_layout(
-        title="对账中心",
-        subtitle="把逐笔交易、财务补录和异常标记收敛到一个页面，先查出问题，再导出台账做 A/B 核对。",
+        title="Finance Terminal",
+        subtitle="把逐笔交易、财务补录和追踪链路压到一个工作面，先定口径，再做财务核对。",
         active_path="/reconciliation",
         body=body,
         script=script,
@@ -5382,13 +6663,13 @@ loadHistoryFromForm();
 def _render_layout(*, title: str, subtitle: str, active_path: str, body: str, script: str) -> str:
     nav = """
 <nav>
-  <a href="/" class="%s">首页驾驶舱</a>
-  <a href="/workbench" class="%s">账期工作台</a>
-  <a href="/quotes" class="%s">报价墙</a>
-  <a href="/quote-dictionary" class="%s">报价字典</a>
-  <a href="/reconciliation" class="%s">对账中心</a>
-  <a href="/role-mapping" class="%s">角色映射</a>
-  <a href="/history" class="%s">跑账历史</a>
+  <a href="/" class="%s">总账主屏</a>
+  <a href="/workbench" class="%s">账期工作面</a>
+  <a href="/quotes" class="%s">报价主屏</a>
+  <a href="/quote-dictionary" class="%s">标准映射台</a>
+  <a href="/reconciliation" class="%s">对账工作面</a>
+  <a href="/role-mapping" class="%s">映射治理台</a>
+  <a href="/history" class="%s">历史回放台</a>
 </nav>
 """ % (
         "active" if active_path == "/" else "",
@@ -5403,6 +6684,8 @@ def _render_layout(*, title: str, subtitle: str, active_path: str, body: str, sc
         "<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\">"
         f"<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
         f"<title>{title}</title>"
-        f"{_STYLE}</head><body><header><div class=\"hero\"><div><h1>{title}</h1>"
-        f"<p>{subtitle}</p></div></div>{nav}</header><main>{body}</main><script>{script}</script></body></html>"
+        f"{_STYLE}</head><body><div class=\"app-shell\"><header><div class=\"hero\"><div class=\"hero-copy\">"
+        f"<span class=\"hero-kicker\">SeeSee Operating Terminal</span><h1>{title}</h1>"
+        f"<p>{subtitle}</p></div><div class=\"nav-scroll\">{nav}</div></div></header>"
+        f"<main>{body}</main></div><script>{script}</script></body></html>"
     )

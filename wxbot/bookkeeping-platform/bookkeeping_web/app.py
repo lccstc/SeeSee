@@ -7,6 +7,7 @@ import os
 import uuid
 from datetime import date, datetime
 from pathlib import Path
+from threading import RLock
 from urllib.parse import parse_qs
 
 from bookkeeping_core.analytics import AnalyticsService
@@ -47,26 +48,36 @@ def create_app(
     _ensure_runtime_database_is_ready(db_file)
     runtime_db = None
     runtime = None
+    runtime_lock = RLock()
     runtime_export_dir = _runtime_export_dir(db_file)
     master_users = _normalize_runtime_master_users(runtime_master_users)
 
     def get_runtime():
         nonlocal runtime_db, runtime
-        if runtime is None:
-            runtime_db = BookkeepingDB(db_file)
-            runtime = UnifiedBookkeepingRuntime(
-                db=runtime_db,
-                master_users=master_users,
-                export_dir=runtime_export_dir,
-            )
-        return runtime
+        with runtime_lock:
+            if runtime is None:
+                runtime_db = BookkeepingDB(db_file)
+                runtime = UnifiedBookkeepingRuntime(
+                    db=runtime_db,
+                    master_users=master_users,
+                    export_dir=runtime_export_dir,
+                )
+            return runtime
 
     def close_runtime() -> None:
         nonlocal runtime_db, runtime
-        if runtime_db is not None:
-            runtime_db.close()
-        runtime_db = None
-        runtime = None
+        with runtime_lock:
+            if runtime_db is not None:
+                runtime_db.close()
+            runtime_db = None
+            runtime = None
+
+    def _with_runtime(handler, start_response, environ=None):
+        with runtime_lock:
+            runtime_instance = get_runtime()
+            if environ is None:
+                return handler(runtime_instance, start_response)
+            return handler(runtime_instance, start_response, environ)
 
     def app(environ, start_response):
         method = environ.get("REQUEST_METHOD", "GET").upper()
@@ -172,11 +183,11 @@ def create_app(
                 db_file, start_response, _handle_accounting_period_close, environ
             )
         if path == "/api/accounting-periods/settle-all" and method == "POST":
-            return _handle_accounting_period_settle_all(
-                get_runtime(), start_response, environ
+            return _with_runtime(
+                _handle_accounting_period_settle_all, start_response, environ
             )
         if path == "/api/group-broadcasts" and method == "POST":
-            return _handle_group_broadcast(get_runtime(), start_response, environ)
+            return _with_runtime(_handle_group_broadcast, start_response, environ)
         if path == "/api/adjustments" and method == "POST":
             return _with_db(db_file, start_response, _handle_adjustments, environ)
         if path == "/api/transactions/update" and method == "POST":
@@ -190,7 +201,7 @@ def create_app(
         if path == "/api/core/messages" and method == "POST":
             if not _is_authorized(environ, core_token):
                 return _respond_json(start_response, 401, {"error": "Unauthorized"})
-            return _handle_core_messages(get_runtime(), start_response, environ)
+            return _with_runtime(_handle_core_messages, start_response, environ)
         if path == "/api/incoming-messages" and method == "GET":
             if not _is_authorized(environ, core_token):
                 return _respond_json(start_response, 401, {"error": "Unauthorized"})
@@ -207,11 +218,11 @@ def create_app(
         if path == "/api/core/actions" and method == "POST":
             if not _is_authorized(environ, core_token):
                 return _respond_json(start_response, 401, {"error": "Unauthorized"})
-            return _handle_core_actions(get_runtime(), start_response)
+            return _with_runtime(_handle_core_actions, start_response)
         if path == "/api/core/actions/ack" and method == "POST":
             if not _is_authorized(environ, core_token):
                 return _respond_json(start_response, 401, {"error": "Unauthorized"})
-            return _handle_core_actions_ack(get_runtime(), start_response, environ)
+            return _with_runtime(_handle_core_actions_ack, start_response, environ)
         if path == "/api/parse-results" and method == "GET":
             if not _is_authorized(environ, core_token):
                 return _respond_json(start_response, 401, {"error": "Unauthorized"})
