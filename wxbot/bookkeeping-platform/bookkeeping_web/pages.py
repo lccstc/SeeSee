@@ -1176,10 +1176,6 @@ _STYLE = """
     gap: 12px;
     flex: 0 0 auto;
     padding-bottom: 2px;
-    background: linear-gradient(180deg, rgba(18, 24, 31, 0.98), rgba(18, 24, 31, 0.92));
-    position: sticky;
-    top: 0;
-    z-index: 2;
   }
   .quote-harvest-lines {
     display: flex;
