@@ -1,9 +1,62 @@
 ﻿from __future__ import annotations
 
+import json
+import ssl
+import urllib.request
+import urllib.error
 from datetime import datetime, timedelta
 from pathlib import Path
 
 from .periods import AccountingPeriodService
+
+BINANCE_P2P_URL = "https://p2p.binance.com/bapi/c2c/v2/friendly/c2c/adv/search"
+
+
+def _fetch_binance_p2p(trade_type: str, rows: int = 10) -> list[dict]:
+    """Fetch Binance P2P ads. Returns list of {price, nick, min, max}."""
+    payload = json.dumps({
+        "asset": "USDT",
+        "fiat": "CNY",
+        "tradeType": trade_type,
+        "page": 1,
+        "rows": rows,
+    }).encode()
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    req = urllib.request.Request(
+        BINANCE_P2P_URL,
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10, context=ctx) as resp:
+            data = json.loads(resp.read())
+    except Exception as e:
+        import traceback
+        print(f"[USDT] Binance P2P API error: {type(e).__name__}: {e}")
+        traceback.print_exc()
+        return []
+    ads = []
+    for item in (data.get("data") or []):
+        adv = item.get("adv", {})
+        price_str = adv.get("price", "")
+        advertiser = item.get("advertiser", {})
+        try:
+            price = float(price_str)
+        except (ValueError, TypeError):
+            continue
+        tradable_amount = adv.get("tradableQuantity", "")
+        min_limit = adv.get("minSingleTransAmount", "")
+        max_limit = adv.get("maxSingleTransAmount", "")
+        ads.append({
+            "price": price,
+            "nick": advertiser.get("nickName", "?"),
+            "min": min_limit,
+            "max": max_limit,
+        })
+    return ads
 
 
 class _NullActionCollector:
@@ -62,6 +115,7 @@ class CommandHandler:
             "whoami": lambda: self.handle_whoami(chat_id, sender_id, sender_name, observed_id),
             "bind": lambda: self.handle_bind(platform, chat_id, sender_name, observed_id, sender_id, args, command_name="bind"),
             "bindid": lambda: self.handle_bind(platform, chat_id, sender_name, observed_id, sender_id, args, command_name="bindid"),
+            "usdt": lambda: self.handle_usdt(chat_id),
         }
         action = dispatch.get(name)
         if action:
@@ -498,6 +552,39 @@ class CommandHandler:
                 f"canonical_id={canonical_id}"
             ),
         )
+
+    def handle_usdt(self, chat_id: str) -> None:
+        """Fetch and display Binance P2P USDT/CNY top 10 BUY and SELL prices."""
+        buy_ads = _fetch_binance_p2p("BUY", rows=10)
+        sell_ads = _fetch_binance_p2p("SELL", rows=10)
+
+        if not buy_ads and not sell_ads:
+            self.action_collector.send_text(chat_id, "❌ Binance P2P API 请求失败，请稍后重试")
+            return
+
+        lines = ["💱 USDT/CNY Binance P2P"]
+
+        if buy_ads:
+            lines.append("")
+            lines.append("🟢 买入 BUY（你要买USDT）:")
+            for i, ad in enumerate(buy_ads, 1):
+                lines.append(f"  {i}. ¥{ad['price']:.2f}  ({ad['nick']})")
+
+        if sell_ads:
+            lines.append("")
+            lines.append("🔴 卖出 SELL（你要卖USDT）:")
+            for i, ad in enumerate(sell_ads, 1):
+                lines.append(f"  {i}. ¥{ad['price']:.2f}  ({ad['nick']})")
+
+        # Show spread
+        if buy_ads and sell_ads:
+            best_buy = buy_ads[0]["price"]    # 买入价（你买USDT付的CNY）
+            best_sell = sell_ads[0]["price"]   # 卖出价（你卖USDT收的CNY）
+            spread = abs(best_sell - best_buy)
+            lines.append("")
+            lines.append(f"📉 价差: ¥{spread:.2f}  买入¥{best_buy:.2f} / 卖出¥{best_sell:.2f}")
+
+        self.action_collector.send_text(chat_id, "\n".join(lines))
 
     @staticmethod
     def _format_period_close_message(summary: dict[str, float | int]) -> str:

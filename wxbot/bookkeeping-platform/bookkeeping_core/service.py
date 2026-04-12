@@ -99,6 +99,7 @@ class BookkeepingService:
                 "bind",
                 "bindid",
                 "whoami",
+                "usdt",
             } or self.db.is_group_active(group_key):
                 self.commands.handle_command(
                     platform=msg.platform,
