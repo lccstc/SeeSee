@@ -991,41 +991,41 @@ _STYLE = """
     width: min(980px, 100%);
   }
   .quote-modal-wide {
-    max-width: 1280px;
-    width: min(1280px, 100%);
-    max-height: 92vh;
+    max-width: 1440px;
+    width: min(1440px, 96vw);
+    max-height: 94vh;
   }
   .quote-modal h2 {
-    font-size: 18px;
+    font-size: 17px;
     letter-spacing: 0.04em;
   }
   .quote-modal h3 {
-    font-size: 14px;
+    font-size: 13px;
   }
   .quote-modal .panel {
-    padding: 16px;
-    border-radius: 18px;
+    padding: 14px;
+    border-radius: 16px;
   }
   .quote-modal .muted {
-    font-size: 12px;
-    line-height: 1.5;
+    font-size: 11px;
+    line-height: 1.45;
   }
   .quote-modal input,
   .quote-modal textarea,
   .quote-modal select {
-    padding: 9px 12px;
-    border-radius: 12px;
-    font-size: 13px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    font-size: 12px;
   }
   .quote-modal textarea {
-    min-height: 180px;
+    min-height: 160px;
   }
   .quote-modal button {
     width: auto;
     flex: 0 0 auto;
-    padding: 9px 12px;
-    border-radius: 12px;
-    font-size: 13px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    font-size: 12px;
     box-shadow: none;
   }
   .quote-modal-header {
@@ -1138,10 +1138,10 @@ _STYLE = """
   }
   .quote-harvest-grid {
     display: grid;
-    grid-template-columns: minmax(320px, 0.92fr) minmax(420px, 1.08fr);
-    gap: 12px;
+    grid-template-columns: minmax(300px, 0.86fr) minmax(520px, 1.14fr);
+    gap: 10px;
     align-items: stretch;
-    height: min(68vh, 760px);
+    height: min(72vh, 820px);
     min-height: 0;
   }
   .quote-harvest-workflow {
@@ -1218,10 +1218,10 @@ _STYLE = """
   }
   .quote-harvest-workbench {
     display: grid;
-    grid-template-columns: minmax(320px, 0.84fr) minmax(600px, 1.16fr);
-    gap: 10px;
+    grid-template-columns: minmax(300px, 0.8fr) minmax(680px, 1.2fr);
+    gap: 8px;
     align-items: stretch;
-    height: min(74vh, 860px);
+    height: min(78vh, 940px);
     min-height: 0;
     overflow: hidden;
   }
@@ -1274,30 +1274,44 @@ _STYLE = """
   }
   .quote-harvest-step-compact {
     display: grid;
-    gap: 8px;
-    padding: 12px;
-    border-radius: 14px;
+    gap: 6px;
+    padding: 10px;
+    border-radius: 12px;
     border: 1px solid rgba(243, 165, 47, 0.1);
     background: rgba(8, 12, 16, 0.84);
     flex: 0 0 auto;
   }
   .quote-harvest-edit-pane {
-    display: grid;
-    gap: 10px;
-    align-content: start;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
   }
   .quote-harvest-fixed-section {
+    flex: 0 0 auto;
     min-height: 0;
   }
   .quote-harvest-rows-section {
-    display: grid;
-    gap: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    flex: 1 1 auto;
     min-height: 0;
+    overflow: hidden;
   }
   .quote-harvest-rows-scroll {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 8px;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-right: 4px;
+    padding-bottom: 6px;
+    overscroll-behavior: contain;
   }
   .quote-harvest-lines > div {
     padding: 6px 8px;

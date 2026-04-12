@@ -203,6 +203,7 @@ class WebAppTests(PostgresTestCase):
         self.assertIn("quote-harvest-side-header", body)
         self.assertIn("quote-harvest-workspace-scroll", body)
         self.assertIn("quote-harvest-rows-scroll", body)
+        self.assertIn("quote-modal-wide", body)
         self.assertIn("编辑模板", body)
         self.assertIn("短回复上下文", body)
         self.assertIn("异常区", body)
