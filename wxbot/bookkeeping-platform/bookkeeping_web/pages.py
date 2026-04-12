@@ -1279,6 +1279,38 @@ _STYLE = """
     border-radius: 14px;
     border: 1px solid rgba(243, 165, 47, 0.1);
     background: rgba(8, 12, 16, 0.84);
+    flex: 0 0 auto;
+  }
+  .quote-harvest-edit-pane {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .quote-harvest-fixed-section {
+    flex: 0 0 auto;
+  }
+  .quote-harvest-rows-section {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .quote-harvest-rows-scroll {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-right: 4px;
+    padding-bottom: 6px;
+    overscroll-behavior: contain;
   }
   .quote-harvest-lines > div {
     padding: 6px 8px;
@@ -3791,7 +3823,7 @@ function renderQuoteSectionHarvestPane() {
     ? (preview.is_latest_for_group ? '当前是该群最新消息：保存这一段时只推进本次选区；只有整条整理完成后才会按最新原文统一回放上墙。' : '当前不是该群最新消息：保存这一段后仅追加模板。')
     : '同一条异常可连续分段整理；每次只保存当前选中的 section。';
   const editPaneHtml = `
-    <div class="quote-harvest-workspace-scroll">
+    <div class="quote-harvest-workspace-scroll quote-harvest-edit-pane">
       <div class="quote-harvest-step-compact">
         <strong>第 1 步：先选这一段</strong>
         <div class="muted" style="font-size:12px;">选区里识别到 ${quoteItems.length} 条报价候选，${restrictionItems.length} 条说明行。</div>
@@ -3800,7 +3832,7 @@ function renderQuoteSectionHarvestPane() {
           <button type="button" id="quote-harvest-add-row">手动新增一行</button>
         </div>
       </div>
-      <section class="panel stack quote-harvest-side">
+      <section class="panel stack quote-harvest-side quote-harvest-fixed-section">
         <strong>第 2 步：补这一段的固定信息</strong>
         <div class="quote-filter-grid" style="grid-template-columns:repeat(2,minmax(0,1fr));">
           <input data-harvest-default="section_label" value="${escapeHtml(harvest?.defaults?.section_label || '')}" placeholder="段名，如 UK快卡" />
@@ -3810,10 +3842,10 @@ function renderQuoteSectionHarvestPane() {
         </div>
         <div class="muted" style="font-size:12px;">这里只填这一整段都一样的东西。例子：UK快卡 这种整段同一币种时可以填 GBP；欧盟国家 这种每行国家都不同，就把“国家 / 币种”留空，不要忽略。卡种一般要填，形态如果整段都一样就填。</div>
       </section>
-      <section class="panel stack quote-harvest-side">
+      <section class="panel stack quote-harvest-side quote-harvest-rows-section">
         <strong>第 3 步：确认报价行</strong>
         <div class="muted" style="font-size:12px;">先用“按选区自动生成报价行”，再把每行的面额和价格补上。国家覆盖、形态覆盖只有少数情况才需要填。</div>
-        <div style="display:flex;flex-direction:column;gap:10px;">${rowsHtml}</div>
+        <div class="quote-harvest-rows-scroll">${rowsHtml}</div>
       </section>
     </div>
   `;
