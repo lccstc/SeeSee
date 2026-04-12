@@ -1282,35 +1282,22 @@ _STYLE = """
     flex: 0 0 auto;
   }
   .quote-harvest-edit-pane {
-    display: flex;
-    flex-direction: column;
+    display: grid;
     gap: 10px;
-    flex: 1 1 auto;
-    min-height: 0;
-    overflow: hidden;
+    align-content: start;
   }
   .quote-harvest-fixed-section {
-    flex: 0 0 auto;
+    min-height: 0;
   }
   .quote-harvest-rows-section {
-    display: flex;
-    flex-direction: column;
+    display: grid;
     gap: 10px;
-    flex: 1 1 auto;
     min-height: 0;
-    overflow: hidden;
   }
   .quote-harvest-rows-scroll {
     display: flex;
     flex-direction: column;
     gap: 10px;
-    flex: 1 1 auto;
-    min-height: 0;
-    overflow-y: auto;
-    overflow-x: hidden;
-    padding-right: 4px;
-    padding-bottom: 6px;
-    overscroll-behavior: contain;
   }
   .quote-harvest-lines > div {
     padding: 6px 8px;
