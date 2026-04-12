@@ -1161,6 +1161,25 @@ _STYLE = """
     flex-direction: column;
     gap: 12px;
     height: 100%;
+    overflow: hidden;
+  }
+  .quote-harvest-side-shell {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .quote-harvest-side-header {
+    display: grid;
+    gap: 12px;
+    flex: 0 0 auto;
+    padding-bottom: 2px;
+    background: linear-gradient(180deg, rgba(18, 24, 31, 0.98), rgba(18, 24, 31, 0.92));
+    position: sticky;
+    top: 0;
+    z-index: 2;
   }
   .quote-harvest-lines {
     display: flex;
@@ -1171,6 +1190,8 @@ _STYLE = """
     overflow-y: auto;
     overflow-x: hidden;
     padding-right: 4px;
+    padding-bottom: 8px;
+    overscroll-behavior: contain;
   }
   .quote-harvest-stack {
     display: flex;
@@ -1206,6 +1227,7 @@ _STYLE = """
     align-items: stretch;
     height: min(74vh, 860px);
     min-height: 0;
+    overflow: hidden;
   }
   .quote-harvest-workspace {
     display: flex;
@@ -1213,6 +1235,7 @@ _STYLE = """
     gap: 10px;
     height: 100%;
     min-height: 0;
+    overflow: hidden;
   }
   .quote-harvest-workspace-scroll {
     display: flex;
@@ -1223,6 +1246,8 @@ _STYLE = """
     overflow-y: auto;
     overflow-x: hidden;
     padding-right: 4px;
+    padding-bottom: 10px;
+    overscroll-behavior: contain;
   }
   .quote-harvest-pane-tabs {
     display: flex;
@@ -3830,17 +3855,21 @@ function renderQuoteSectionHarvestPane() {
   return `
     <div class="quote-harvest-workbench">
       <section class="panel quote-harvest-side primary" style="align-self:start;">
-        <strong>原文区</strong>
-        <div style="border:1px solid rgba(243,165,47,0.1);border-radius:12px;padding:10px;background:rgba(8,12,16,0.84);">
-          <div style="font-size:12px;color:var(--muted);margin-bottom:4px;">当前选取</div>
-          <div style="font-size:14px;font-weight:600;">${selectionSummary}</div>
+        <div class="quote-harvest-side-shell">
+          <div class="quote-harvest-side-header">
+            <strong>原文区</strong>
+            <div style="border:1px solid rgba(243,165,47,0.1);border-radius:12px;padding:10px;background:rgba(8,12,16,0.84);">
+              <div style="font-size:12px;color:var(--muted);margin-bottom:4px;">当前选取</div>
+              <div style="font-size:14px;font-weight:600;">${selectionSummary}</div>
+            </div>
+            <div class="muted" style="font-size:12px;">先在左边点出这一段。第一次点击定开始行，第二次点击定结束行；如果要重选，直接再点新的开始行。</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <button type="button" id="quote-harvest-clear-section">清空 section</button>
+              <button type="button" id="quote-harvest-clear-ignore">清空忽略</button>
+            </div>
+          </div>
+          <div id="quote-harvest-lines" class="quote-harvest-lines">${linesHtml}</div>
         </div>
-        <div class="muted" style="font-size:12px;">先在左边点出这一段。第一次点击定开始行，第二次点击定结束行；如果要重选，直接再点新的开始行。</div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;">
-          <button type="button" id="quote-harvest-clear-section">清空 section</button>
-          <button type="button" id="quote-harvest-clear-ignore">清空忽略</button>
-        </div>
-        <div id="quote-harvest-lines" class="quote-harvest-lines">${linesHtml}</div>
       </section>
       <section class="panel quote-harvest-workspace">
         <div class="panel-heading" style="margin-bottom:0;">
