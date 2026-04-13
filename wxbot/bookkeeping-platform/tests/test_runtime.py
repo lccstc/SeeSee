@@ -1267,6 +1267,23 @@ class UnifiedRuntimeTests(PostgresTestCase):
         self.assertEqual(field_sources["line_evidence"]["source_line_index"], 0)
         self.assertEqual(field_sources["price"]["raw_fragment"], "5.10")
 
+        validation_run = self.db.get_latest_quote_validation_run(
+            quote_document_id=int(document["id"])
+        )
+        self.assertIsNotNone(validation_run)
+        assert validation_run is not None
+        self.assertEqual(str(validation_run["run_kind"]), "runtime")
+        self.assertEqual(str(validation_run["message_decision"]), "publishable_rows_available")
+        self.assertEqual(int(validation_run["candidate_row_count"]), 1)
+        self.assertEqual(int(validation_run["publishable_row_count"]), 1)
+        self.assertEqual(int(validation_run["rejected_row_count"]), 0)
+        validation_rows = self.db.list_quote_validation_row_results(
+            validation_run_id=int(validation_run["id"])
+        )
+        self.assertEqual(len(validation_rows), 1)
+        self.assertEqual(str(validation_rows[0]["schema_status"]), "passed")
+        self.assertEqual(str(validation_rows[0]["final_decision"]), "publishable")
+
         quote_price_row_count = self._count_rows(
             "quote_price_rows",
             "WHERE message_id = ?",
@@ -1330,6 +1347,26 @@ class UnifiedRuntimeTests(PostgresTestCase):
             quote_document_id=int(document["id"])
         )
         self.assertEqual(candidate_rows, [])
+
+        validation_run = self.db.get_latest_quote_validation_run(
+            quote_document_id=int(document["id"])
+        )
+        self.assertIsNotNone(validation_run)
+        assert validation_run is not None
+        self.assertEqual(str(validation_run["message_decision"]), "no_publish")
+        self.assertEqual(int(validation_run["candidate_row_count"]), 0)
+        self.assertEqual(int(validation_run["publishable_row_count"]), 0)
+        self.assertEqual(
+            self.db.list_quote_validation_row_results(
+                validation_run_id=int(validation_run["id"])
+            ),
+            [],
+        )
+        validation_summary = self._decode_json(validation_run["summary_json"])
+        self.assertEqual(
+            validation_summary["message_reasons"][0]["code"],
+            "message_no_candidate_rows",
+        )
 
         quote_price_row_count = self._count_rows(
             "quote_price_rows",

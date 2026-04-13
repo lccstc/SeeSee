@@ -1085,6 +1085,7 @@ class WebAppTests(PostgresTestCase):
             self.assertEqual(saved["remaining_lines"], [])
             self.assertEqual(saved["restriction_lines_attached"], ["使用时间3分钟"])
             replay_document_id = int(saved["replay"]["quote_document_id"])
+            self.assertGreater(int(saved["replay"]["validation_run_id"]), 0)
             self.assertNotEqual(replay_document_id, quote_document_id)
             replay_document = self._get_quote_document_by_id(replay_document_id)
             self.assertIsNotNone(replay_document)
@@ -1095,6 +1096,22 @@ class WebAppTests(PostgresTestCase):
                 quote_document_id=replay_document_id
             )
             self.assertEqual(len(replay_candidate_rows), 2)
+            validation_run = self.db.get_latest_quote_validation_run(
+                quote_document_id=replay_document_id
+            )
+            self.assertIsNotNone(validation_run)
+            assert validation_run is not None
+            self.assertEqual(int(validation_run["id"]), int(saved["replay"]["validation_run_id"]))
+            self.assertEqual(str(validation_run["run_kind"]), "replay")
+            self.assertEqual(str(validation_run["message_decision"]), "publishable_rows_available")
+            self.assertEqual(int(validation_run["publishable_row_count"]), 2)
+            validation_rows = self.db.list_quote_validation_row_results(
+                validation_run_id=int(validation_run["id"])
+            )
+            self.assertEqual(len(validation_rows), 2)
+            self.assertTrue(
+                all(str(row["final_decision"]) == "publishable" for row in validation_rows)
+            )
 
             status, board = self._request("GET", "/api/quotes/board")
             self.assertEqual(status, 200)

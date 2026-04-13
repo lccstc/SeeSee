@@ -8,6 +8,7 @@ from typing import Any
 
 from .contracts import NormalizedMessageEnvelope
 from .quote_candidates import QuoteCandidateMessage, QuoteCandidateRow
+from .quote_validation import validate_quote_candidate_document
 
 
 PARSER_VERSION = "quote-v1"
@@ -1051,7 +1052,9 @@ class QuoteCaptureService:
                 group_profile=group_profile,
                 message_time=message_time,
             )
-            document_id = self.db.record_quote_candidate_bundle(candidate=candidate)
+            document_id, validation_run_id = self._record_candidate_with_validation(
+                candidate
+            )
             recorded_exception_id = self.db.record_quote_exception_unless_suppressed(
                 quote_document_id=document_id,
                 platform=envelope.platform,
@@ -1073,6 +1076,7 @@ class QuoteCaptureService:
             return {
                 "captured": True,
                 "document_id": document_id,
+                "validation_run_id": validation_run_id,
                 "rows": len(candidate.rows),
                 "exceptions": 1,
                 "template": candidate.parser_template,
@@ -1124,7 +1128,7 @@ class QuoteCaptureService:
         if not candidate.rows and not recordable_parsed_exceptions and not recordable_row_exceptions:
             return {"captured": False, "rows": 0, "exceptions": 0}
 
-        document_id = self.db.record_quote_candidate_bundle(candidate=candidate)
+        document_id, validation_run_id = self._record_candidate_with_validation(candidate)
         recorded_exceptions = 0
         for item in recordable_parsed_exceptions:
             if self.db.record_quote_exception_unless_suppressed(
@@ -1165,6 +1169,7 @@ class QuoteCaptureService:
         return {
             "captured": True,
             "document_id": document_id,
+            "validation_run_id": validation_run_id,
             "rows": len(candidate.rows),
             "exceptions": recorded_exceptions,
             "template": candidate.parser_template,
@@ -1249,7 +1254,7 @@ class QuoteCaptureService:
             message_time=message_time,
             context=context,
         )
-        document_id = self.db.record_quote_candidate_bundle(candidate=candidate)
+        document_id, validation_run_id = self._record_candidate_with_validation(candidate)
         resolve_method = getattr(self.db, "resolve_quote_inquiry_context", None)
         if callable(resolve_method):
             resolve_method(
@@ -1259,11 +1264,29 @@ class QuoteCaptureService:
         return {
             "captured": True,
             "document_id": document_id,
+            "validation_run_id": validation_run_id,
             "rows": len(candidate.rows),
             "exceptions": 0,
             "template": candidate.parser_template,
             "parse_status": candidate.parse_status,
         }
+
+    def _record_candidate_with_validation(
+        self, candidate: QuoteCandidateMessage
+    ) -> tuple[int, int]:
+        document_id = self.db.record_quote_candidate_bundle(candidate=candidate)
+        validation_run = validate_quote_candidate_document(
+            quote_document_id=document_id,
+            run_kind=candidate.run_kind,
+            candidate_document=candidate,
+            candidate_rows=self.db.list_quote_candidate_rows(
+                quote_document_id=document_id
+            ),
+        )
+        validation_run_id = self.db.record_quote_validation_run(
+            validation_run=validation_run
+        )
+        return document_id, validation_run_id
 
 
 def _extract_standalone_reply_price(text: str) -> float | None:

@@ -1022,6 +1022,7 @@ def _replay_latest_quote_document_with_current_template(
         _parse_quote_message_to_candidate_details,
         parse_quote_message_to_candidate,
     )
+    from bookkeeping_core.quote_validation import validate_quote_candidate_document
 
     quote_document_id = int(exc_row.get("quote_document_id") or 0)
     quote_document = _quote_document_row(db, quote_document_id=quote_document_id)
@@ -1115,6 +1116,15 @@ def _replay_latest_quote_document_with_current_template(
             if line and line not in remaining_lines:
                 remaining_lines.append(line)
     replay_document_id = db.record_quote_candidate_bundle(candidate=candidate)
+    validation_run = validate_quote_candidate_document(
+        quote_document_id=replay_document_id,
+        run_kind="replay",
+        candidate_document=candidate,
+        candidate_rows=db.list_quote_candidate_rows(
+            quote_document_id=replay_document_id
+        ),
+    )
+    validation_run_id = db.record_quote_validation_run(validation_run=validation_run)
     recorded_exceptions = 0
     if record_exceptions:
         recordable_parsed_exceptions = [
@@ -1178,6 +1188,7 @@ def _replay_latest_quote_document_with_current_template(
         "rows": len(candidate.rows),
         "exceptions": recorded_exceptions,
         "quote_document_id": replay_document_id,
+        "validation_run_id": validation_run_id,
         "remaining_lines": remaining_lines,
         "mutated_active_facts": False,
     }

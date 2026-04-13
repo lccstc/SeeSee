@@ -170,7 +170,7 @@ def validate_quote_candidate_document(
     *,
     quote_document_id: int,
     run_kind: str,
-    candidate_rows: list[dict[str, Any]],
+    candidate_rows: list[dict[str, Any] | Any],
     candidate_document: QuoteCandidateMessage | dict[str, Any] | None = None,
     validator_version: str = VALIDATOR_VERSION_V1,
 ) -> QuoteValidationRun:
@@ -185,8 +185,8 @@ def validate_quote_candidate_document(
             rejection_code_counts[code] = rejection_code_counts.get(code, 0) + 1
         row_results.append(
             QuoteValidationRowResult(
-                quote_candidate_row_id=int(row.get("id") or 0),
-                row_ordinal=int(row.get("row_ordinal") or 0),
+                quote_candidate_row_id=int(_row_value(row, "id") or 0),
+                row_ordinal=int(_row_value(row, "row_ordinal") or 0),
                 schema_status="failed" if rejection_reasons else "passed",
                 business_status="skipped" if rejection_reasons else "not_evaluated",
                 final_decision="rejected" if rejection_reasons else "publishable",
@@ -249,50 +249,50 @@ def validate_quote_candidate_document(
     )
 
 
-def _schema_rejection_reasons(row: dict[str, Any]) -> list[dict[str, Any]]:
+def _schema_rejection_reasons(row: dict[str, Any] | Any) -> list[dict[str, Any]]:
     reasons: list[dict[str, Any]] = []
-    if not _normalized_text(row.get("card_type")):
+    if not _normalized_text(_row_value(row, "card_type")):
         reasons.append(
             build_validation_reason(
                 SCHEMA_MISSING_CARD_TYPE,
                 detail="candidate row requires card_type",
             )
         )
-    if not _normalized_text(row.get("country_or_currency")):
+    if not _normalized_text(_row_value(row, "country_or_currency")):
         reasons.append(
             build_validation_reason(
                 SCHEMA_MISSING_COUNTRY_OR_CURRENCY,
                 detail="candidate row requires country_or_currency",
             )
         )
-    if not _normalized_text(row.get("normalized_sku_key")):
+    if not _normalized_text(_row_value(row, "normalized_sku_key")):
         reasons.append(
             build_validation_reason(
                 SCHEMA_MISSING_NORMALIZED_SKU_KEY,
                 detail="candidate row requires normalized_sku_key",
             )
         )
-    if not _normalized_text(row.get("source_line")):
+    if not _normalized_text(_row_value(row, "source_line")):
         reasons.append(
             build_validation_reason(
                 SCHEMA_MISSING_SOURCE_LINE,
                 detail="candidate row requires source_line evidence",
             )
         )
-    if not _is_valid_amount_range(row.get("amount_range")):
+    if not _is_valid_amount_range(_row_value(row, "amount_range")):
         reasons.append(
             build_validation_reason(
                 SCHEMA_INVALID_AMOUNT_RANGE,
                 detail="candidate row amount_range must be normalized",
-                context={"amount_range": str(row.get("amount_range") or "")},
+                context={"amount_range": str(_row_value(row, "amount_range") or "")},
             )
         )
-    if not _is_positive_numeric(row.get("price")):
+    if not _is_positive_numeric(_row_value(row, "price")):
         reasons.append(
             build_validation_reason(
                 SCHEMA_INVALID_PRICE,
                 detail="candidate row price must be a positive number",
-                context={"price": row.get("price")},
+                context={"price": _row_value(row, "price")},
             )
         )
     return reasons
@@ -329,6 +329,14 @@ def _candidate_document_value(
     if isinstance(candidate_document, dict):
         return candidate_document.get(key, default)
     return getattr(candidate_document, key, default)
+
+
+def _row_value(row: dict[str, Any] | Any, key: str, default: Any = None) -> Any:
+    if isinstance(row, dict):
+        return row.get(key, default)
+    if hasattr(row, "keys") and key in row.keys():
+        return row[key]
+    return getattr(row, key, default)
 
 
 def _message_reason_context(
