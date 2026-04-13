@@ -1112,6 +1112,20 @@ class WebAppTests(PostgresTestCase):
             self.assertTrue(
                 all(str(row["final_decision"]) == "publishable" for row in validation_rows)
             )
+            publishable_rows = self.db.list_publishable_quote_candidate_rows(
+                quote_document_id=replay_document_id
+            )
+            self.assertEqual(len(publishable_rows), 2)
+            self.assertTrue(
+                all(
+                    int(row["validation_run_id"])
+                    == int(saved["replay"]["validation_run_id"])
+                    for row in publishable_rows
+                )
+            )
+            self.assertTrue(
+                all(str(row["final_decision"]) == "publishable" for row in publishable_rows)
+            )
 
             status, board = self._request("GET", "/api/quotes/board")
             self.assertEqual(status, 200)
@@ -1125,6 +1139,213 @@ class WebAppTests(PostgresTestCase):
                 os.environ.pop("QUOTE_ADMIN_PASSWORD", None)
             else:
                 os.environ["QUOTE_ADMIN_PASSWORD"] = old_password
+
+    def test_replay_helper_uses_validator_publishable_rows_for_mixed_results(self) -> None:
+        from bookkeeping_core.quote_candidates import (
+            QuoteCandidateMessage,
+            QuoteCandidateRow,
+        )
+        from bookkeeping_web.app import _replay_latest_quote_document_with_current_template
+
+        self.db.set_group(
+            platform="wechat",
+            group_key="wechat:g-replay-mixed",
+            chat_id="g-replay-mixed",
+            chat_name="回放混合校验群",
+            group_num=5,
+        )
+        self.db.upsert_quote_group_profile(
+            platform="wechat",
+            chat_id="g-replay-mixed",
+            chat_name="回放混合校验群",
+            default_card_type="Apple",
+            default_country_or_currency="USD",
+            default_form_factor="横白卡",
+            parser_template="group-parser",
+            template_config=json.dumps(
+                {"version": "group-parser-v1", "defaults": {}, "sections": []},
+                ensure_ascii=False,
+            ),
+        )
+        quote_document_id = self.db.record_quote_document(
+            platform="wechat",
+            source_group_key="wechat:g-replay-mixed",
+            chat_id="g-replay-mixed",
+            chat_name="回放混合校验群",
+            message_id="msg-replay-mixed-origin",
+            source_name="报价员",
+            sender_id="seller-replay",
+            raw_text="origin replay mixed text",
+            message_time="2026-04-14 15:00:00",
+            parser_template="group-parser",
+            parser_version="group-parser-v1",
+            confidence=0.0,
+            parse_status="exception",
+        )
+        exception_id = self.db.record_quote_exception_unless_suppressed(
+            quote_document_id=quote_document_id,
+            platform="wechat",
+            source_group_key="wechat:g-replay-mixed",
+            chat_id="g-replay-mixed",
+            chat_name="回放混合校验群",
+            source_name="报价员",
+            sender_id="seller-replay",
+            reason="strict_match_failed",
+            source_line="origin replay mixed text",
+            raw_text="origin replay mixed text",
+            message_time="2026-04-14 15:00:00",
+            parser_template="group-parser",
+            parser_version="group-parser-v1",
+            confidence=0.0,
+        )
+        self.assertGreater(int(exception_id), 0)
+        exc_row = self.db.conn.execute(
+            """
+            SELECT *
+            FROM quote_parse_exceptions
+            WHERE id = ?
+            """,
+            (int(exception_id),),
+        ).fetchone()
+        self.assertIsNotNone(exc_row)
+        assert exc_row is not None
+
+        def build_replay_candidate(*, message_id: str, replay_of_quote_document_id: int) -> QuoteCandidateMessage:
+            return QuoteCandidateMessage(
+                platform="wechat",
+                source_group_key="wechat:g-replay-mixed",
+                chat_id="g-replay-mixed",
+                chat_name="回放混合校验群",
+                message_id=message_id,
+                source_name="报价员",
+                sender_id="seller-replay",
+                sender_display="报价员",
+                raw_message="patched replay mixed candidate",
+                message_time="2026-04-14 15:00:00",
+                parser_kind="group-parser",
+                parser_template="group-parser",
+                parser_version="group-parser-v1",
+                confidence=0.99,
+                parse_status="parsed",
+                message_fingerprint="replay-mixed-fingerprint",
+                snapshot_hypothesis="unresolved",
+                snapshot_hypothesis_reason="phase1-default",
+                run_kind="replay",
+                replay_of_quote_document_id=replay_of_quote_document_id,
+                rows=[
+                    QuoteCandidateRow(
+                        row_ordinal=1,
+                        source_line="US=5.10",
+                        source_line_index=0,
+                        line_confidence=0.99,
+                        normalized_sku_key="Apple|USD|100|横白卡",
+                        normalization_status="normalized",
+                        row_publishable=False,
+                        publishability_basis="parser_prevalidation",
+                        restriction_parse_status="parsed",
+                        card_type="Apple",
+                        country_or_currency="USD",
+                        amount_range="100",
+                        multiplier=None,
+                        form_factor="横白卡",
+                        price=5.10,
+                        quote_status="active",
+                        restriction_text="",
+                    ),
+                    QuoteCandidateRow(
+                        row_ordinal=2,
+                        source_line="UK=6.20",
+                        source_line_index=1,
+                        line_confidence=0.60,
+                        normalized_sku_key="Apple|GBP|100|横白卡",
+                        normalization_status="normalized",
+                        row_publishable=True,
+                        publishability_basis="parser_prevalidation",
+                        restriction_parse_status="parsed",
+                        card_type="Apple",
+                        country_or_currency="GBP",
+                        amount_range="100",
+                        multiplier=None,
+                        form_factor="横白卡",
+                        price=6.20,
+                        quote_status="active",
+                        restriction_text="",
+                    ),
+                    QuoteCandidateRow(
+                        row_ordinal=3,
+                        source_line="Razer 100=7.10",
+                        source_line_index=2,
+                        line_confidence=0.97,
+                        normalized_sku_key="Razer|USD|100|不限",
+                        normalization_status="normalized",
+                        row_publishable=True,
+                        publishability_basis="parser_prevalidation",
+                        restriction_parse_status="parsed",
+                        card_type="Razer",
+                        country_or_currency="USD",
+                        amount_range="100",
+                        multiplier=None,
+                        form_factor="不限",
+                        price=7.10,
+                        quote_status="inactive",
+                        restriction_text="",
+                    ),
+                ],
+            )
+
+        def _patched_parse_quote_message_to_candidate(**kwargs):
+            return build_replay_candidate(
+                message_id=str(kwargs["message_id_override"]),
+                replay_of_quote_document_id=int(kwargs["replay_of_quote_document_id"]),
+            )
+
+        def _patched_parse_quote_message_to_candidate_details(**kwargs):
+            candidate = build_replay_candidate(
+                message_id=str(kwargs["message_id_override"]),
+                replay_of_quote_document_id=int(kwargs["replay_of_quote_document_id"]),
+            )
+            return candidate, [], []
+
+        with patch(
+            "bookkeeping_core.quotes.parse_quote_message_to_candidate",
+            side_effect=_patched_parse_quote_message_to_candidate,
+        ), patch(
+            "bookkeeping_core.quotes._parse_quote_message_to_candidate_details",
+            side_effect=_patched_parse_quote_message_to_candidate_details,
+        ):
+            replay = _replay_latest_quote_document_with_current_template(
+                self.db,
+                exc_row=dict(exc_row),
+                record_exceptions=False,
+            )
+
+        self.assertTrue(replay["replayed"])
+        self.assertFalse(replay["mutated_active_facts"])
+        replay_document_id = int(replay["quote_document_id"])
+        validation_run = self.db.get_latest_quote_validation_run(
+            quote_document_id=replay_document_id
+        )
+        self.assertIsNotNone(validation_run)
+        assert validation_run is not None
+        self.assertEqual(str(validation_run["run_kind"]), "replay")
+        self.assertEqual(int(validation_run["publishable_row_count"]), 1)
+        self.assertEqual(int(validation_run["rejected_row_count"]), 1)
+        self.assertEqual(int(validation_run["held_row_count"]), 1)
+
+        publishable_rows = self.db.list_publishable_quote_candidate_rows(
+            quote_document_id=replay_document_id
+        )
+        self.assertEqual(len(publishable_rows), 1)
+        self.assertEqual(str(publishable_rows[0]["source_line"]), "US=5.10")
+        self.assertFalse(bool(publishable_rows[0]["row_publishable"]))
+        self.assertEqual(str(publishable_rows[0]["decision_basis"]), "business_validation")
+
+        quote_price_row_count = self._count_rows(
+            "quote_price_rows",
+            "WHERE quote_document_id = ?",
+            (replay_document_id,),
+        )
+        self.assertEqual(quote_price_row_count, 0)
 
     def test_quote_exception_harvest_save_keeps_exception_open_when_replay_still_fails(self) -> None:
         old_password = os.environ.get("QUOTE_ADMIN_PASSWORD")

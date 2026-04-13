@@ -1304,6 +1304,180 @@ class UnifiedRuntimeTests(PostgresTestCase):
         self.assertEqual(str(parse_exceptions[0]["reason"]), "strict_match_failed")
         self.assertIn("UK=6.20", str(parse_exceptions[0]["source_line"]))
 
+    def test_runtime_quote_capture_persists_mixed_validation_outcomes_and_publishable_helper(
+        self,
+    ) -> None:
+        from bookkeeping_core.quote_candidates import (
+            QuoteCandidateMessage,
+            QuoteCandidateRow,
+        )
+
+        self.db.set_group(
+            platform="wechat",
+            group_key="wechat:room-runtime-mixed",
+            chat_id="room-runtime-mixed",
+            chat_name="报价群-混合校验",
+            group_num=5,
+        )
+        self.db.upsert_quote_group_profile(
+            platform="wechat",
+            chat_id="room-runtime-mixed",
+            chat_name="报价群-混合校验",
+            default_card_type="Apple",
+            default_country_or_currency="USD",
+            default_form_factor="横白卡",
+            parser_template="group-parser",
+            template_config=json.dumps(
+                {"version": "group-parser-v1", "defaults": {}, "sections": []},
+                ensure_ascii=False,
+            ),
+        )
+
+        candidate = QuoteCandidateMessage(
+            platform="wechat",
+            source_group_key="wechat:room-runtime-mixed",
+            chat_id="room-runtime-mixed",
+            chat_name="报价群-混合校验",
+            message_id="msg-runtime-mixed-1",
+            source_name="报价员",
+            sender_id="seller-runtime",
+            sender_display="报价员",
+            raw_message="patched mixed runtime candidate",
+            message_time="2026-04-14 14:00:00",
+            parser_kind="group-parser",
+            parser_template="group-parser",
+            parser_version="group-parser-v1",
+            confidence=0.99,
+            parse_status="parsed",
+            message_fingerprint="runtime-mixed-fingerprint",
+            snapshot_hypothesis="unresolved",
+            snapshot_hypothesis_reason="phase1-default",
+            rows=[
+                QuoteCandidateRow(
+                    row_ordinal=1,
+                    source_line="US=5.10",
+                    source_line_index=0,
+                    line_confidence=0.98,
+                    normalized_sku_key="Apple|USD|100|横白卡",
+                    normalization_status="normalized",
+                    row_publishable=False,
+                    publishability_basis="parser_prevalidation",
+                    restriction_parse_status="parsed",
+                    card_type="Apple",
+                    country_or_currency="USD",
+                    amount_range="100",
+                    multiplier=None,
+                    form_factor="横白卡",
+                    price=5.10,
+                    quote_status="active",
+                    restriction_text="",
+                ),
+                QuoteCandidateRow(
+                    row_ordinal=2,
+                    source_line="UK=6.20",
+                    source_line_index=1,
+                    line_confidence=0.62,
+                    normalized_sku_key="Apple|GBP|100|横白卡",
+                    normalization_status="normalized",
+                    row_publishable=True,
+                    publishability_basis="parser_prevalidation",
+                    restriction_parse_status="parsed",
+                    card_type="Apple",
+                    country_or_currency="GBP",
+                    amount_range="100",
+                    multiplier=None,
+                    form_factor="横白卡",
+                    price=6.20,
+                    quote_status="active",
+                    restriction_text="",
+                ),
+                QuoteCandidateRow(
+                    row_ordinal=3,
+                    source_line="Razer 100=7.10",
+                    source_line_index=2,
+                    line_confidence=0.97,
+                    normalized_sku_key="Razer|USD|100|不限",
+                    normalization_status="normalized",
+                    row_publishable=True,
+                    publishability_basis="parser_prevalidation",
+                    restriction_parse_status="parsed",
+                    card_type="Razer",
+                    country_or_currency="USD",
+                    amount_range="100",
+                    multiplier=None,
+                    form_factor="不限",
+                    price=7.10,
+                    quote_status="inactive",
+                    restriction_text="",
+                ),
+            ],
+        )
+
+        with patch(
+            "bookkeeping_core.quotes.should_attempt_template_quote_capture",
+            return_value=True,
+        ), patch(
+            "bookkeeping_core.quotes._parse_quote_message_to_candidate_details",
+            return_value=(candidate, [], []),
+        ):
+            self.runtime.process_envelope(
+                self._message(
+                    platform="wechat",
+                    message_id="msg-runtime-mixed-1",
+                    chat_id="room-runtime-mixed",
+                    chat_name="报价群-混合校验",
+                    text="patched mixed runtime candidate",
+                )
+            )
+
+        document = self._get_quote_document(
+            platform="wechat",
+            chat_id="room-runtime-mixed",
+            message_id="msg-runtime-mixed-1",
+        )
+        self.assertIsNotNone(document)
+        assert document is not None
+
+        validation_run = self.db.get_latest_quote_validation_run(
+            quote_document_id=int(document["id"])
+        )
+        self.assertIsNotNone(validation_run)
+        assert validation_run is not None
+        self.assertEqual(str(validation_run["message_decision"]), "publishable_rows_available")
+        self.assertEqual(int(validation_run["candidate_row_count"]), 3)
+        self.assertEqual(int(validation_run["publishable_row_count"]), 1)
+        self.assertEqual(int(validation_run["rejected_row_count"]), 1)
+        self.assertEqual(int(validation_run["held_row_count"]), 1)
+
+        validation_rows = self.db.list_quote_validation_row_results(
+            validation_run_id=int(validation_run["id"])
+        )
+        self.assertEqual(
+            [str(row["final_decision"]) for row in validation_rows],
+            ["publishable", "held", "rejected"],
+        )
+
+        candidate_rows = self.db.list_quote_candidate_rows(
+            quote_document_id=int(document["id"])
+        )
+        self.assertEqual([bool(row["row_publishable"]) for row in candidate_rows], [False, True, True])
+
+        publishable_rows = self.db.list_publishable_quote_candidate_rows(
+            quote_document_id=int(document["id"])
+        )
+        self.assertEqual(len(publishable_rows), 1)
+        self.assertEqual(str(publishable_rows[0]["source_line"]), "US=5.10")
+        self.assertFalse(bool(publishable_rows[0]["row_publishable"]))
+        self.assertEqual(str(publishable_rows[0]["final_decision"]), "publishable")
+        self.assertEqual(str(publishable_rows[0]["business_status"]), "passed")
+
+        quote_price_row_count = self._count_rows(
+            "quote_price_rows",
+            "WHERE message_id = ?",
+            ("msg-runtime-mixed-1",),
+        )
+        self.assertEqual(quote_price_row_count, 0)
+
     def test_runtime_quote_capture_records_missing_template_candidate_header(self) -> None:
         self.db.set_group(
             platform="wechat",

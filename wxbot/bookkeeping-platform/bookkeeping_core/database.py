@@ -1586,6 +1586,43 @@ class _BookkeepingStoreBase:
             (validation_run_id,),
         ).fetchall()
 
+    def list_publishable_quote_candidate_rows(
+        self,
+        *,
+        quote_document_id: int,
+        validation_run_id: int | None = None,
+    ) -> list[DBRow]:
+        selected_validation_run_id = validation_run_id
+        if selected_validation_run_id is None:
+            validation_run = self.get_latest_quote_validation_run(
+                quote_document_id=quote_document_id
+            )
+            if validation_run is None:
+                return []
+            selected_validation_run_id = int(validation_run["id"])
+        return self.conn.execute(
+            """
+            SELECT
+              candidate.*,
+              result.id AS validation_row_result_id,
+              result.validation_run_id,
+              result.schema_status,
+              result.business_status,
+              result.final_decision,
+              result.decision_basis,
+              result.rejection_reasons_json,
+              result.hold_reasons_json
+            FROM quote_validation_row_results result
+            INNER JOIN quote_candidate_rows candidate
+              ON candidate.id = result.quote_candidate_row_id
+            WHERE result.validation_run_id = ?
+              AND candidate.quote_document_id = ?
+              AND result.final_decision = 'publishable'
+            ORDER BY result.row_ordinal ASC, result.id ASC
+            """,
+            (selected_validation_run_id, quote_document_id),
+        ).fetchall()
+
     def deactivate_old_quotes_for_group(self, *, source_group_key: str) -> None:
         """同一群发新消息时，将旧的 active 报价标记为 inactive。"""
         self.conn.execute(
