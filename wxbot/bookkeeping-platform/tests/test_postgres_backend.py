@@ -635,5 +635,258 @@ class PostgresBackendTests(PostgresTestCase):
             db.close()
 
 
+class RepairCaseTests(PostgresTestCase):
+    def test_packaging_quote_exception_creates_one_repair_case_per_exception(self) -> None:
+        from bookkeeping_core.repair_cases import package_quote_repair_case
+
+        db = self.make_db("repair-case-idempotent")
+        try:
+            db.upsert_quote_group_profile(
+                platform="wechat",
+                chat_id="repair-room",
+                chat_name="修复报价群",
+                default_card_type="Apple",
+                default_country_or_currency="USD",
+                default_form_factor="横白卡",
+                default_multiplier="1x",
+                parser_template="repair-template-v1",
+                template_config=json.dumps(
+                    {"version": "repair-template-v1", "sections": ["Apple"]},
+                    ensure_ascii=False,
+                ),
+            )
+            quote_document_id = db.record_quote_candidate_bundle(
+                candidate=_make_validation_candidate(message_id="repair-msg-1")
+            )
+            candidate_rows = db.list_quote_candidate_rows(
+                quote_document_id=quote_document_id
+            )
+            validation_run_id = db.record_quote_validation_run(
+                validation_run=QuoteValidationRun(
+                    quote_document_id=quote_document_id,
+                    validator_version=VALIDATOR_VERSION_V1,
+                    run_kind="runtime",
+                    message_decision="no_publish",
+                    validation_status="completed",
+                    summary={
+                        "message_reasons": [
+                            build_validation_reason(
+                                "validation_only_failure",
+                                detail="repair-case packaging regression",
+                            )
+                        ]
+                    },
+                    row_results=[
+                        QuoteValidationRowResult(
+                            quote_candidate_row_id=int(candidate_rows[0]["id"]),
+                            row_ordinal=1,
+                            schema_status="passed",
+                            business_status="held",
+                            final_decision="held",
+                            decision_basis="manual_review_required",
+                            hold_reasons=[
+                                build_validation_reason(
+                                    "business_low_confidence_hold",
+                                    detail="line confidence below publish threshold",
+                                )
+                            ],
+                        )
+                    ],
+                )
+            )
+            exception_id = db.record_quote_exception(
+                quote_document_id=quote_document_id,
+                platform="wechat",
+                source_group_key="wechat:repair-room",
+                chat_id="repair-room",
+                chat_name="修复报价群",
+                source_name="Repair Source",
+                sender_id="wxid-repair",
+                reason="strict_match_failed",
+                source_line="US 100 95.5",
+                raw_text="[Apple]\nUS 100 95.5\nUK 50 0",
+                message_time="2026-04-14 11:15:00",
+                parser_template="repair-template-v1",
+                parser_version="candidate-v1",
+                confidence=0.41,
+            )
+
+            first_case = package_quote_repair_case(db=db, exception_id=exception_id)
+            second_case = package_quote_repair_case(db=db, exception_id=exception_id)
+
+            self.assertEqual(int(first_case["id"]), int(second_case["id"]))
+            count_row = db.conn.execute(
+                "SELECT COUNT(*) AS cnt FROM quote_repair_cases WHERE origin_exception_id = ?",
+                (exception_id,),
+            ).fetchone()
+            self.assertEqual(int(count_row["cnt"]), 1)
+
+            stored_case = db.conn.execute(
+                "SELECT * FROM quote_repair_cases WHERE origin_exception_id = ?",
+                (exception_id,),
+            ).fetchone()
+            self.assertIsNotNone(stored_case)
+            assert stored_case is not None
+            self.assertEqual(int(stored_case["origin_quote_document_id"]), quote_document_id)
+            self.assertEqual(int(stored_case["origin_validation_run_id"]), validation_run_id)
+            self.assertEqual(str(stored_case["lifecycle_state"]), "packaged")
+        finally:
+            db.close()
+
+    def test_packaging_freezes_origin_and_group_profile_snapshots(self) -> None:
+        from bookkeeping_core.repair_cases import package_quote_repair_case
+
+        db = self.make_db("repair-case-snapshots")
+        try:
+            profile_id = db.upsert_quote_group_profile(
+                platform="wechat",
+                chat_id="repair-snapshot-room",
+                chat_name="修复快照群",
+                default_card_type="Apple",
+                default_country_or_currency="USD",
+                default_form_factor="横白卡",
+                default_multiplier="1x",
+                parser_template="repair-template-v2",
+                template_config=json.dumps(
+                    {"version": "repair-template-v2", "sections": ["Apple", "Xbox"]},
+                    ensure_ascii=False,
+                ),
+            )
+            quote_document_id = db.record_quote_candidate_bundle(
+                candidate=_make_validation_candidate(message_id="repair-msg-2")
+            )
+            validation_run_id = db.record_quote_validation_run(
+                validation_run=QuoteValidationRun(
+                    quote_document_id=quote_document_id,
+                    validator_version=VALIDATOR_VERSION_V1,
+                    run_kind="runtime",
+                    message_decision="no_publish",
+                    validation_status="completed",
+                    summary={
+                        "message_reasons": [
+                            build_validation_reason(
+                                "validator_rejected_only",
+                                detail="all rows rejected",
+                            )
+                        ]
+                    },
+                )
+            )
+            exception_id = db.record_quote_exception(
+                quote_document_id=quote_document_id,
+                platform="wechat",
+                source_group_key="wechat:repair-snapshot-room",
+                chat_id="repair-snapshot-room",
+                chat_name="修复快照群",
+                source_name="Repair Source",
+                sender_id="wxid-repair",
+                reason="missing_group_template",
+                source_line="【Apple】",
+                raw_text="[Apple]\nUS 100 95.5",
+                message_time="2026-04-14 11:20:00",
+                parser_template="group-parser",
+                parser_version="candidate-v1",
+                confidence=0.0,
+            )
+
+            package_quote_repair_case(db=db, exception_id=exception_id)
+
+            stored_case = db.conn.execute(
+                "SELECT * FROM quote_repair_cases WHERE origin_exception_id = ?",
+                (exception_id,),
+            ).fetchone()
+            self.assertIsNotNone(stored_case)
+            assert stored_case is not None
+            self.assertEqual(int(stored_case["group_profile_id"]), profile_id)
+            self.assertEqual(str(stored_case["raw_message_snapshot"]), "[Apple]\nUS 100 95.5")
+            self.assertEqual(str(stored_case["source_line_snapshot"]), "【Apple】")
+            self.assertEqual(int(stored_case["origin_quote_document_id"]), quote_document_id)
+            self.assertEqual(int(stored_case["origin_validation_run_id"]), validation_run_id)
+            self.assertEqual(str(stored_case["current_failure_reason"]), "missing_group_template")
+
+            profile_snapshot = _normalize_json_field(
+                stored_case["profile_snapshot_json"]
+            )
+            self.assertEqual(profile_snapshot["parser_template"], "repair-template-v2")
+            self.assertEqual(profile_snapshot["default_card_type"], "Apple")
+            self.assertEqual(profile_snapshot["template_config"]["version"], "repair-template-v2")
+
+            validation_summary = _normalize_json_field(
+                stored_case["validation_summary_json"]
+            )
+            self.assertEqual(
+                validation_summary["message_reasons"][0]["code"],
+                "validator_rejected_only",
+            )
+
+            exception_row = db.get_quote_exception(exception_id=exception_id)
+            self.assertEqual(str(exception_row["reason"]), "missing_group_template")
+            self.assertEqual(str(exception_row["resolution_status"]), "open")
+
+            latest_run = db.get_latest_quote_validation_run(
+                quote_document_id=quote_document_id
+            )
+            self.assertEqual(int(latest_run["id"]), validation_run_id)
+        finally:
+            db.close()
+
+    def test_validation_only_failure_packaging_tracks_validator_lineage(self) -> None:
+        from bookkeeping_core.repair_cases import package_quote_repair_case
+
+        db = self.make_db("repair-case-validation-only")
+        try:
+            quote_document_id = db.record_quote_candidate_bundle(
+                candidate=_make_validation_candidate(message_id="repair-msg-3")
+            )
+            validation_run_id = db.record_quote_validation_run(
+                validation_run=QuoteValidationRun(
+                    quote_document_id=quote_document_id,
+                    validator_version=VALIDATOR_VERSION_V1,
+                    run_kind="runtime",
+                    message_decision="no_publish",
+                    validation_status="completed",
+                    summary={
+                        "message_reasons": [
+                            build_validation_reason(
+                                "message_no_candidate_rows",
+                                detail="candidate bundle persisted with zero publishable rows",
+                            )
+                        ],
+                        "row_decision_counts": {
+                            "publishable": 0,
+                            "rejected": 0,
+                            "held": 0,
+                        },
+                    },
+                )
+            )
+            exception_id = db.record_quote_exception(
+                quote_document_id=quote_document_id,
+                platform="wechat",
+                source_group_key="wechat:repair-validation-only",
+                chat_id="repair-validation-only",
+                chat_name="纯校验失败群",
+                source_name="Validator",
+                sender_id="wxid-validator",
+                reason="validator_no_publish",
+                source_line="[Apple]",
+                raw_text="[Apple]",
+                message_time="2026-04-14 11:30:00",
+                parser_template="validator_template_v1",
+                parser_version="candidate-v1",
+                confidence=0.0,
+            )
+
+            repair_case = package_quote_repair_case(db=db, exception_id=exception_id)
+
+            self.assertEqual(int(repair_case["origin_exception_id"]), exception_id)
+            self.assertEqual(int(repair_case["origin_quote_document_id"]), quote_document_id)
+            self.assertEqual(int(repair_case["origin_validation_run_id"]), validation_run_id)
+            self.assertEqual(str(repair_case["lifecycle_state"]), "packaged")
+            self.assertEqual(str(repair_case["current_failure_reason"]), "validator_no_publish")
+        finally:
+            db.close()
+
+
 if __name__ == "__main__":
     unittest.main()

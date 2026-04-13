@@ -1573,6 +1573,18 @@ class _BookkeepingStoreBase:
             (quote_document_id,),
         ).fetchone()
 
+    def get_quote_document(self, *, quote_document_id: int) -> DBRow | None:
+        row = self.conn.execute(
+            """
+            SELECT *
+            FROM quote_documents
+            WHERE id = ?
+            LIMIT 1
+            """,
+            (quote_document_id,),
+        ).fetchone()
+        return self._serialize_quote_db_row(row) if row else None
+
     def list_quote_validation_row_results(
         self, *, validation_run_id: int
     ) -> list[DBRow]:
@@ -2062,6 +2074,98 @@ class _BookkeepingStoreBase:
             (exception_id,),
         ).fetchone()
         return self._serialize_quote_db_row(row) if row else None
+
+    def get_quote_repair_case_by_origin_exception(
+        self,
+        *,
+        origin_exception_id: int,
+    ) -> DBRow | None:
+        row = self.conn.execute(
+            """
+            SELECT *
+            FROM quote_repair_cases
+            WHERE origin_exception_id = ?
+            LIMIT 1
+            """,
+            (origin_exception_id,),
+        ).fetchone()
+        return self._serialize_quote_db_row(row) if row else None
+
+    def create_or_get_quote_repair_case(
+        self,
+        *,
+        origin_exception_id: int,
+        origin_quote_document_id: int,
+        origin_validation_run_id: int | None,
+        platform: str,
+        source_group_key: str,
+        chat_id: str,
+        chat_name: str,
+        group_profile_id: int | None,
+        lifecycle_state: str,
+        current_failure_reason: str,
+        parser_template_snapshot: str,
+        parser_version_snapshot: str,
+        message_time_snapshot: str | None,
+        raw_message_snapshot: str,
+        source_line_snapshot: str,
+        profile_snapshot: dict[str, Any] | None,
+        validation_summary: dict[str, Any] | None,
+        case_summary: dict[str, Any] | None,
+        case_fingerprint: str = "",
+    ) -> DBRow:
+        existing = self.get_quote_repair_case_by_origin_exception(
+            origin_exception_id=origin_exception_id
+        )
+        if existing is not None:
+            return existing
+        cur = self.conn.execute(
+            """
+            INSERT INTO quote_repair_cases (
+              origin_exception_id, origin_quote_document_id, origin_validation_run_id,
+              platform, source_group_key, chat_id, chat_name, group_profile_id,
+              lifecycle_state, current_failure_reason, parser_template_snapshot,
+              parser_version_snapshot, message_time_snapshot, raw_message_snapshot,
+              source_line_snapshot, profile_snapshot_json, validation_summary_json,
+              case_summary_json, case_fingerprint, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?, CURRENT_TIMESTAMP)
+            """,
+            (
+                origin_exception_id,
+                origin_quote_document_id,
+                origin_validation_run_id,
+                platform,
+                source_group_key,
+                chat_id,
+                chat_name,
+                group_profile_id,
+                lifecycle_state,
+                current_failure_reason,
+                parser_template_snapshot,
+                parser_version_snapshot,
+                message_time_snapshot,
+                raw_message_snapshot,
+                source_line_snapshot,
+                self._serialize_candidate_json(profile_snapshot, fallback={}),
+                self._serialize_candidate_json(validation_summary, fallback={}),
+                self._serialize_candidate_json(case_summary, fallback={}),
+                case_fingerprint,
+            ),
+        )
+        repair_case_id = self._last_insert_id(cur)
+        self.conn.commit()
+        row = self.conn.execute(
+            """
+            SELECT *
+            FROM quote_repair_cases
+            WHERE id = ?
+            LIMIT 1
+            """,
+            (repair_case_id,),
+        ).fetchone()
+        if row is None:
+            raise RuntimeError("failed to persist quote repair case")
+        return self._serialize_quote_db_row(row)
 
     def resolve_quote_exception(
         self,
@@ -2918,7 +3022,14 @@ class _BookkeepingStoreBase:
 
     def _serialize_quote_db_row(self, row) -> dict:
         result = dict(row)
-        for key in ("id", "quote_document_id"):
+        for key in (
+            "id",
+            "quote_document_id",
+            "origin_exception_id",
+            "origin_quote_document_id",
+            "origin_validation_run_id",
+            "group_profile_id",
+        ):
             if result.get(key) is not None:
                 result[key] = int(result[key])
         for key in ("price", "confidence"):
@@ -2928,6 +3039,7 @@ class _BookkeepingStoreBase:
             "message_time",
             "effective_at",
             "expires_at",
+            "message_time_snapshot",
             "resolved_at",
             "created_at",
             "updated_at",
@@ -3592,6 +3704,41 @@ class BookkeepingDB(_BookkeepingStoreBase):
         )
         self.conn.execute(
             """
+            CREATE TABLE IF NOT EXISTS quote_repair_cases (
+              id BIGSERIAL PRIMARY KEY,
+              origin_exception_id BIGINT NOT NULL REFERENCES quote_parse_exceptions(id) ON DELETE CASCADE,
+              origin_quote_document_id BIGINT NOT NULL REFERENCES quote_documents(id) ON DELETE CASCADE,
+              origin_validation_run_id BIGINT REFERENCES quote_validation_runs(id) ON DELETE SET NULL,
+              platform TEXT NOT NULL,
+              source_group_key TEXT NOT NULL,
+              chat_id TEXT NOT NULL,
+              chat_name TEXT NOT NULL,
+              group_profile_id BIGINT REFERENCES quote_group_profiles(id) ON DELETE SET NULL,
+              lifecycle_state TEXT NOT NULL,
+              current_failure_reason TEXT NOT NULL,
+              parser_template_snapshot TEXT NOT NULL DEFAULT '',
+              parser_version_snapshot TEXT NOT NULL DEFAULT '',
+              message_time_snapshot TIMESTAMP,
+              raw_message_snapshot TEXT NOT NULL,
+              source_line_snapshot TEXT NOT NULL,
+              profile_snapshot_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+              validation_summary_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+              case_summary_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+              case_fingerprint TEXT NOT NULL DEFAULT '',
+              created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              UNIQUE(origin_exception_id)
+            )
+            """
+        )
+        self.conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_quote_repair_cases_group_created
+            ON quote_repair_cases(source_group_key, created_at DESC)
+            """
+        )
+        self.conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS quote_dictionary_aliases (
               id BIGSERIAL PRIMARY KEY,
               category TEXT NOT NULL,
@@ -4011,6 +4158,30 @@ class BookkeepingDB(_BookkeepingStoreBase):
                 "resolution_note",
                 "resolved_at",
                 "created_at",
+            },
+            "quote_repair_cases": {
+                "id",
+                "origin_exception_id",
+                "origin_quote_document_id",
+                "origin_validation_run_id",
+                "platform",
+                "source_group_key",
+                "chat_id",
+                "chat_name",
+                "group_profile_id",
+                "lifecycle_state",
+                "current_failure_reason",
+                "parser_template_snapshot",
+                "parser_version_snapshot",
+                "message_time_snapshot",
+                "raw_message_snapshot",
+                "source_line_snapshot",
+                "profile_snapshot_json",
+                "validation_summary_json",
+                "case_summary_json",
+                "case_fingerprint",
+                "created_at",
+                "updated_at",
             },
             "quote_inquiry_contexts": {
                 "id",

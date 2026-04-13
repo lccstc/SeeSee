@@ -417,6 +417,35 @@ CREATE TABLE IF NOT EXISTS quote_group_profiles (
   UNIQUE(platform, chat_id)
 );
 
+CREATE TABLE IF NOT EXISTS quote_repair_cases (
+  id BIGSERIAL PRIMARY KEY,
+  origin_exception_id BIGINT NOT NULL REFERENCES quote_parse_exceptions(id) ON DELETE CASCADE,
+  origin_quote_document_id BIGINT NOT NULL REFERENCES quote_documents(id) ON DELETE CASCADE,
+  origin_validation_run_id BIGINT REFERENCES quote_validation_runs(id) ON DELETE SET NULL,
+  platform TEXT NOT NULL,
+  source_group_key TEXT NOT NULL,
+  chat_id TEXT NOT NULL,
+  chat_name TEXT NOT NULL,
+  group_profile_id BIGINT REFERENCES quote_group_profiles(id) ON DELETE SET NULL,
+  lifecycle_state TEXT NOT NULL,
+  current_failure_reason TEXT NOT NULL,
+  parser_template_snapshot TEXT NOT NULL DEFAULT '',
+  parser_version_snapshot TEXT NOT NULL DEFAULT '',
+  message_time_snapshot TIMESTAMP,
+  raw_message_snapshot TEXT NOT NULL,
+  source_line_snapshot TEXT NOT NULL,
+  profile_snapshot_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+  validation_summary_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+  case_summary_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+  case_fingerprint TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(origin_exception_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_quote_repair_cases_group_created
+  ON quote_repair_cases(source_group_key, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS quote_dictionary_aliases (
   id BIGSERIAL PRIMARY KEY,
   category TEXT NOT NULL,
