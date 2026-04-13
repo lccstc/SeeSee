@@ -2,7 +2,7 @@
 
 ## Overview
 
-This roadmap turns the current brownfield quote wall into a formal validation pipeline. The sequence is deliberate: first separate candidates from facts, then build validators and publisher safeguards, then make snapshot/delta semantics explicit, then harden exception replay and industrialization, and only after that build the operator verification surfaces and shadow-mode gate needed to trust the system on real samples.
+This roadmap turns the current brownfield quote wall into a formal validation pipeline. The sequence is deliberate: first separate candidates from facts, then build validators and publisher safeguards, then make snapshot/delta semantics explicit, then convert failures into durable repair cases and a constrained remediation state machine, and only after that build the operator verification surfaces and shadow-mode gate needed to trust the system on real samples. The governing idea is not to train a万能解析器, but to keep evolving each group's own profile as a finite, verifiable grammar.
 
 ## Phases
 
@@ -17,8 +17,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 2.1: Real Exception Corpus & Candidate Coverage (INSERTED)** - Build the real-sample corpus and harden candidate generation against live exception shapes
 - [ ] **Phase 3: Fact Protection Publisher** - Make one guarded publisher the only path that can mutate active quote facts
 - [ ] **Phase 4: Snapshot / Delta Semantics** - Distinguish `full_snapshot` from `delta_update` and default safely
-- [ ] **Phase 5: Exception Replay Loop** - Make every failure replayable and comparable before/after fixes
-- [ ] **Phase 6: Industrialization Loop** - Turn repeated failures into deterministic rules, templates, scripts, skills, and tests
+- [ ] **Phase 5: Exception Repair State Machine** - Turn every failure into a durable repair case with replay baseline, attempt history, and escalation state
+- [ ] **Phase 6: Constrained Auto-Remediation Loop** - Let subagents propose bounded repairs that must survive replay, validator, and regression gates before absorption
 - [ ] **Phase 7: Operator Verification Workbench** - Expose message-level candidate, rejection, and publish decision evidence for debugging
 - [ ] **Phase 8: Shadow Validation Gate** - Run the pipeline safely in validation mode without handing it default production authority
 
@@ -100,35 +100,35 @@ Plans:
 - [ ] 04-02: Wire classification into publisher inactivation rules
 - [ ] 04-03: Add v1 human confirmation flow for disputed snapshot classification
 
-### Phase 5: Exception Replay Loop
-**Goal**: Turn every failure into replayable evidence that can be used to verify fixes before trusting them.
+### Phase 5: Exception Repair State Machine
+**Goal**: Turn every failure into a durable repair case with explicit state, replay baseline, and cumulative remediation history.
 **Depends on**: Phase 4
 **Requirements**: [EXCP-01, EXCP-02, EXCP-03]
 **Success Criteria** (what must be TRUE):
-  1. Failed, partial, and rejected parse attempts always enter the exception pool
-  2. Operators can replay a stored message through the current parser and validator chain
-  3. Before/after replay comparisons show whether a fix actually improved the result safely
+  1. Failed, partial, and rejected parse attempts always enter the exception pool as structured repair cases
+  2. Each repair case carries replay-critical context, including current group profile/template version, candidate/validator result, unmatched evidence, and prior attempts
+  3. Before/after replay comparisons show whether a proposed fix actually improved the owning group's grammar safely
 **Plans**: TBD
 
 Plans:
-- [ ] 05-01: Enrich exception records with replay-critical evidence
-- [ ] 05-02: Implement deterministic replay path against stored raw messages
-- [ ] 05-03: Add before/after replay comparison outputs for debugging
+- [ ] 05-01: Introduce repair-case state and replay-critical evidence packaging for every exception
+- [ ] 05-02: Implement deterministic before/after replay baselines tied to the owning group profile
+- [ ] 05-03: Add cumulative attempt history, failure-log stacking, and escalation-ready state transitions
 
-### Phase 6: Industrialization Loop
-**Goal**: Ensure recurring failures become durable deterministic fixes instead of permanent manual work.
+### Phase 6: Constrained Auto-Remediation Loop
+**Goal**: Ensure recurring failures move through a bounded remediation workflow that prefers group-level fixes, proves safety by replay, and escalates after repeated failure.
 **Depends on**: Phase 5
 **Requirements**: [INDU-01, INDU-02]
 **Success Criteria** (what must be TRUE):
-  1. Repeated exception patterns are visible and reviewable as a backlog of industrialization candidates
-  2. High-frequency failure patterns can be promoted into deterministic templates, rules, scripts, skills, or tests
-  3. The same failure shape becomes less likely to recur without relying on prompt tweaks alone
+  1. Subagents can only propose bounded repairs against repair cases and must read prior failure logs before each retry
+  2. The workflow prefers fixes in the owning group profile / section / bootstrap before promoting shared parser rules
+  3. Every absorbed fix survives replay, validator, and regression gates; repeated failure escalates instead of looping forever
 **Plans**: TBD
 
 Plans:
-- [ ] 06-01: Add repeated-failure visibility and prioritization
-- [ ] 06-02: Define promotion paths into templates, code rules, scripts, skills, and tests
-- [ ] 06-03: Close the loop with regression coverage from real failures
+- [ ] 06-01: Implement bounded subagent remediation attempts with cumulative failure logging and max-attempt escalation
+- [ ] 06-02: Define remediation priority order: group profile -> group section -> bootstrap -> shared rule -> global core
+- [ ] 06-03: Close the loop by promoting successful repairs into deterministic templates, rules, scripts, skills, and tests
 
 ### Phase 7: Operator Verification Workbench
 **Goal**: Give the operator a message-level debugging view into candidate rows, rejected rows, held rows, and final publish decisions.
@@ -172,7 +172,7 @@ Phases execute in numeric order: 1 → 2 → 2.1 → 3 → 4 → 5 → 6 → 7 �
 | 2.1. Real Exception Corpus & Candidate Coverage | 3/3 | Completed | 2026-04-14 |
 | 3. Fact Protection Publisher | 0/3 | Not started | - |
 | 4. Snapshot / Delta Semantics | 0/3 | Not started | - |
-| 5. Exception Replay Loop | 0/3 | Not started | - |
-| 6. Industrialization Loop | 0/3 | Not started | - |
+| 5. Exception Repair State Machine | 0/3 | Not started | - |
+| 6. Constrained Auto-Remediation Loop | 0/3 | Not started | - |
 | 7. Operator Verification Workbench | 0/3 | Not started | - |
 | 8. Shadow Validation Gate | 0/3 | Not started | - |

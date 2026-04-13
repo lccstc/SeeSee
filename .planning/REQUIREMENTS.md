@@ -42,14 +42,14 @@
 
 ### Exceptions & Replay
 
-- [ ] **EXCP-01**: Every failed, partial, rejected, or unclassifiable parse attempt enters the exception pool
-- [ ] **EXCP-02**: User can replay a stored raw message through the current parser and validator chain
-- [ ] **EXCP-03**: User can compare replay outcomes before and after a template, rule, or code fix
+- [ ] **EXCP-01**: Every failed, partial, rejected, or unclassifiable parse attempt enters the exception pool as a durable repair case rather than a disposable log line
+- [ ] **EXCP-02**: Each repair case carries the raw message, current group profile/template version, candidate result, validator result, unmatched evidence, and replay baseline needed for constrained remediation
+- [ ] **EXCP-03**: User can replay a stored raw message through the current parser and validator chain and compare before/after outcomes for a proposed fix
 
 ### Industrialization
 
-- [ ] **INDU-01**: User can promote repeated exception patterns into deterministic fixes such as templates, rules, scripts, skills, or unit tests
-- [ ] **INDU-02**: System surfaces repeated failure patterns so high-frequency errors can be prioritized for industrialized fixes
+- [ ] **INDU-01**: System drives repair cases through a constrained remediation workflow with bounded attempts, cumulative failure logs, and escalation after repeated failure
+- [ ] **INDU-02**: User can promote repeated exception patterns into deterministic fixes such as group profiles, sections, bootstrap configs, shared rules, scripts, skills, or unit tests, prioritizing group-level fixes before global parser changes
 
 ### Operator Verification
 
@@ -81,6 +81,7 @@
 | Replacing the entire brownfield architecture upfront | Current mandate is minimum necessary change, not architecture cleanup for its own sake |
 | Directly taking over production publish authority in v1 | v1 is for validation, replay, and manual comparison first |
 | Relying on prompt-only rules as long-term correctness mechanism | Business and publish rules must live in explicit system code and tests |
+| Pursuing a global万能解析器 that replaces one-group-one-profile | The project assumes each group is a finite stable pattern set; fixes should land in the owning group profile first |
 
 ## Traceability
 
@@ -119,4 +120,4 @@
 
 ---
 *Requirements defined: 2026-04-13*
-*Last updated: 2026-04-13 after initial definition*
+*Last updated: 2026-04-14 after Phase 02.1 follow-up decisions*
