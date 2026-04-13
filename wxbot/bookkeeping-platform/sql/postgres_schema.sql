@@ -237,12 +237,47 @@ CREATE TABLE IF NOT EXISTS quote_documents (
   sender_id TEXT NOT NULL,
   raw_text TEXT NOT NULL,
   message_time TIMESTAMP NOT NULL,
+  parser_kind TEXT NOT NULL DEFAULT 'unknown',
   parser_template TEXT NOT NULL,
   parser_version TEXT NOT NULL,
   confidence NUMERIC(6, 4) NOT NULL,
   parse_status TEXT NOT NULL,
+  message_fingerprint TEXT NOT NULL DEFAULT '',
+  snapshot_hypothesis TEXT NOT NULL DEFAULT 'unresolved',
+  snapshot_hypothesis_reason TEXT NOT NULL DEFAULT '',
+  rejection_reasons_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+  run_kind TEXT NOT NULL DEFAULT 'runtime',
+  replay_of_quote_document_id BIGINT,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   UNIQUE (platform, chat_id, message_id)
+);
+
+CREATE TABLE IF NOT EXISTS quote_candidate_rows (
+  id BIGSERIAL PRIMARY KEY,
+  quote_document_id BIGINT NOT NULL,
+  row_ordinal INTEGER NOT NULL,
+  source_line TEXT NOT NULL,
+  source_line_index INTEGER,
+  line_confidence NUMERIC(6, 4) NOT NULL,
+  normalized_sku_key TEXT NOT NULL,
+  normalization_status TEXT NOT NULL,
+  row_publishable BOOLEAN NOT NULL DEFAULT FALSE,
+  publishability_basis TEXT NOT NULL,
+  restriction_parse_status TEXT NOT NULL,
+  card_type TEXT,
+  country_or_currency TEXT,
+  amount_range TEXT,
+  multiplier TEXT,
+  form_factor TEXT,
+  price NUMERIC(18, 6),
+  quote_status TEXT NOT NULL,
+  restriction_text TEXT NOT NULL DEFAULT '',
+  field_sources_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+  rejection_reasons_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+  parser_template TEXT NOT NULL,
+  parser_version TEXT NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (quote_document_id, row_ordinal)
 );
 
 CREATE TABLE IF NOT EXISTS quote_price_rows (

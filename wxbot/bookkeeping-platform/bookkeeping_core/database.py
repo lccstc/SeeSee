@@ -1346,7 +1346,7 @@ class _BookkeepingStoreBase:
               message_fingerprint, snapshot_hypothesis,
               snapshot_hypothesis_reason, rejection_reasons_json, run_kind,
               replay_of_quote_document_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?)
             """,
             (
                 document["platform"],
@@ -1385,7 +1385,7 @@ class _BookkeepingStoreBase:
                   form_factor, price, quote_status, restriction_text,
                   field_sources_json, rejection_reasons_json, parser_template,
                   parser_version
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?, ?)
                 """,
                 (
                     quote_document_id,
@@ -3022,7 +3022,11 @@ class BookkeepingDB(_BookkeepingStoreBase):
         self.db_path = dsn
         self._raw_conn = psycopg.connect(dsn)
         self.conn = _PostgresConnectionCompat(self._raw_conn)
-        self._init_schema()
+        try:
+            self._init_schema()
+        except Exception:
+            self._raw_conn.close()
+            raise
 
     def close(self) -> None:
         self._raw_conn.close()
@@ -3217,10 +3221,17 @@ class BookkeepingDB(_BookkeepingStoreBase):
               sender_id TEXT NOT NULL,
               raw_text TEXT NOT NULL,
               message_time TIMESTAMP NOT NULL,
+              parser_kind TEXT NOT NULL DEFAULT 'unknown',
               parser_template TEXT NOT NULL,
               parser_version TEXT NOT NULL,
               confidence NUMERIC(6, 4) NOT NULL,
               parse_status TEXT NOT NULL,
+              message_fingerprint TEXT NOT NULL DEFAULT '',
+              snapshot_hypothesis TEXT NOT NULL DEFAULT 'unresolved',
+              snapshot_hypothesis_reason TEXT NOT NULL DEFAULT '',
+              rejection_reasons_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+              run_kind TEXT NOT NULL DEFAULT 'runtime',
+              replay_of_quote_document_id BIGINT,
               created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
               UNIQUE (platform, chat_id, message_id)
             )
@@ -3658,10 +3669,43 @@ class BookkeepingDB(_BookkeepingStoreBase):
                 "sender_id",
                 "raw_text",
                 "message_time",
+                "parser_kind",
                 "parser_template",
                 "parser_version",
                 "confidence",
                 "parse_status",
+                "message_fingerprint",
+                "snapshot_hypothesis",
+                "snapshot_hypothesis_reason",
+                "rejection_reasons_json",
+                "run_kind",
+                "replay_of_quote_document_id",
+                "created_at",
+            },
+            "quote_candidate_rows": {
+                "id",
+                "quote_document_id",
+                "row_ordinal",
+                "source_line",
+                "source_line_index",
+                "line_confidence",
+                "normalized_sku_key",
+                "normalization_status",
+                "row_publishable",
+                "publishability_basis",
+                "restriction_parse_status",
+                "card_type",
+                "country_or_currency",
+                "amount_range",
+                "multiplier",
+                "form_factor",
+                "price",
+                "quote_status",
+                "restriction_text",
+                "field_sources_json",
+                "rejection_reasons_json",
+                "parser_template",
+                "parser_version",
                 "created_at",
             },
             "quote_price_rows": {
