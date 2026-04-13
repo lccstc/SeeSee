@@ -1,0 +1,969 @@
+{
+  "snapshot": {
+    "kind": "curated-gold-proposals",
+    "fetched_at": "2026-04-14",
+    "source": "live exception pool + Phase 02.1 research",
+    "status": "partial_human_review_complete"
+  },
+  "fixtures": [
+    {
+      "fixture_name": "leng_itunes_mixed_board_244",
+      "exception_id": 244,
+      "platform": "wechat",
+      "chat_id": "LD-QS-1616-C-528【Leng】Itunes",
+      "chat_name": "LD-QS-1616-C-528【Leng】Itunes",
+      "reason": "strict_match_failed",
+      "raw_text": "【苹果极速快刷1-15min】\n稳卡稳卡稳卡！\nUS:200-500横白=5.44 100倍 \nUS:250-450横白=5.42 50倍\nUS:100/150横白=5.41\nUS:50稳卡极速=5.3\nUS:25-190横白=5.15（5倍）\nUS:15-195电子=5.21（5倍）\nUS:100-500电子=5.3（50倍）\nUS:25-95代码=4.95（5倍）\n----------------------------\n【苹果外卡】#一定要稳卡！\nAUD:100-500【3.7】图（50倍数）\nAUD:100-500【3.6】密（50倍数）\nAUD:50-490 【3.5】图密（10倍数）\n德国：100-250横白=5.35 50倍\n#筛选好客户卡片发送\n---------------------------\n【XBOX】\nUS:10-250图密【5.1】 5倍\n--------------------------\n【chime转账】\n邮箱：20+【6.36】\n---------------------------\n麻烦筛选稳卡发送#多次赎回停群\nITS不问直接发，后期发现减账！\nP图卡后期发现一律减账！\n墨西哥低于200不+账单\n巴西低于50不+账单\n45分钟内赎回扫卡不加账！！！\n代码网单默认压1小时，一小时内被扫撤账单\n极速网单剩下余额不要用！！\n注：网单别恶意扫卡偷卡\n查到所有账单不结账挂",
+      "message_decision": "full_snapshot",
+      "message_decision_reason": "整条消息是多 section 完整报价板，虽然带规则尾巴，但每个 section 都是当前有效报价。",
+      "approval_status": "approved",
+      "expected_sections": [
+        {
+          "label": "苹果极速快刷",
+          "section_decision": "publishable",
+          "evidence": "【苹果极速快刷1-15min】"
+        },
+        {
+          "label": "苹果外卡",
+          "section_decision": "publishable",
+          "evidence": "【苹果外卡】"
+        },
+        {
+          "label": "XBOX",
+          "section_decision": "publishable",
+          "evidence": "【XBOX】"
+        },
+        {
+          "label": "chime转账",
+          "section_decision": "held",
+          "evidence": "【chime转账】"
+        }
+      ],
+      "expected_rows": [
+        {
+          "source_line": "US:200-500横白=5.44 100倍",
+          "card_type": "Apple iTunes",
+          "country_or_currency": "USD",
+          "amount_range": "200-500",
+          "form_factor": "card_image_horizontal",
+          "price": 5.44,
+          "row_decision": "publishable"
+        },
+        {
+          "source_line": "AUD:100-500【3.7】图",
+          "card_type": "Apple iTunes",
+          "country_or_currency": "AUD",
+          "amount_range": "100-500",
+          "form_factor": "card_image",
+          "price": 3.7,
+          "row_decision": "publishable"
+        },
+        {
+          "source_line": "德国：100-250横白=5.35 50倍",
+          "card_type": "Apple iTunes",
+          "country_or_currency": "DE",
+          "amount_range": "100-250",
+          "form_factor": "card_image_horizontal",
+          "price": 5.35,
+          "row_decision": "publishable"
+        },
+        {
+          "source_line": "US:10-250图密【5.1】 5倍",
+          "card_type": "Xbox",
+          "country_or_currency": "USD",
+          "amount_range": "10-250",
+          "form_factor": "card_or_code",
+          "price": 5.1,
+          "row_decision": "publishable"
+        },
+        {
+          "source_line": "邮箱：20+【6.36】",
+          "card_type": "Chime",
+          "country_or_currency": "USD",
+          "amount_range": "20+",
+          "form_factor": "wallet_transfer",
+          "price": 6.36,
+          "row_decision": "held"
+        },
+        {
+          "source_line": "#筛选好客户卡片发送",
+          "card_type": null,
+          "country_or_currency": null,
+          "amount_range": null,
+          "form_factor": null,
+          "price": null,
+          "row_decision": "rejected"
+        }
+      ]
+    },
+    {
+      "fixture_name": "feihong_us_vip_delta_242",
+      "exception_id": 242,
+      "platform": "wechat",
+      "chat_id": "C-556-【飞鸿FHS028】-IT❤",
+      "chat_name": "C-556-【飞鸿FHS028】-IT❤",
+      "reason": "strict_match_failed",
+      "raw_text": "#VIP广告更新 \n━═━═━━═━═━━═━═━━═━━━═━━━\n#US凑卡网单      【5- 15分钟】\n#不需要包扫卡#需要凑卡\n#不备注默认凑卡\n50=5.25\n100/150 =5.41\n200- 450 =5.45（50倍数）\n300/400/500=5.46\n\n#急卡勿发\n#半截图/模糊图/屏幕图不拿\n\n散卡25- 95=5.1（5倍数）\n━═━═━━═━═━━═━═━━═━━━═━━━\n\ndoywyxugar",
+      "message_decision": "full_snapshot",
+      "message_decision_reason": "用户确认这条应按整版报价处理，当前语义以整版 US 凑卡板为准而不是局部补丁。",
+      "approval_status": "approved",
+      "expected_sections": [
+        {
+          "label": "US凑卡网单",
+          "section_decision": "publishable",
+          "evidence": "#US凑卡网单"
+        }
+      ],
+      "expected_rows": [
+        {
+          "source_line": "50=5.25",
+          "card_type": "Apple iTunes",
+          "country_or_currency": "USD",
+          "amount_range": "50",
+          "form_factor": "white_card",
+          "price": 5.25,
+          "row_decision": "publishable"
+        },
+        {
+          "source_line": "100/150=5.41",
+          "card_type": "Apple iTunes",
+          "country_or_currency": "USD",
+          "amount_range": "100/150",
+          "form_factor": "white_card",
+          "price": 5.41,
+          "row_decision": "publishable"
+        },
+        {
+          "source_line": "200-450=5.45",
+          "card_type": "Apple iTunes",
+          "country_or_currency": "USD",
+          "amount_range": "200-450",
+          "form_factor": "white_card",
+          "price": 5.45,
+          "row_decision": "publishable"
+        },
+        {
+          "source_line": "300/400/500=5.46",
+          "card_type": "Apple iTunes",
+          "country_or_currency": "USD",
+          "amount_range": "300/400/500",
+          "form_factor": "white_card",
+          "price": 5.46,
+          "row_decision": "publishable"
+        },
+        {
+          "source_line": "散卡25-95=5.1",
+          "card_type": "Apple iTunes",
+          "country_or_currency": "USD",
+          "amount_range": "25-95",
+          "form_factor": "code",
+          "price": 5.1,
+          "row_decision": "publishable"
+        },
+        {
+          "source_line": "#急卡勿发",
+          "card_type": null,
+          "country_or_currency": null,
+          "amount_range": null,
+          "form_factor": null,
+          "price": null,
+          "row_decision": "rejected"
+        }
+      ]
+    },
+    {
+      "fixture_name": "panda_itunes_multi_section_241",
+      "exception_id": 241,
+      "platform": "wechat",
+      "chat_id": "C-518 【胖达】 超市卡",
+      "chat_name": "C-518 【胖达】 超市卡",
+      "reason": "strict_match_failed",
+      "raw_text": "胖达莱卡  🍎iTunes 美国🍎\n代码快加：25-90=5.1（5倍数）\n=======外卡快加========\nCAD(加拿大）：150-450=3.92（50倍数）\nDE（德国）：100-250=5.35（50倍数）\nAUD（澳大利亚）：100-500=3.72（50倍数）\n=======US网单======\n横白卡图：200-500=5.45（100倍数）\n横白卡图：250-450=5.42（50倍数）\n横白卡图：100/150=5.4（完整清晰）\n=======CAD网单======\n卡图：100-500=3.98（100倍数）\n使用时间：5-15分钟  需凑卡 感染/僵尸/跳红退",
+      "message_decision": "full_snapshot",
+      "message_decision_reason": "消息本身按 section 给出多种 iTunes 模式，是一整版当前报价而不是单条补丁。",
+      "approval_status": "approved",
+      "expected_sections": [
+        {
+          "label": "美国代码快加",
+          "section_decision": "publishable",
+          "evidence": "代码快加"
+        },
+        {
+          "label": "外卡快加",
+          "section_decision": "publishable",
+          "evidence": "=======外卡快加========"
+        },
+        {
+          "label": "US网单",
+          "section_decision": "publishable",
+          "evidence": "=======US网单======"
+        },
+        {
+          "label": "CAD网单",
+          "section_decision": "publishable",
+          "evidence": "=======CAD网单======"
+        }
+      ],
+      "expected_rows": [
+        {
+          "source_line": "代码快加：25-90=5.1",
+          "card_type": "Apple iTunes",
+          "country_or_currency": "USD",
+          "amount_range": "25-90",
+          "form_factor": "code",
+          "price": 5.1,
+          "row_decision": "publishable"
+        },
+        {
+          "source_line": "CAD(加拿大）：150-450=3.92",
+          "card_type": "Apple iTunes",
+          "country_or_currency": "CAD",
+          "amount_range": "150-450",
+          "form_factor": "card_image",
+          "price": 3.92,
+          "row_decision": "publishable"
+        },
+        {
+          "source_line": "DE（德国）：100-250=5.35",
+          "card_type": "Apple iTunes",
+          "country_or_currency": "DE",
+          "amount_range": "100-250",
+          "form_factor": "card_image",
+          "price": 5.35,
+          "row_decision": "publishable"
+        },
+        {
+          "source_line": "横白卡图：200-500=5.45",
+          "card_type": "Apple iTunes",
+          "country_or_currency": "USD",
+          "amount_range": "200-500",
+          "form_factor": "card_image_horizontal",
+          "price": 5.45,
+          "row_decision": "publishable"
+        },
+        {
+          "source_line": "卡图：100-500=3.98",
+          "card_type": "Apple iTunes",
+          "country_or_currency": "CAD",
+          "amount_range": "100-500",
+          "form_factor": "card_image",
+          "price": 3.98,
+          "row_decision": "publishable"
+        },
+        {
+          "source_line": "使用时间：5-15分钟 需凑卡",
+          "card_type": null,
+          "country_or_currency": null,
+          "amount_range": null,
+          "form_factor": null,
+          "price": null,
+          "row_decision": "rejected"
+        }
+      ]
+    },
+    {
+      "fixture_name": "panda_supermarket_delta_222",
+      "exception_id": 222,
+      "platform": "wechat",
+      "chat_id": "C-518 【胖达】 超市卡",
+      "chat_name": "C-518 【胖达】 超市卡",
+      "reason": "strict_match_failed",
+      "raw_text": "胖达莱卡单独更新\n\n🔥Sephora        100-500=5.95\n🔥Macy  9头     100-300=5.8\n🔥ND双条码      100-500=4.35\n🔥Footlocker    100-500=5.65（有卡问）\n==================\n问价-请勿直发！！\n 默认卡图，代码提前问！！  \n 风控拒付退卡！！\n 半小时没发卡发前问 ！！\n 有赎回记录黑子卡勿发！！\n卡片不要多发，一旦发现多发卡，概不负责！！\n P图卡无论多久，直接减账单！！\n 所有卡种按实际使用金额算汇率！！！",
+      "message_decision": "delta_update",
+      "message_decision_reason": "明确写了单独更新，只更新超市卡这一组价格。",
+      "approval_status": "approved",
+      "expected_sections": [
+        {
+          "label": "超市卡更新",
+          "section_decision": "publishable",
+          "evidence": "胖达莱卡单独更新"
+        }
+      ],
+      "expected_rows": [
+        {
+          "source_line": "Sephora 100-500=5.95",
+          "card_type": "Sephora",
+          "country_or_currency": "USD",
+          "amount_range": "100-500",
+          "form_factor": "card_or_code",
+          "price": 5.95,
+          "row_decision": "publishable"
+        },
+        {
+          "source_line": "Macy 9头 100-300=5.8",
+          "card_type": "Macy's 9 Start",
+          "country_or_currency": "USD",
+          "amount_range": "100-300",
+          "form_factor": "card_image",
+          "price": 5.8,
+          "row_decision": "publishable"
+        },
+        {
+          "source_line": "ND双条码 100-500=4.35",
+          "card_type": "Nordstrom",
+          "country_or_currency": "USD",
+          "amount_range": "100-500",
+          "form_factor": "barcode_double",
+          "price": 4.35,
+          "row_decision": "publishable"
+        },
+        {
+          "source_line": "Footlocker 100-500=5.65（有卡问）",
+          "card_type": "Footlocker",
+          "country_or_currency": "USD",
+          "amount_range": "100-500",
+          "form_factor": "card_or_code",
+          "price": 5.65,
+          "row_decision": "held"
+        },
+        {
+          "source_line": "问价-请勿直发！！",
+          "card_type": null,
+          "country_or_currency": null,
+          "amount_range": null,
+          "form_factor": null,
+          "price": null,
+          "row_decision": "rejected"
+        }
+      ]
+    },
+    {
+      "fixture_name": "milele_shift_board_169",
+      "exception_id": 169,
+      "platform": "wechat",
+      "chat_id": "C-512 【米乐022】 IT",
+      "chat_name": "C-512 【米乐022】 IT",
+      "reason": "strict_match_failed",
+      "raw_text": "[福]晚班更新\nUS\n10-195=5.15（5倍数）\n----------------------------\n 50  =5.3\n100/150=5.4\n200-  450=5.41（50倍数）\n300 400 500=5.41\n  【2-8分反馈】\n【有扫卡记录的提醒我下。】\n------------------------------\n#欧盟\nCAD      200-  500    =3.91\n德国      150-   250   =5.38\nUK        100-   500   =6.7\n\n瑞士：   100-    250  =6.4\nAUD:     100-   500   =3.81\n西班牙    50-    250   =5.65\n\n奥地利   100-   250   =5.5\n意大利   100-  250    =5.2\n法国      100-   250   =5.42\n\n瑞典   500+    =0.45\n挪威   200+    =0.485\n墨西哥200+   =0.27\n\nkainsnsvar",
+      "message_decision": "full_snapshot",
+      "message_decision_reason": "用户确认这条属于整版晚班交接板，应按完整报价快照处理。",
+      "approval_status": "approved",
+      "expected_sections": [
+        {
+          "label": "US",
+          "section_decision": "publishable",
+          "evidence": "US"
+        },
+        {
+          "label": "欧盟",
+          "section_decision": "publishable",
+          "evidence": "#欧盟"
+        }
+      ],
+      "expected_rows": [
+        {
+          "source_line": "50=5.3",
+          "card_type": "Apple iTunes",
+          "country_or_currency": "USD",
+          "amount_range": "50",
+          "form_factor": "white_card",
+          "price": 5.3,
+          "row_decision": "publishable"
+        },
+        {
+          "source_line": "100/150=5.4",
+          "card_type": "Apple iTunes",
+          "country_or_currency": "USD",
+          "amount_range": "100/150",
+          "form_factor": "white_card",
+          "price": 5.4,
+          "row_decision": "publishable"
+        },
+        {
+          "source_line": "CAD 200-500=3.91",
+          "card_type": "Apple iTunes",
+          "country_or_currency": "CAD",
+          "amount_range": "200-500",
+          "form_factor": "card_image",
+          "price": 3.91,
+          "row_decision": "publishable"
+        },
+        {
+          "source_line": "UK 100-500=6.7",
+          "card_type": "Apple iTunes",
+          "country_or_currency": "GBP",
+          "amount_range": "100-500",
+          "form_factor": "card_image",
+          "price": 6.7,
+          "row_decision": "publishable"
+        },
+        {
+          "source_line": "【有扫卡记录的提醒我下。】",
+          "card_type": null,
+          "country_or_currency": null,
+          "amount_range": null,
+          "form_factor": null,
+          "price": null,
+          "row_decision": "rejected"
+        }
+      ]
+    },
+    {
+      "fixture_name": "sk_steam_simple_full_243",
+      "exception_id": 243,
+      "platform": "wechat",
+      "chat_id": "C-535-【SK】--S035--星黛露",
+      "chat_name": "C-535-【SK】--S035--星黛露",
+      "reason": "missing_group_template",
+      "raw_text": "Steam价格更新卡图卡密同价\n美金USD----5.00\n欧盟EUR----5.80\n英榜GBP----6.66\n瑞士CHF----6.32\n加元CAD----3.58\n澳元AUD----3.50\n新西兰NZD--2.90\n波兰PLN-----1.368\n剩余其余大区均照充值到账美金*4.95\n\ncyflkvmvky",
+      "message_decision": "full_snapshot",
+      "message_decision_reason": "整条是单一 Steam 板，列出主流币种价格和一个兜底公式。",
+      "approval_status": "approved",
+      "expected_sections": [
+        {
+          "label": "Steam",
+          "section_decision": "publishable",
+          "evidence": "Steam价格更新卡图卡密同价"
+        }
+      ],
+      "expected_rows": [
+        {
+          "source_line": "美金USD----5.00",
+          "card_type": "Steam",
+          "country_or_currency": "USD",
+          "amount_range": null,
+          "form_factor": "card_or_code",
+          "price": 5.0,
+          "row_decision": "publishable"
+        },
+        {
+          "source_line": "欧盟EUR----5.80",
+          "card_type": "Steam",
+          "country_or_currency": "EUR",
+          "amount_range": null,
+          "form_factor": "card_or_code",
+          "price": 5.8,
+          "row_decision": "publishable"
+        },
+        {
+          "source_line": "波兰PLN-----1.368",
+          "card_type": "Steam",
+          "country_or_currency": "PLN",
+          "amount_range": null,
+          "form_factor": "card_or_code",
+          "price": 1.368,
+          "row_decision": "publishable"
+        },
+        {
+          "source_line": "剩余其余大区均照充值到账美金*4.95",
+          "card_type": "Steam",
+          "country_or_currency": null,
+          "amount_range": null,
+          "form_factor": null,
+          "price": null,
+          "row_decision": "held"
+        }
+      ]
+    },
+    {
+      "fixture_name": "shadow_steam_razer_full_238",
+      "exception_id": 238,
+      "platform": "wechat",
+      "chat_id": "C-541【影子】 steam",
+      "chat_name": "C-541【影子】 steam",
+      "reason": "missing_group_template",
+      "raw_text": "【 影子steam价格表】\n*************************\n20美金完整卡图：5.20\n美金USD :5.10\n欧元EUR :5.93\n英镑GBP :6.80\n加元CAD :3.75\n澳元AUD :3.65\n新西兰NZD：3.02\n瑞士CHF ：6.43\n波兰PLN  :1.37\n*************************\n报其他国家按到账美金*5.10\n        【影子】\n=== 雷蛇/Razer ===\n   美  USD ：5.78\n   新 加 坡 ：4.27\n   加 拿 大 ：4.18\n   澳大利亚：4.06\n   新西兰   ：3.23\n   马来西亚：1.46\n推荐客户有🧧（200-2000)\n    上不封顶",
+      "message_decision": "full_snapshot",
+      "message_decision_reason": "消息分成 Steam 和 Razer 两个完整 section，属于一整版多产品报价。",
+      "approval_status": "approved",
+      "expected_sections": [
+        {
+          "label": "Steam",
+          "section_decision": "publishable",
+          "evidence": "【 影子steam价格表】"
+        },
+        {
+          "label": "Razer",
+          "section_decision": "publishable",
+          "evidence": "=== 雷蛇/Razer ==="
+        }
+      ],
+      "expected_rows": [
+        {
+          "source_line": "美金USD:5.10",
+          "card_type": "Steam",
+          "country_or_currency": "USD",
+          "amount_range": null,
+          "form_factor": "card_or_code",
+          "price": 5.1,
+          "row_decision": "publishable"
+        },
+        {
+          "source_line": "欧元EUR:5.93",
+          "card_type": "Steam",
+          "country_or_currency": "EUR",
+          "amount_range": null,
+          "form_factor": "card_or_code",
+          "price": 5.93,
+          "row_decision": "publishable"
+        },
+        {
+          "source_line": "美USD：5.78",
+          "card_type": "Razer Gold",
+          "country_or_currency": "USD",
+          "amount_range": null,
+          "form_factor": "card_or_code",
+          "price": 5.78,
+          "row_decision": "publishable"
+        },
+        {
+          "source_line": "加拿大：4.18",
+          "card_type": "Razer Gold",
+          "country_or_currency": "CAD",
+          "amount_range": null,
+          "form_factor": "card_or_code",
+          "price": 4.18,
+          "row_decision": "publishable"
+        },
+        {
+          "source_line": "报其他国家按到账美金*5.10",
+          "card_type": "Steam",
+          "country_or_currency": null,
+          "amount_range": null,
+          "form_factor": null,
+          "price": null,
+          "row_decision": "held"
+        }
+      ]
+    },
+    {
+      "fixture_name": "yangyang_supermarket_board_236",
+      "exception_id": 236,
+      "platform": "wechat",
+      "chat_id": "C-547 【洋羊】 超市卡",
+      "chat_name": "C-547 【洋羊】 超市卡",
+      "reason": "missing_group_template",
+      "raw_text": "#洋羊晚班Price updates：\n———————————————\n【Sephora】50-99       5.7\n【Sephora】100-500   5.95\n#（卡图代码同价）\n———————————————\n【Macy9Pic】50-99      5.4\n【Macy9Pic】100-300  5.85\n———————————————\n【Footlocker】50-99       5.2\n【Footlocker】100-500    5.7\n【Footlocker Code】100-500 5.1\n#（Footlocker Code不要6312）\n———————————————\n【Nordstrom Pic】100-500   4.3\n【Nordstrom Code】100-400  4.1\n———————————————\n【Target】100-500 4.55 发前问\n#（卡图代码同价/跳卡退）\n———————————————\n【NIKE】150-500  ask\n———————————————\n【Dicks】100-300  5.45 买手卡\n———————————————\n【Walmart60/61/62/63】\nRate：50-99  ask\nRate：100      ask\n#（慢刷2-4h/砍单退卡）\n———————————————\n【Gamestop】100-1000 5.1\n#（6364911卡头/卡图代码同价)\n———————————————\n#充值卡/转账Price updates：\n———————————————\n【Xbox Us】10-500 5.05 5倍数\n【编钟Chime】10-1000  6.25\n#（所有户120分钟有效期）\n#（超额时需等成功提出加）\n【Psn Us】10-200    4.0\n【Roblox Us】10-200   3.2\n【eneba/EUR】10-200  6.7\n【Uber】100-500  4.3  发前问\n【DoorDash】100-500   4.4 发前问\n【moneypak】100-500  6.0\n【CVS Pharmacy】100-500  5.7\n【Dollar General】100-250  5.7\n【Paysafe card 安全支付】\n英国  10-49=7.0  50-500=7.15\n瑞士  15-49=6.3  50-500=6.75\n欧盟  15-49=6.3  50-500=6.5\n欧盟：德国 芬兰 荷兰 立陶宛 比利时 西班牙\n拉脱维亚  奥地利 卢森堡 爱尔兰 克罗地亚 \n法国 斯洛伐克 斯洛文尼亚 塞浦路斯\n#（使用时间5-15分钟）\n#（锁卡/锁户/刷多少结多少）\n#（使用期间勿查/报错国家会锁卡）\n#（二人同时使用会锁/介意勿发）\n#（带国家/金额询问后手动报价）\n———————————————\n#借记卡Price updates：\n———————————————\nOneCard5205 100-500   6.05\n#（只拿52052450开头）\nGO2Bank4819 100-500  6.1\nGreenDot4143 100-300  6.0\n#（4143拒付默认扣2刀手续费再刷）\nMoneycard4020/5181  100-500  ask\n#（4020/5181注册6刀手续费）\n#（风控退/注册卡退/询问规则）\n———————————————\nVanilla 4118/4097 Pic \nRate：20-99         2.6\nRate：100-150     2.8\n#（不要直接发/询问规则）\n———————————————\nVisa and Master Card\n4358/4034/511332 Pic\nRate：50-99       4.0\nRate：100-199   4.3\n#（正反一致/漏四角/连卡退/旧卡退）\n#（收过的背景不要/先看背景）\n#（发前询问规则/不要直接发!!）\n———————————————\n#4263（Pic）\nRate：50-300    3.95\nRate：301-500  3.35\n———————————————\n#5336/511340（Pic）\nRate：100-500  4.15\n———————————————\n#4748（Pic）\nRate：100-500 3.5\n———————————————\n超市卡变动快发前先询问！！\n结账时间下午1.00-晚上7.00！！\nP图卡一经发现三倍减账！！\n\nrhpawvajsf",
+      "message_decision": "full_snapshot",
+      "message_decision_reason": "这是完整的晚班总板，覆盖超市卡、充值卡和借记卡多个 section。",
+      "approval_status": "approved",
+      "expected_sections": [
+        {
+          "label": "超市卡",
+          "section_decision": "publishable",
+          "evidence": "【Sephora】"
+        },
+        {
+          "label": "充值卡/转账",
+          "section_decision": "publishable",
+          "evidence": "#充值卡/转账Price updates："
+        },
+        {
+          "label": "借记卡",
+          "section_decision": "publishable",
+          "evidence": "#借记卡Price updates："
+        }
+      ],
+      "expected_rows": [
+        {
+          "source_line": "【Sephora】100-500 5.95",
+          "card_type": "Sephora",
+          "country_or_currency": "USD",
+          "amount_range": "100-500",
+          "form_factor": "card_or_code",
+          "price": 5.95,
+          "row_decision": "publishable"
+        },
+        {
+          "source_line": "【Macy9Pic】100-300 5.85",
+          "card_type": "Macy's 9 Start",
+          "country_or_currency": "USD",
+          "amount_range": "100-300",
+          "form_factor": "card_image",
+          "price": 5.85,
+          "row_decision": "publishable"
+        },
+        {
+          "source_line": "【Footlocker Code】100-500 5.1",
+          "card_type": "Footlocker",
+          "country_or_currency": "USD",
+          "amount_range": "100-500",
+          "form_factor": "code",
+          "price": 5.1,
+          "row_decision": "publishable"
+        },
+        {
+          "source_line": "【Nordstrom Code】100-400 4.1",
+          "card_type": "Nordstrom",
+          "country_or_currency": "USD",
+          "amount_range": "100-400",
+          "form_factor": "code",
+          "price": 4.1,
+          "row_decision": "publishable"
+        },
+        {
+          "source_line": "【Xbox Us】10-500 5.05",
+          "card_type": "Xbox",
+          "country_or_currency": "USD",
+          "amount_range": "10-500",
+          "form_factor": "card_or_code",
+          "price": 5.05,
+          "row_decision": "publishable"
+        },
+        {
+          "source_line": "【编钟Chime】10-1000 6.25",
+          "card_type": "Chime",
+          "country_or_currency": "USD",
+          "amount_range": "10-1000",
+          "form_factor": "wallet_transfer",
+          "price": 6.25,
+          "row_decision": "publishable"
+        },
+        {
+          "source_line": "【NIKE】150-500 ask",
+          "card_type": "Nike",
+          "country_or_currency": "USD",
+          "amount_range": "150-500",
+          "form_factor": "card_or_code",
+          "price": null,
+          "row_decision": "held"
+        },
+        {
+          "source_line": "Moneycard4020/5181 100-500 ask",
+          "card_type": "Moneycard",
+          "country_or_currency": "USD",
+          "amount_range": "100-500",
+          "form_factor": "debit_card",
+          "price": null,
+          "row_decision": "held"
+        },
+        {
+          "source_line": "超市卡变动快发前先询问！！",
+          "card_type": null,
+          "country_or_currency": null,
+          "amount_range": null,
+          "form_factor": null,
+          "price": null,
+          "row_decision": "rejected"
+        }
+      ]
+    },
+    {
+      "fixture_name": "wanrui_xbox_roblox_full_235",
+      "exception_id": 235,
+      "platform": "wechat",
+      "chat_id": "C-596 万瑞收AM02夕希",
+      "chat_name": "C-596 万瑞收AM02夕希",
+      "reason": "missing_group_template",
+      "raw_text": "【===XBOX===】\nUS   10-250=5.1    图密同   5倍数\n           【====外卡xbox====】  \nEUR 【5.25】卡图   代码电子纸质减0.1，3张连卡或以上先问   不问会拒\nU K  【6.15】图密同价，3张连卡或以上先问   不问会拒\n巴  西 【0.75】         AUD 【3.6】       \n波 兰 【1.1】            CAD 【3.45】        \n瑞典 【0.45】           挪威 【0.44】\n新加坡【3.7】        墨西哥【0.305】  \n新西兰【2.9】         以色列【1.2】       \n匈牙利【0.012】      捷 克 【0.12】 \n南  非 【0.24】         香 港【0.6】        \n丹麦 【0.55】           韩 国 【0.004】        \n日 本【0.034】        哥伦比亚【0.001】  \n台湾  【0.1】            沙特阿拉伯【1.25】   \n瑞士  【5.0】            印度=0.04\n[爱心][爱心]看清价格  以上价格不带卡  发卡即默认价格 \n[爱心][爱心]5张连卡或以上先问   不问会拒\n[爱心][爱心]任何Xbox批量卡都可问\n---------------------------------\n   【==Roblox罗布乐思==】\n【RI  RB  RE/纯数字】\n美USD【3.1】     \n其他国家按美金到账*3.1\n【RA、乱码按R币*0.01】\n批量先问   不问会拒\n#结算整数，小数点后面不加账\n----------------------------------------\n梅西9开头卡图【Macy&#039;s 9 start Pic】\n丝芙兰【Sephora】\n鞋柜卡图【Footlocker Pic】\nUS亚马逊【Amazon】\n超市卡    都可问\n----------------------------------------------\n备注：发现一卡多发加上谁给谁反馈， 不论顺序前后概不负责，\n仅提供多发证据，避免争议！！！谢谢理解！！",
+      "message_decision": "full_snapshot",
+      "message_decision_reason": "主要是 Xbox 和 Roblox 主板，最后超市卡段落只是可问说明，不是可发布报价。",
+      "approval_status": "pending_review",
+      "expected_sections": [
+        {
+          "label": "XBOX",
+          "section_decision": "publishable",
+          "evidence": "【===XBOX===】"
+        },
+        {
+          "label": "Roblox",
+          "section_decision": "publishable",
+          "evidence": "【==Roblox罗布乐思==】"
+        },
+        {
+          "label": "超市卡可问",
+          "section_decision": "held",
+          "evidence": "超市卡 都可问"
+        }
+      ],
+      "expected_rows": [
+        {
+          "source_line": "US 10-250=5.1 图密同",
+          "card_type": "Xbox",
+          "country_or_currency": "USD",
+          "amount_range": "10-250",
+          "form_factor": "card_or_code",
+          "price": 5.1,
+          "row_decision": "publishable"
+        },
+        {
+          "source_line": "EUR【5.25】卡图",
+          "card_type": "Xbox",
+          "country_or_currency": "EUR",
+          "amount_range": null,
+          "form_factor": "card_image",
+          "price": 5.25,
+          "row_decision": "publishable"
+        },
+        {
+          "source_line": "美USD【3.1】",
+          "card_type": "Roblox",
+          "country_or_currency": "USD",
+          "amount_range": null,
+          "form_factor": "digital_code",
+          "price": 3.1,
+          "row_decision": "publishable"
+        },
+        {
+          "source_line": "超市卡 都可问",
+          "card_type": null,
+          "country_or_currency": null,
+          "amount_range": null,
+          "form_factor": null,
+          "price": null,
+          "row_decision": "held"
+        },
+        {
+          "source_line": "备注：发现一卡多发加上谁给谁反馈",
+          "card_type": null,
+          "country_or_currency": null,
+          "amount_range": null,
+          "form_factor": null,
+          "price": null,
+          "row_decision": "rejected"
+        }
+      ]
+    },
+    {
+      "fixture_name": "qh_delta_us_uk_239",
+      "exception_id": 239,
+      "platform": "wechat",
+      "chat_id": "C-523【QH-IT-设备组-禁赎回",
+      "chat_name": "C-523【QH-IT-设备组-禁赎回",
+      "reason": "missing_group_template",
+      "raw_text": "单独更新\n#快速网单5-20分钟\n#不需要包扫卡#需要凑卡\n300/400/500=5.42\n200/250/350/450=5.4\n100/150=5.37\n#网单只要白卡\n#连卡最多只接受二连\n#50倍数的卡会慢一些！\n#p图，截屏，屏幕图不要！\n#感染过的卡麻烦不要发谢谢！\n#发卡带面值金额方便快速加卡\n#40分钟之内僵尸卡不结账！！！\n#有赎回记录的卡不要发谢谢配合！\n-------------UK快刷-------------\nUK卡图100-250=6.71（50倍数）\nUK卡图250-500=6.71（50倍数）\n#连卡不要拆开发 \n#只要清晰完整图\n#300-500只要白版卡图\n#有赎回记录的黑子禁止发！\n#3-5分钟，感染、僵尸、不过退\n#40分钟之内僵尸卡不结账！！！\n\nmozhspiggd",
+      "message_decision": "delta_update",
+      "message_decision_reason": "消息开头明确是单独更新，只更新 US 快速网单和 UK 快刷。",
+      "approval_status": "pending_review",
+      "expected_sections": [
+        {
+          "label": "US快速网单",
+          "section_decision": "publishable",
+          "evidence": "单独更新"
+        },
+        {
+          "label": "UK快刷",
+          "section_decision": "publishable",
+          "evidence": "-------------UK快刷-------------"
+        }
+      ],
+      "expected_rows": [
+        {
+          "source_line": "300/400/500=5.42",
+          "card_type": "Apple iTunes",
+          "country_or_currency": "USD",
+          "amount_range": "300/400/500",
+          "form_factor": "white_card",
+          "price": 5.42,
+          "row_decision": "publishable"
+        },
+        {
+          "source_line": "100/150=5.37",
+          "card_type": "Apple iTunes",
+          "country_or_currency": "USD",
+          "amount_range": "100/150",
+          "form_factor": "white_card",
+          "price": 5.37,
+          "row_decision": "publishable"
+        },
+        {
+          "source_line": "UK卡图100-250=6.71",
+          "card_type": "Apple iTunes",
+          "country_or_currency": "GBP",
+          "amount_range": "100-250",
+          "form_factor": "card_image",
+          "price": 6.71,
+          "row_decision": "publishable"
+        },
+        {
+          "source_line": "#连卡不要拆开发",
+          "card_type": null,
+          "country_or_currency": null,
+          "amount_range": null,
+          "form_factor": null,
+          "price": null,
+          "row_decision": "rejected"
+        }
+      ]
+    },
+    {
+      "fixture_name": "xiyi_itunes_xbox_razer_full_198",
+      "exception_id": 198,
+      "platform": "wechat",
+      "chat_id": "C-502CH-143-夕希&臻韵IT收卡群",
+      "chat_name": "C-502CH-143-夕希&臻韵IT收卡群",
+      "reason": "missing_group_template",
+      "raw_text": "=【#iTunes 快刷】==\n白25-175=5.1【5倍】快加审图\n100-150=5.4【50倍】只要稳卡\n200-450=5.4【50倍】只要稳卡\n300-400=5.42【100倍】 只要稳卡\n500=5.42【100倍】 只要稳卡\n纯代码15-90=4.95【5倍】只要稳卡\n#快速网单1-5分钟\n#连卡先问\n#连卡先问\n#请告知客户不要扫卡更广告明确表明\n#快速网单不含有录屏\n#45分钟内扫卡盗刷一律不结账。\n#屏幕图算代码/局部/过分模糊不要\n#卡图需清晰完整\n#价格久了问\n—————————————\n====【#iTunes 外卡】====\n挪威瑞典图密250-5000=问\n德国10-200=5.15【5倍】\n德国100-250=5.3【50倍\n英国10-200=5.95【5倍】\n英国100-300=6.45【50倍】\nCAD10-200=3.7【5倍】\nCAD100-300=3.8【50倍】\nAUD20-200=3.35【10倍】\nAUD100-500=3.8【100倍】\n—————————————\n====【#iTunes 不限购】====\n意大利 50-250 （5.2）【50倍】清晰卡图\n荷兰/法国/西班牙/=5.35【50倍】连卡问\n希腊 葡萄牙 卢森堡=5.15全面值\n—————————————\n======#Xbox======\nUS10—200 图密=5.11【5倍】\nUK卡图=6.15【5倍】\nEUR卡图=5.3【5倍】\nCAD卡图【3.3】  \nAUD卡图【3.5】\n新西兰卡图【2.7】\n———————————\n======#雷蛇======\n美国【 5.7】  新加坡4.25】\n巴西 【1.03】 加拿大【4.1】\n马来【1.25】 墨西哥 【0.3】\n————————————\n#所有卡默认压45分钟\n#ITS类型未标注不结账\n#多发加上谁的算谁的\n#结算时间为下午14-18点\n#广告更新期间没看到信息麻烦多艾特客服",
+      "message_decision": "full_snapshot",
+      "message_decision_reason": "完整多产品母板，覆盖 iTunes、Xbox 和雷蛇。",
+      "approval_status": "pending_review",
+      "expected_sections": [
+        {
+          "label": "iTunes 快刷",
+          "section_decision": "publishable",
+          "evidence": "=【#iTunes 快刷】=="
+        },
+        {
+          "label": "iTunes 外卡",
+          "section_decision": "publishable",
+          "evidence": "====【#iTunes 外卡】===="
+        },
+        {
+          "label": "Xbox",
+          "section_decision": "publishable",
+          "evidence": "======#Xbox======"
+        },
+        {
+          "label": "雷蛇",
+          "section_decision": "publishable",
+          "evidence": "======#雷蛇======"
+        }
+      ],
+      "expected_rows": [
+        {
+          "source_line": "100-150=5.4",
+          "card_type": "Apple iTunes",
+          "country_or_currency": "USD",
+          "amount_range": "100-150",
+          "form_factor": "white_card",
+          "price": 5.4,
+          "row_decision": "publishable"
+        },
+        {
+          "source_line": "德国10-200=5.15",
+          "card_type": "Apple iTunes",
+          "country_or_currency": "DE",
+          "amount_range": "10-200",
+          "form_factor": "card_image",
+          "price": 5.15,
+          "row_decision": "publishable"
+        },
+        {
+          "source_line": "英国100-300=6.45",
+          "card_type": "Apple iTunes",
+          "country_or_currency": "GBP",
+          "amount_range": "100-300",
+          "form_factor": "card_image",
+          "price": 6.45,
+          "row_decision": "publishable"
+        },
+        {
+          "source_line": "US10—200 图密=5.11",
+          "card_type": "Xbox",
+          "country_or_currency": "USD",
+          "amount_range": "10-200",
+          "form_factor": "card_or_code",
+          "price": 5.11,
+          "row_decision": "publishable"
+        },
+        {
+          "source_line": "美国【5.7】",
+          "card_type": "Razer Gold",
+          "country_or_currency": "USD",
+          "amount_range": null,
+          "form_factor": "card_or_code",
+          "price": 5.7,
+          "row_decision": "publishable"
+        },
+        {
+          "source_line": "#所有卡默认压45分钟",
+          "card_type": null,
+          "country_or_currency": null,
+          "amount_range": null,
+          "form_factor": null,
+          "price": null,
+          "row_decision": "rejected"
+        }
+      ]
+    },
+    {
+      "fixture_name": "yangyang_nordstrom_delta_230",
+      "exception_id": 230,
+      "platform": "wechat",
+      "chat_id": "C-547 【洋羊】 超市卡",
+      "chat_name": "C-547 【洋羊】 超市卡",
+      "reason": "missing_group_template",
+      "raw_text": "【Nordstrom Pic】100-500   4.3\n【Nordstrom Code】100-400  4.1",
+      "message_decision": "delta_update",
+      "message_decision_reason": "这是单个品牌的两行小更新，不足以代表整版超市卡快照。",
+      "approval_status": "pending_review",
+      "expected_sections": [
+        {
+          "label": "Nordstrom",
+          "section_decision": "publishable",
+          "evidence": "【Nordstrom Pic】"
+        }
+      ],
+      "expected_rows": [
+        {
+          "source_line": "【Nordstrom Pic】100-500 4.3",
+          "card_type": "Nordstrom",
+          "country_or_currency": "USD",
+          "amount_range": "100-500",
+          "form_factor": "card_image",
+          "price": 4.3,
+          "row_decision": "publishable"
+        },
+        {
+          "source_line": "【Nordstrom Code】100-400 4.1",
+          "card_type": "Nordstrom",
+          "country_or_currency": "USD",
+          "amount_range": "100-400",
+          "form_factor": "code",
+          "price": 4.1,
+          "row_decision": "publishable"
+        }
+      ]
+    },
+    {
+      "fixture_name": "wannuo_xbox_shorthand_174",
+      "exception_id": 174,
+      "platform": "wechat",
+      "chat_id": "C-531-万诺-192-夕希对接群",
+      "chat_name": "C-531-万诺-192-夕希对接群",
+      "reason": "missing_group_template",
+      "raw_text": "+100 xb 5.13",
+      "message_decision": "unresolved",
+      "message_decision_reason": "单行缩写能看出面额和品牌，但国家、产品模式和发布语义都不够硬。",
+      "approval_status": "pending_review",
+      "expected_sections": [
+        {
+          "label": "shorthand",
+          "section_decision": "held",
+          "evidence": "+100 xb 5.13"
+        }
+      ],
+      "expected_rows": [
+        {
+          "source_line": "+100 xb 5.13",
+          "card_type": "Xbox",
+          "country_or_currency": null,
+          "amount_range": "100",
+          "form_factor": null,
+          "price": 5.13,
+          "row_decision": "held"
+        }
+      ]
+    },
+    {
+      "fixture_name": "qingsong_noise_token_177",
+      "exception_id": 177,
+      "platform": "wechat",
+      "chat_id": "B08-C-513【青松】IT-XiXi-AQSS",
+      "chat_name": "B08-C-513【青松】IT-XiXi-AQSS",
+      "reason": "missing_group_template",
+      "raw_text": "X2RGQCYDM6D278KN\nXCKRWPF796J5KX56\nXJMD2ZN6R2VRCWF6",
+      "message_decision": "unresolved",
+      "message_decision_reason": "纯 token 噪声，没有可证明的报价语义。",
+      "approval_status": "pending_review",
+      "expected_sections": [
+        {
+          "label": "noise",
+          "section_decision": "rejected",
+          "evidence": "X2RGQCYDM6D278KN"
+        }
+      ],
+      "expected_rows": [
+        {
+          "source_line": "X2RGQCYDM6D278KN",
+          "card_type": null,
+          "country_or_currency": null,
+          "amount_range": null,
+          "form_factor": null,
+          "price": null,
+          "row_decision": "rejected"
+        }
+      ]
+    }
+  ]
+}

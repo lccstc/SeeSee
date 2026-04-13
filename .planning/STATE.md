@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: active
-stopped_at: Gathered Phase 02.1 context
-last_updated: "2026-04-14T03:31:28+07:00"
-last_activity: 2026-04-14
+status: ready
+stopped_at: Phase 03 ready for planning
+last_updated: "2026-04-14T04:52:34+07:00"
+last_activity: 2026-04-14 -- Phase 02.1 execution completed
 progress:
   total_phases: 9
-  completed_phases: 2
-  total_plans: 6
-  completed_plans: 6
-  percent: 22
+  completed_phases: 3
+  total_plans: 9
+  completed_plans: 9
+  percent: 100
 ---
 
 # Project State
@@ -21,22 +21,22 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-13)
 
 **Core value:** 把供应商群原始消息转成“可追溯、可验证、不可误发布”的报价事实，宁可不上墙，也绝不把错价、错面额、错国家/币种上墙。
-**Current focus:** Phase 02.1 — real-exception-corpus-candidate-coverage (ready for discuss)
+**Current focus:** Phase 03 — fact-protection-publisher
 
 ## Current Position
 
-Phase: 02.1 (real-exception-corpus-candidate-coverage) — READY FOR DISCUSS
-Plan: Not planned
-Status: Phase 02.1 inserted after Phase 02 due to live exception-corpus bottleneck
-Last activity: 2026-04-14
+Phase: 03 (fact-protection-publisher) — READY FOR PLANNING
+Plan: none active
+Status: Phase 02.1 completed; next step is planning Phase 03
+Last activity: 2026-04-14 -- Phase 02.1 execution completed
 
-Progress: [██░░░░░░░░] 22%
+Progress: [██████████] 100% of currently planned work
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 6
+- Total plans completed: 9
 - Average duration: -
 - Total execution time: 45 min
 
@@ -46,17 +46,20 @@ Progress: [██░░░░░░░░] 22%
 |-------|-------|-------|----------|
 | 01 | 3 | - | - |
 | 02 | 3 | 45min | 15min |
-| 02.1 | 0 | - | - |
+| 02.1 | 3 | - | - |
 | 03 | 0 | - | - |
 
 **Recent Trend:**
 
-- Last 5 plans: -
+- Last 5 plans: 02.1 completed cleanly with corpus + parser + bootstrap coverage
 - Trend: Stable
 
 | Phase 02-validation-engine P01 | 14min | 2 tasks | 4 files |
 | Phase 02-validation-engine P02 | 21min | 2 tasks | 6 files |
 | Phase 02-validation-engine P03 | 10min | 2 tasks | 5 files |
+| Phase 02.1-real-exception-corpus-candidate-coverage P01 | - | 4 tasks | corpus fixtures + tests |
+| Phase 02.1-real-exception-corpus-candidate-coverage P02 | - | 2 tasks | parser hardening + regressions |
+| Phase 02.1-real-exception-corpus-candidate-coverage P03 | - | 2 tasks | bootstrap tooling + runtime/web proofs |
 
 ## Accumulated Context
 
@@ -77,6 +80,7 @@ Recent decisions affecting current work:
 ### Roadmap Evolution
 
 - Phase 02.1 inserted after Phase 02: Real Exception Corpus & Candidate Coverage (URGENT)
+- Phase 02.1 completed: corpus, deterministic candidate hardening, and bootstrap coverage are now in repo and verified
 
 ### Pending Todos
 
@@ -90,6 +94,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-14T03:31:00+07:00
-Stopped at: Gathered Phase 02.1 context
+Last session: 2026-04-14T04:52:34+07:00
+Stopped at: Phase 03 ready for planning
 Resume file: None

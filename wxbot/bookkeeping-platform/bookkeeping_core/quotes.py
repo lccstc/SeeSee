@@ -520,6 +520,9 @@ class ParsedQuoteRow:
     parser_template: str
     parser_version: str
     confidence: float
+    scope_header_text: str = ""
+    scope_header_line_index: int | None = None
+    inherited_fields: tuple[str, ...] = ()
 
 
 @dataclass(slots=True)
@@ -694,6 +697,12 @@ def _quote_row_field_sources(row: ParsedQuoteRow) -> dict[str, Any]:
     for field_name, raw_fragment in fragments.items():
         if raw_fragment:
             field_sources[field_name] = {"raw_fragment": raw_fragment}
+    if row.inherited_fields and row.scope_header_text:
+        field_sources["scope_evidence"] = {
+            "header_text": row.scope_header_text,
+            "header_line_index": row.scope_header_line_index,
+            "inherited_fields": list(row.inherited_fields),
+        }
     return field_sources
 
 

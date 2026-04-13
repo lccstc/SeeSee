@@ -1,0 +1,17 @@
+{
+  "snapshot": {
+    "kind": "approved-gold-manifest",
+    "approved_at": "2026-04-14",
+    "source": "operator checkpoint during Phase 02.1 Wave 1"
+  },
+  "approved_fixture_names": [
+    "leng_itunes_mixed_board_244",
+    "feihong_us_vip_delta_242",
+    "panda_itunes_multi_section_241",
+    "panda_supermarket_delta_222",
+    "milele_shift_board_169",
+    "sk_steam_simple_full_243",
+    "shadow_steam_razer_full_238",
+    "yangyang_supermarket_board_236"
+  ]
+}

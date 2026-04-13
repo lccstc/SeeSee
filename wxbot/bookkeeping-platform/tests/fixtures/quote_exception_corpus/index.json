@@ -1,0 +1,338 @@
+{
+  "snapshot": {
+    "kind": "planning-baseline",
+    "fetched_at": "2026-04-14",
+    "source": "REAL-EXCEPTION-CORPUS.md",
+    "source_url": "http://100.66.25.75:8765/api/quotes/exceptions?limit=500&offset=0&resolution_status=open",
+    "notes": "Baseline snapshot frozen for Phase 02.1 planning. The live pool is refreshable and may drift."
+  },
+  "total_open_exceptions": 226,
+  "chat_count": 25,
+  "top_8_exception_count": 159,
+  "reason_counts": {
+    "missing_group_template": 149,
+    "strict_match_failed": 77
+  },
+  "top_exception_chat_ids": [
+    "C-556-【飞鸿FHS028】-IT❤",
+    "C-523【QH-IT-设备组-禁赎回",
+    "C-518 【胖达】 超市卡",
+    "LD-QS-1616-C-528【Leng】Itunes",
+    "C-512 【米乐022】 IT",
+    "C-541【影子】 steam",
+    "C-547 【洋羊】 超市卡",
+    "C-596 万瑞收AM02夕希"
+  ],
+  "top_exception_chats": [
+    {
+      "chat_id": "C-556-【飞鸿FHS028】-IT❤",
+      "chat_name": "C-556-【飞鸿FHS028】-IT❤",
+      "count": 36,
+      "reasons": {
+        "strict_match_failed": 36
+      }
+    },
+    {
+      "chat_id": "C-523【QH-IT-设备组-禁赎回",
+      "chat_name": "C-523【QH-IT-设备组-禁赎回",
+      "count": 33,
+      "reasons": {
+        "missing_group_template": 33
+      }
+    },
+    {
+      "chat_id": "C-518 【胖达】 超市卡",
+      "chat_name": "C-518 【胖达】 超市卡",
+      "count": 21,
+      "reasons": {
+        "strict_match_failed": 21
+      }
+    },
+    {
+      "chat_id": "LD-QS-1616-C-528【Leng】Itunes",
+      "chat_name": "LD-QS-1616-C-528【Leng】Itunes",
+      "count": 17,
+      "reasons": {
+        "strict_match_failed": 17
+      }
+    },
+    {
+      "chat_id": "C-512 【米乐022】 IT",
+      "chat_name": "C-512 【米乐022】 IT",
+      "count": 14,
+      "reasons": {
+        "strict_match_failed": 14
+      }
+    },
+    {
+      "chat_id": "C-541【影子】 steam",
+      "chat_name": "C-541【影子】 steam",
+      "count": 13,
+      "reasons": {
+        "missing_group_template": 13
+      }
+    },
+    {
+      "chat_id": "C-547 【洋羊】 超市卡",
+      "chat_name": "C-547 【洋羊】 超市卡",
+      "count": 13,
+      "reasons": {
+        "missing_group_template": 13
+      }
+    },
+    {
+      "chat_id": "C-596 万瑞收AM02夕希",
+      "chat_name": "C-596 万瑞收AM02夕希",
+      "count": 12,
+      "reasons": {
+        "missing_group_template": 12
+      }
+    }
+  ],
+  "long_tail_chat_ids": [
+    "C-535-【SK】--S035--星黛露",
+    "C-502CH-143-夕希&臻韵IT收卡群",
+    "C-531-万诺-192-夕希对接群",
+    "B08-C-513【青松】IT-XiXi-AQSS",
+    "SK-云泽-c-573出卡群",
+    "C-537-【tm】-itunes"
+  ],
+  "bucket_summaries": {
+    "multi_section_board": {
+      "count": 196,
+      "members": [
+        {
+          "exception_id": 244,
+          "chat_id": "LD-QS-1616-C-528【Leng】Itunes",
+          "chat_name": "LD-QS-1616-C-528【Leng】Itunes",
+          "reason": "strict_match_failed",
+          "source_line": "US:200-500横白=5.44 100倍"
+        },
+        {
+          "exception_id": 241,
+          "chat_id": "C-518 【胖达】 超市卡",
+          "chat_name": "C-518 【胖达】 超市卡",
+          "reason": "strict_match_failed",
+          "source_line": "代码快加:25-90=5.1(5倍数)"
+        },
+        {
+          "exception_id": 238,
+          "chat_id": "C-541【影子】 steam",
+          "chat_name": "C-541【影子】 steam",
+          "reason": "missing_group_template",
+          "source_line": "【 影子steam价格表】"
+        },
+        {
+          "exception_id": 236,
+          "chat_id": "C-547 【洋羊】 超市卡",
+          "chat_name": "C-547 【洋羊】 超市卡",
+          "reason": "missing_group_template",
+          "source_line": "#洋羊晚班Price updates："
+        },
+        {
+          "exception_id": 235,
+          "chat_id": "C-596 万瑞收AM02夕希",
+          "chat_name": "C-596 万瑞收AM02夕希",
+          "reason": "missing_group_template",
+          "source_line": "【===XBOX===】"
+        },
+        {
+          "exception_id": 198,
+          "chat_id": "C-502CH-143-夕希&臻韵IT收卡群",
+          "chat_name": "C-502CH-143-夕希&臻韵IT收卡群",
+          "reason": "missing_group_template",
+          "source_line": "=【#iTunes 快刷】=="
+        }
+      ]
+    },
+    "long_board_message": {
+      "count": 192,
+      "members": [
+        {
+          "exception_id": 244,
+          "chat_id": "LD-QS-1616-C-528【Leng】Itunes",
+          "chat_name": "LD-QS-1616-C-528【Leng】Itunes",
+          "reason": "strict_match_failed",
+          "source_line": "US:200-500横白=5.44 100倍"
+        },
+        {
+          "exception_id": 236,
+          "chat_id": "C-547 【洋羊】 超市卡",
+          "chat_name": "C-547 【洋羊】 超市卡",
+          "reason": "missing_group_template",
+          "source_line": "#洋羊晚班Price updates："
+        },
+        {
+          "exception_id": 198,
+          "chat_id": "C-502CH-143-夕希&臻韵IT收卡群",
+          "chat_name": "C-502CH-143-夕希&臻韵IT收卡群",
+          "reason": "missing_group_template",
+          "source_line": "=【#iTunes 快刷】=="
+        }
+      ]
+    },
+    "quote_plus_rule_text": {
+      "count": 171,
+      "members": [
+        {
+          "exception_id": 242,
+          "chat_id": "C-556-【飞鸿FHS028】-IT❤",
+          "chat_name": "C-556-【飞鸿FHS028】-IT❤",
+          "reason": "strict_match_failed",
+          "source_line": "50=5.25"
+        },
+        {
+          "exception_id": 222,
+          "chat_id": "C-518 【胖达】 超市卡",
+          "chat_name": "C-518 【胖达】 超市卡",
+          "reason": "strict_match_failed",
+          "source_line": "🔥Sephora 100-500=5.95"
+        },
+        {
+          "exception_id": 236,
+          "chat_id": "C-547 【洋羊】 超市卡",
+          "chat_name": "C-547 【洋羊】 超市卡",
+          "reason": "missing_group_template",
+          "source_line": "#洋羊晚班Price updates："
+        },
+        {
+          "exception_id": 235,
+          "chat_id": "C-596 万瑞收AM02夕希",
+          "chat_name": "C-596 万瑞收AM02夕希",
+          "reason": "missing_group_template",
+          "source_line": "【===XBOX===】"
+        }
+      ]
+    },
+    "manual_or_ask_lines": {
+      "count": 145,
+      "members": [
+        {
+          "exception_id": 222,
+          "chat_id": "C-518 【胖达】 超市卡",
+          "chat_name": "C-518 【胖达】 超市卡",
+          "reason": "strict_match_failed",
+          "source_line": "问价-请勿直发！！"
+        },
+        {
+          "exception_id": 236,
+          "chat_id": "C-547 【洋羊】 超市卡",
+          "chat_name": "C-547 【洋羊】 超市卡",
+          "reason": "missing_group_template",
+          "source_line": "【NIKE】150-500  ask"
+        },
+        {
+          "exception_id": 235,
+          "chat_id": "C-596 万瑞收AM02夕希",
+          "chat_name": "C-596 万瑞收AM02夕希",
+          "reason": "missing_group_template",
+          "source_line": "批量先问   不问会拒"
+        }
+      ]
+    },
+    "update_or_shift_message": {
+      "count": 93,
+      "members": [
+        {
+          "exception_id": 242,
+          "chat_id": "C-556-【飞鸿FHS028】-IT❤",
+          "chat_name": "C-556-【飞鸿FHS028】-IT❤",
+          "reason": "strict_match_failed",
+          "source_line": "#VIP广告更新"
+        },
+        {
+          "exception_id": 239,
+          "chat_id": "C-523【QH-IT-设备组-禁赎回",
+          "chat_name": "C-523【QH-IT-设备组-禁赎回",
+          "reason": "missing_group_template",
+          "source_line": "单独更新"
+        },
+        {
+          "exception_id": 169,
+          "chat_id": "C-512 【米乐022】 IT",
+          "chat_name": "C-512 【米乐022】 IT",
+          "reason": "strict_match_failed",
+          "source_line": "[福]晚班更新"
+        }
+      ]
+    },
+    "context_dependent_numeric_rows": {
+      "count": 35,
+      "members": [
+        {
+          "exception_id": 242,
+          "chat_id": "C-556-【飞鸿FHS028】-IT❤",
+          "chat_name": "C-556-【飞鸿FHS028】-IT❤",
+          "reason": "strict_match_failed",
+          "source_line": "50=5.25"
+        },
+        {
+          "exception_id": 239,
+          "chat_id": "C-523【QH-IT-设备组-禁赎回",
+          "chat_name": "C-523【QH-IT-设备组-禁赎回",
+          "reason": "missing_group_template",
+          "source_line": "100/150=5.37"
+        },
+        {
+          "exception_id": 169,
+          "chat_id": "C-512 【米乐022】 IT",
+          "chat_name": "C-512 【米乐022】 IT",
+          "reason": "strict_match_failed",
+          "source_line": "50=5.3"
+        },
+        {
+          "exception_id": 174,
+          "chat_id": "C-531-万诺-192-夕希对接群",
+          "chat_name": "C-531-万诺-192-夕希对接群",
+          "reason": "missing_group_template",
+          "source_line": "+100 xb 5.13"
+        }
+      ]
+    },
+    "short_header_like_source_line": {
+      "count": 123,
+      "members": [
+        {
+          "exception_id": 243,
+          "chat_id": "C-535-【SK】--S035--星黛露",
+          "chat_name": "C-535-【SK】--S035--星黛露",
+          "reason": "missing_group_template",
+          "source_line": "Steam价格更新卡图卡密同价"
+        },
+        {
+          "exception_id": 239,
+          "chat_id": "C-523【QH-IT-设备组-禁赎回",
+          "chat_name": "C-523【QH-IT-设备组-禁赎回",
+          "reason": "missing_group_template",
+          "source_line": "单独更新"
+        },
+        {
+          "exception_id": 235,
+          "chat_id": "C-596 万瑞收AM02夕希",
+          "chat_name": "C-596 万瑞收AM02夕希",
+          "reason": "missing_group_template",
+          "source_line": "【===XBOX===】"
+        }
+      ]
+    },
+    "token_only_source_line": {
+      "count": 2,
+      "members": [
+        {
+          "exception_id": 177,
+          "chat_id": "B08-C-513【青松】IT-XiXi-AQSS",
+          "chat_name": "B08-C-513【青松】IT-XiXi-AQSS",
+          "reason": "missing_group_template",
+          "source_line": "X2RGQCYDM6D278KN"
+        },
+        {
+          "exception_id": 208,
+          "chat_id": "SK-云泽-c-573出卡群",
+          "chat_name": "SK-云泽-c-573出卡群",
+          "reason": "missing_group_template",
+          "source_line": "CYQX8L2KPW7M4ZQH"
+        }
+      ]
+    }
+  }
+}

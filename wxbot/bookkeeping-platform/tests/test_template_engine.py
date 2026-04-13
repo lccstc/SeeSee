@@ -4,6 +4,15 @@ import unittest
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+from tests.support.quote_exception_corpus import load_gold_samples
+
+
+def _fixture(name: str) -> dict:
+    for item in load_gold_samples():
+        if item["fixture_name"] == name:
+            return item
+    raise KeyError(name)
+
 
 class TestTemplateConfig(unittest.TestCase):
     def test_schema_data_engine_v1(self):
@@ -178,6 +187,98 @@ class TestGenerateStrictPattern(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertEqual(result["country"], "加拿大")
         self.assertEqual(result["price"], "3.4")
+
+
+class TestScopedNumericCorpusRegressions(unittest.TestCase):
+    def test_scoped_numeric_feihong_it_scoped_numeric(self):
+        from bookkeeping_core.template_engine import analyze_scoped_quote_lines
+
+        fixture = _fixture("feihong_us_vip_delta_242")
+        analyses = analyze_scoped_quote_lines(
+            fixture["raw_text"],
+            default_card_type="Apple iTunes",
+            default_country_or_currency="USD",
+            default_form_factor="white_card",
+        )
+        rows = {
+            item["source_line"]: item["candidate"]
+            for item in analyses
+            if item.get("candidate")
+        }
+        self.assertIn("50=5.25", rows)
+        self.assertIn("100/150=5.41", rows)
+        self.assertEqual(rows["50=5.25"]["country_or_currency"], "USD")
+        self.assertEqual(rows["50=5.25"]["scope_evidence"]["header_line_index"], 2)
+
+    def test_panda_supermarket_manual_lines_are_not_candidates(self):
+        from bookkeeping_core.template_engine import analyze_scoped_quote_lines
+
+        fixture = _fixture("panda_supermarket_delta_222")
+        analyses = analyze_scoped_quote_lines(
+            fixture["raw_text"],
+            default_country_or_currency="USD",
+            default_form_factor="card_or_code",
+        )
+        rows = [item for item in analyses if item.get("candidate")]
+        self.assertTrue(any(item["candidate"]["card_type"] == "Sephora" for item in rows))
+        manual_lines = [
+            item for item in analyses
+            if item["source_line"] in {"问价-请勿直发！！", "默认卡图，代码提前问！！"}
+        ]
+        self.assertTrue(all(item["line_type"] in {"inquiry", "rule"} for item in manual_lines))
+        self.assertTrue(all("candidate" not in item for item in manual_lines))
+
+    def test_mile_it_shift_update_keeps_us_scope(self):
+        from bookkeeping_core.template_engine import analyze_scoped_quote_lines
+
+        fixture = _fixture("milele_shift_board_169")
+        analyses = analyze_scoped_quote_lines(
+            fixture["raw_text"],
+            default_card_type="Apple iTunes",
+            default_country_or_currency="USD",
+            default_form_factor="white_card",
+        )
+        scoped = next(item for item in analyses if item["source_line"] == "100/150=5.4")
+        self.assertEqual(scoped["candidate"]["country_or_currency"], "USD")
+        self.assertEqual(scoped["candidate"]["scope_evidence"]["header_text"], "US")
+
+    def test_qh_delta_numeric_update_handles_us_and_uk_sections(self):
+        from bookkeeping_core.template_engine import analyze_scoped_quote_lines
+
+        fixture = _fixture("qh_delta_us_uk_239")
+        analyses = analyze_scoped_quote_lines(
+            fixture["raw_text"],
+            default_card_type="Apple iTunes",
+            default_country_or_currency="USD",
+            default_form_factor="white_card",
+        )
+        us_row = next(item for item in analyses if item["source_line"] == "100/150=5.37")
+        uk_row = next(item for item in analyses if item["source_line"].startswith("UK卡图100-250=6.71"))
+        self.assertEqual(us_row["candidate"]["country_or_currency"], "USD")
+        self.assertEqual(uk_row["candidate"]["country_or_currency"], "GBP")
+        self.assertEqual(uk_row["candidate"]["form_factor"], "横白卡")
+
+    def test_wannuo_xb_shorthand_scoped_numeric(self):
+        from bookkeeping_core.template_engine import analyze_scoped_quote_lines
+
+        fixture = _fixture("wannuo_xbox_shorthand_174")
+        analyses = analyze_scoped_quote_lines(
+            fixture["raw_text"],
+            default_country_or_currency="USD",
+            default_form_factor="card_or_code",
+        )
+        rows = [item["candidate"] for item in analyses if item.get("candidate")]
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["card_type"], "Xbox")
+        self.assertEqual(rows[0]["amount_range"], "100")
+
+    def test_qingsong_noise_token_is_suppressed(self):
+        from bookkeeping_core.template_engine import analyze_scoped_quote_lines
+
+        fixture = _fixture("qingsong_noise_token_177")
+        analyses = analyze_scoped_quote_lines(fixture["raw_text"])
+        self.assertTrue(all(item["line_type"] == "noise" for item in analyses))
+        self.assertTrue(all("candidate" not in item for item in analyses))
 
 
 class TestBuildAnnotations(unittest.TestCase):

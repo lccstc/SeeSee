@@ -14,7 +14,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Candidate Contract Foundation** - Split parsing output from active fact publication and formalize candidate objects
 - [x] **Phase 2: Validation Engine** - Add fixed schema validation, business validation, and `publishable_rows`
-- [ ] **Phase 2.1: Real Exception Corpus & Candidate Coverage (INSERTED)** - Build the real-sample corpus and harden candidate generation against live exception shapes
+- [x] **Phase 2.1: Real Exception Corpus & Candidate Coverage (INSERTED)** - Build the real-sample corpus and harden candidate generation against live exception shapes
 - [ ] **Phase 3: Fact Protection Publisher** - Make one guarded publisher the only path that can mutate active quote facts
 - [ ] **Phase 4: Snapshot / Delta Semantics** - Distinguish `full_snapshot` from `delta_update` and default safely
 - [ ] **Phase 5: Exception Replay Loop** - Make every failure replayable and comparable before/after fixes
@@ -66,9 +66,9 @@ Plans:
 **Plans:** 3 plans
 
 Plans:
-- [ ] 02.1-01-PLAN.md — Build refreshable corpus assets and curated gold fixtures with an operator approval gate
-- [ ] 02.1-02-PLAN.md — Harden deterministic candidate generation for dominant structural failure shapes
-- [ ] 02.1-03-PLAN.md — Bootstrap top-volume group coverage and prove it through runtime/replay regressions
+- [x] 02.1-01-PLAN.md — Build refreshable corpus assets and curated gold fixtures with an operator approval gate
+- [x] 02.1-02-PLAN.md — Harden deterministic candidate generation for dominant structural failure shapes
+- [x] 02.1-03-PLAN.md — Bootstrap top-volume group coverage and prove it through runtime/replay regressions
 
 ### Phase 3: Fact Protection Publisher
 **Goal**: Ensure that only a guarded publisher can change active quote facts, and that failures never corrupt existing wall state.
@@ -169,7 +169,7 @@ Phases execute in numeric order: 1 → 2 → 2.1 → 3 → 4 → 5 → 6 → 7 �
 |-------|----------------|--------|-----------|
 | 1. Candidate Contract Foundation | 3/3 | Completed | 2026-04-14 |
 | 2. Validation Engine | 3/3 | Completed | 2026-04-14 |
-| 2.1. Real Exception Corpus & Candidate Coverage | 0/3 | Not started | - |
+| 2.1. Real Exception Corpus & Candidate Coverage | 3/3 | Completed | 2026-04-14 |
 | 3. Fact Protection Publisher | 0/3 | Not started | - |
 | 4. Snapshot / Delta Semantics | 0/3 | Not started | - |
 | 5. Exception Replay Loop | 0/3 | Not started | - |

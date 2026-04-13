@@ -1742,6 +1742,169 @@ class UnifiedRuntimeTests(PostgresTestCase):
         ).fetchone()
         return int(row["cnt"] or 0)
 
+    def _upsert_bootstrap_profile(
+        self,
+        *,
+        fixture_name: str,
+        platform: str,
+        chat_id: str,
+        chat_name: str,
+    ) -> dict:
+        from scripts.bootstrap_quote_group_profiles import build_bootstrap_profile_payload
+
+        payload = build_bootstrap_profile_payload(
+            fixture_name=fixture_name,
+            platform=platform,
+            chat_id=chat_id,
+            chat_name=chat_name,
+        )
+        self.db.upsert_quote_group_profile(
+            platform=platform,
+            chat_id=chat_id,
+            chat_name=chat_name,
+            default_card_type=str(payload["default_card_type"]),
+            default_country_or_currency=str(payload["default_country_or_currency"]),
+            default_form_factor=str(payload["default_form_factor"]),
+            default_multiplier=str(payload["default_multiplier"]),
+            parser_template=str(payload["parser_template"]),
+            stale_after_minutes=int(payload["stale_after_minutes"]),
+            note=str(payload["note"]),
+            template_config=json.dumps(payload["template_config"], ensure_ascii=False),
+        )
+        return payload
+
+    def test_runtime_bootstrap_profiles_persist_candidate_rows_without_mutating_active_facts(
+        self,
+    ) -> None:
+        from tests.support.quote_exception_corpus import load_gold_fixture
+
+        fixtures = [
+            ("sk_steam_price_update", "room-bootstrap-sk", "SK Steam 报价群"),
+            ("yingzi_steam_razer", "room-bootstrap-shadow", "影子 Steam/Razer 报价群"),
+            ("yangyang_supermarket_updates", "room-bootstrap-yangyang", "洋羊晚班报价群"),
+        ]
+
+        for fixture_name, chat_id, chat_name in fixtures:
+            with self.subTest(fixture_name=fixture_name):
+                self.db.set_group(
+                    platform="wechat",
+                    group_key=f"wechat:{chat_id}",
+                    chat_id=chat_id,
+                    chat_name=chat_name,
+                    group_num=5,
+                )
+                payload = self._upsert_bootstrap_profile(
+                    fixture_name=fixture_name,
+                    platform="wechat",
+                    chat_id=chat_id,
+                    chat_name=chat_name,
+                )
+                fixture = load_gold_fixture(str(payload["canonical_fixture_name"]))
+                message_id = f"msg-{fixture_name}"
+
+                self.runtime.process_envelope(
+                    self._message(
+                        platform="wechat",
+                        message_id=message_id,
+                        chat_id=chat_id,
+                        chat_name=chat_name,
+                        text=str(fixture["raw_text"]),
+                    )
+                )
+
+                document = self._get_quote_document(
+                    platform="wechat",
+                    chat_id=chat_id,
+                    message_id=message_id,
+                )
+                self.assertIsNotNone(document)
+                assert document is not None
+                self.assertEqual(str(document["parser_version"]), "group-parser-v1")
+
+                candidate_rows = self.db.list_quote_candidate_rows(
+                    quote_document_id=int(document["id"])
+                )
+                self.assertGreater(len(candidate_rows), 0)
+
+                validation_run = self.db.get_latest_quote_validation_run(
+                    quote_document_id=int(document["id"])
+                )
+                self.assertIsNotNone(validation_run)
+                assert validation_run is not None
+                self.assertGreater(int(validation_run["candidate_row_count"]), 0)
+                self.assertGreater(int(validation_run["publishable_row_count"]), 0)
+
+                quote_price_row_count = self._count_rows(
+                    "quote_price_rows",
+                    "WHERE quote_document_id = ?",
+                    (int(document["id"]),),
+                )
+                self.assertEqual(quote_price_row_count, 0)
+
+    def test_runtime_unapproved_fixture_without_bootstrap_stays_in_exception_path(self) -> None:
+        from tests.support.quote_exception_corpus import load_gold_fixture
+
+        fixture = load_gold_fixture("wannuo_xbox_shorthand_174")
+        chat_id = "room-bootstrap-unapproved"
+        message_id = "msg-bootstrap-unapproved"
+        self.db.set_group(
+            platform="wechat",
+            group_key=f"wechat:{chat_id}",
+            chat_id=chat_id,
+            chat_name="未引导报价群",
+            group_num=5,
+        )
+
+        self.runtime.process_envelope(
+            self._message(
+                platform="wechat",
+                message_id=message_id,
+                chat_id=chat_id,
+                chat_name="未引导报价群",
+                text=str(fixture["raw_text"]),
+            )
+        )
+
+        document = self._get_quote_document(
+            platform="wechat",
+            chat_id=chat_id,
+            message_id=message_id,
+        )
+        self.assertIsNotNone(document)
+        assert document is not None
+        self.assertEqual(str(document["parse_status"]), "empty")
+
+        candidate_rows = self.db.list_quote_candidate_rows(
+            quote_document_id=int(document["id"])
+        )
+        self.assertEqual(candidate_rows, [])
+
+        validation_run = self.db.get_latest_quote_validation_run(
+            quote_document_id=int(document["id"])
+        )
+        self.assertIsNotNone(validation_run)
+        assert validation_run is not None
+        self.assertEqual(int(validation_run["publishable_row_count"]), 0)
+
+        parse_exceptions = self.db.conn.execute(
+            """
+            SELECT reason
+            FROM quote_parse_exceptions
+            WHERE quote_document_id = ?
+            ORDER BY id ASC
+            """,
+            (int(document["id"]),),
+        ).fetchall()
+        self.assertEqual(len(parse_exceptions), 1)
+        self.assertEqual(str(parse_exceptions[0]["reason"]), "missing_group_template")
+
+        quote_price_row_count = self._count_rows(
+            "quote_price_rows",
+            "WHERE quote_document_id = ?",
+            (int(document["id"]),),
+        )
+        self.assertEqual(quote_price_row_count, 0)
+
 
 if __name__ == "__main__":
     unittest.main()

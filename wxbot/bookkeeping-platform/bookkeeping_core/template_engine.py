@@ -320,6 +320,16 @@ _RESTRICTION_KEYWORDS = (
     "问",
 )
 
+_TOKEN_ONLY_LINE_RE = re.compile(r"^[A-Za-z0-9]{12,}$")
+_SHORTHAND_QUOTE_RE = re.compile(
+    r"^\+?(?P<amount>\d+(?:\s*[-/]\s*\d+)*)\s+(?P<card>[A-Za-z]{1,8})\s+(?P<price>\d+(?:\.\d+)?)$",
+    re.IGNORECASE,
+)
+_PREFIXED_SCOPE_QUOTE_RE = re.compile(
+    r"^(?P<label>[A-Za-z\u4e00-\u9fff ]+?)(?P<form_factor>横白卡图|横白卡|横白|卡图|图密|卡密|代码|电子|图|密)?(?P<amount>\d+(?:\s*[-/]\s*\d+)*)=(?P<price>\d+(?:\.\d+)?)",
+    re.IGNORECASE,
+)
+
 
 def _split_quote_candidate_label_and_price(line: str) -> tuple[str, str]:
     separator_matches = list(re.finditer(r"[:：=]\s*(\d+(?:\.\d+)?)", line))
@@ -394,6 +404,397 @@ def is_restriction_candidate(line: str) -> bool:
         return True
     lowered = normalized.lower()
     return any(keyword in normalized or keyword in lowered for keyword in _RESTRICTION_KEYWORDS)
+
+
+def _looks_token_only_line(line: str) -> bool:
+    compact = normalize_quote_text(line).replace(" ", "")
+    return bool(compact) and _TOKEN_ONLY_LINE_RE.fullmatch(compact) is not None
+
+
+def _strip_leading_quote_decorators(line: str) -> str:
+    return re.sub(r"^[^\w\u4e00-\u9fff【\[#\+]+", "", normalize_quote_text(line))
+
+
+def classify_candidate_line(line: str) -> str:
+    normalized = _strip_leading_quote_decorators(line)
+    if not normalized:
+        return "noise"
+    if _looks_token_only_line(normalized):
+        return "noise"
+    if all(ch in _DECORATION_CHARS for ch in normalized):
+        return "noise"
+    if re.match(r"^[【\[].+[】\]]$", normalized):
+        return "header"
+    if looks_like_quote_line(normalized) or _SHORTHAND_QUOTE_RE.match(normalized):
+        return "quote"
+    lowered = normalized.lower()
+    if normalized.startswith("#"):
+        if any(token in normalized or token in lowered for token in ("问价", "先问", "发前问", "ask", "请勿直发")):
+            return "inquiry"
+        if any(token in normalized for token in ("更新", "Price updates", "快刷", "网单")):
+            return "header"
+        return "rule"
+    if is_restriction_candidate(normalized):
+        if any(token in normalized or token in lowered for token in ("问", "ask", "请勿直发")):
+            return "inquiry"
+        return "rule"
+    from .quotes import _infer_card_type, _infer_country_or_currency, _infer_form_factor
+
+    if (
+        _infer_card_type(normalized)
+        or _infer_country_or_currency(normalized)
+        or _infer_form_factor(normalized)
+    ):
+        return "header"
+    return "noise"
+
+
+def _parse_shorthand_quote_line(line: str) -> dict[str, Any] | None:
+    match = _SHORTHAND_QUOTE_RE.match(_strip_leading_quote_decorators(line))
+    if match is None:
+        return None
+    return {
+        "amount": str(match.group("amount") or "").strip(),
+        "price": str(match.group("price") or "").strip(),
+        "card_hint": str(match.group("card") or "").strip(),
+        "country_hint": "",
+        "form_factor_hint": "",
+    }
+
+
+def _parse_prefixed_scope_quote_line(line: str) -> dict[str, Any] | None:
+    match = _PREFIXED_SCOPE_QUOTE_RE.match(_strip_leading_quote_decorators(line))
+    if match is None:
+        return None
+    label = str(match.group("label") or "").strip()
+    return {
+        "amount": str(match.group("amount") or "").strip(),
+        "price": str(match.group("price") or "").strip(),
+        "card_hint": label,
+        "country_hint": label,
+        "form_factor_hint": str(match.group("form_factor") or "").strip(),
+    }
+
+
+def analyze_scoped_quote_lines(
+    text: str,
+    *,
+    default_card_type: str = "",
+    default_country_or_currency: str = "",
+    default_form_factor: str = "",
+) -> list[dict[str, Any]]:
+    from .quotes import (
+        _infer_card_type,
+        _infer_country_or_currency,
+        _infer_form_factor,
+        normalize_quote_amount_range,
+        normalize_quote_card_type,
+        normalize_quote_country_or_currency,
+        normalize_quote_form_factor,
+    )
+
+    analyses: list[dict[str, Any]] = []
+    active_scope = {
+        "card_type": normalize_quote_card_type(default_card_type),
+        "country_or_currency": normalize_quote_country_or_currency(default_country_or_currency),
+        "form_factor": normalize_quote_form_factor(default_form_factor or "不限"),
+        "header_text": "",
+        "header_line_index": None,
+    }
+
+    for line_index, raw_line in enumerate(str(text or "").splitlines()):
+        source_line = normalize_quote_text(raw_line)
+        if not source_line:
+            continue
+        line_type = classify_candidate_line(source_line)
+        analysis: dict[str, Any] = {
+            "source_line_index": line_index,
+            "source_line": source_line,
+            "line_type": line_type,
+        }
+        stripped_for_inference = _strip_leading_quote_decorators(source_line)
+        explicit_card_type = normalize_quote_card_type(_infer_card_type(stripped_for_inference) or "")
+        explicit_country = normalize_quote_country_or_currency(
+            _infer_country_or_currency(stripped_for_inference) or ""
+        )
+        explicit_form_factor = normalize_quote_form_factor(_infer_form_factor(stripped_for_inference) or "")
+
+        if line_type == "header":
+            next_scope = {
+                "card_type": explicit_card_type or active_scope["card_type"],
+                "country_or_currency": explicit_country or active_scope["country_or_currency"],
+                "form_factor": (
+                    explicit_form_factor
+                    if explicit_form_factor and explicit_form_factor != "不限"
+                    else active_scope["form_factor"]
+                ),
+                "header_text": source_line,
+                "header_line_index": line_index,
+            }
+            if next_scope["card_type"] or next_scope["country_or_currency"] or next_scope["form_factor"]:
+                active_scope = next_scope
+            analyses.append(analysis)
+            continue
+
+        if line_type != "quote":
+            analyses.append(analysis)
+            continue
+
+        detection = auto_detect_line_type(stripped_for_inference)
+        parsed_fields = dict(detection.get("fields") or {})
+        custom_hints = _parse_prefixed_scope_quote_line(source_line) or _parse_shorthand_quote_line(source_line)
+        if custom_hints:
+            for key, value in custom_hints.items():
+                parsed_fields.setdefault(key, value)
+        if detection.get("type") != "price":
+            if custom_hints is None:
+                analyses.append(analysis)
+                continue
+
+        parsed_amount = normalize_quote_amount_range(str(parsed_fields.get("amount") or ""))
+        try:
+            price = float(str(parsed_fields.get("price") or "").strip())
+        except ValueError:
+            analyses.append(analysis)
+            continue
+
+        line_card_type = normalize_quote_card_type(
+            _infer_card_type(str(parsed_fields.get("card_hint") or stripped_for_inference)) or explicit_card_type
+        )
+        line_country = normalize_quote_country_or_currency(
+            str(parsed_fields.get("currency") or parsed_fields.get("country") or parsed_fields.get("country_hint") or explicit_country)
+        )
+        raw_line_form_factor = normalize_quote_form_factor(
+            str(parsed_fields.get("form_factor") or parsed_fields.get("form_factor_hint") or explicit_form_factor or "")
+        )
+        if (
+            line_card_type
+            and line_country
+            and not explicit_country
+            and line_country == normalize_quote_country_or_currency(str(parsed_fields.get("country") or parsed_fields.get("country_hint") or ""))
+        ):
+            line_country = ""
+
+        inherited_fields: list[str] = []
+        final_card_type = line_card_type or active_scope["card_type"]
+        if final_card_type and not line_card_type:
+            inherited_fields.append("card_type")
+        final_country = line_country or active_scope["country_or_currency"]
+        if final_country and not line_country:
+            inherited_fields.append("country_or_currency")
+        final_form_factor = (
+            raw_line_form_factor if raw_line_form_factor and raw_line_form_factor != "不限" else active_scope["form_factor"]
+        )
+        if final_form_factor and final_form_factor != "不限" and (
+            not raw_line_form_factor or raw_line_form_factor == "不限"
+        ):
+            inherited_fields.append("form_factor")
+
+        if not final_card_type or not final_country or not parsed_amount:
+            if line_type == "quote" and (
+                explicit_card_type or explicit_country or (explicit_form_factor and explicit_form_factor != "不限")
+            ):
+                active_scope = {
+                    "card_type": explicit_card_type or active_scope["card_type"],
+                    "country_or_currency": explicit_country or active_scope["country_or_currency"],
+                    "form_factor": (
+                        explicit_form_factor
+                        if explicit_form_factor and explicit_form_factor != "不限"
+                        else active_scope["form_factor"]
+                    ),
+                    "header_text": source_line,
+                    "header_line_index": line_index,
+                }
+            analyses.append(analysis)
+            continue
+
+        candidate = {
+            "card_type": final_card_type,
+            "country_or_currency": final_country,
+            "amount_range": parsed_amount,
+            "form_factor": final_form_factor or normalize_quote_form_factor("不限"),
+            "price": price,
+        }
+        if inherited_fields and active_scope["header_text"]:
+            candidate["scope_evidence"] = {
+                "header_text": active_scope["header_text"],
+                "header_line_index": active_scope["header_line_index"],
+                "inherited_fields": inherited_fields,
+            }
+        analysis["candidate"] = candidate
+        analyses.append(analysis)
+
+        active_scope = {
+            "card_type": final_card_type,
+            "country_or_currency": final_country,
+            "form_factor": final_form_factor or active_scope["form_factor"],
+            "header_text": source_line if not inherited_fields else active_scope["header_text"],
+            "header_line_index": line_index if not inherited_fields else active_scope["header_line_index"],
+        }
+
+    return analyses
+
+
+def _fixture_publishable_rows(fixture: dict[str, Any]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for row in fixture.get("expected_rows") or []:
+        if str(row.get("row_decision") or "") != "publishable":
+            continue
+        if not row.get("card_type") or not row.get("country_or_currency"):
+            continue
+        if row.get("price") in (None, ""):
+            continue
+        rows.append(dict(row))
+    return rows
+
+
+def _fixture_common_row_value(rows: list[dict[str, Any]], key: str) -> str:
+    values = {
+        str(item.get(key) or "").strip()
+        for item in rows
+        if str(item.get(key) or "").strip()
+    }
+    if len(values) != 1:
+        return ""
+    return next(iter(values))
+
+
+def _sort_fixture_rows_by_source_order(
+    raw_text: str,
+    rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    virtual_lines = _normalized_virtual_lines(raw_text, split_multi_quotes=True)
+    indexed_sources = [
+        {
+            "normalized": normalize_quote_text(str(item.get("source_line") or item.get("line") or "")),
+            "match_key": re.sub(r"\s+", "", normalize_quote_text(str(item.get("source_line") or item.get("line") or ""))).lower(),
+            "actual": str(item.get("source_line") or item.get("line") or ""),
+        }
+        for item in virtual_lines
+    ]
+    used_indexes: set[int] = set()
+    ordered: list[tuple[int, int, dict[str, Any]]] = []
+    for row_index, row in enumerate(rows):
+        row_copy = dict(row)
+        target = normalize_quote_text(str(row.get("source_line") or ""))
+        target_key = re.sub(r"\s+", "", target).lower()
+        matched_index = -1
+        if target:
+            for candidate_index, candidate in enumerate(indexed_sources):
+                if candidate_index in used_indexes:
+                    continue
+                candidate_key = str(candidate["match_key"])
+                if (
+                    candidate_key == target_key
+                    or candidate_key.startswith(target_key)
+                    or target_key.startswith(candidate_key)
+                ):
+                    matched_index = candidate_index
+                    used_indexes.add(candidate_index)
+                    row_copy["_matched_source_line"] = str(candidate["actual"])
+                    break
+        fallback_index = len(indexed_sources) + row_index if matched_index < 0 else matched_index
+        row_copy.setdefault("_matched_source_line", target)
+        ordered.append((fallback_index, row_index, row_copy))
+    ordered.sort(key=lambda item: (item[0], item[1]))
+    return [row for _sort_index, _row_index, row in ordered]
+
+
+def _bootstrap_quote_pattern(source_line: str) -> str:
+    normalized = normalize_quote_text(source_line)
+    pattern = re.sub(r"(\d+(?:\.\d+)?)(?!.*\d)", "{price}", normalized, count=1)
+    if "{price}" not in pattern:
+        raise ValueError(
+            f"fixture source line does not contain a trailing price token: {source_line}"
+        )
+    return pattern
+
+
+def derive_group_parser_sections_from_gold_fixture(
+    fixture: dict[str, Any]
+) -> list[dict[str, Any]]:
+    from .quotes import (
+        normalize_quote_amount_range,
+        normalize_quote_card_type,
+        normalize_quote_country_or_currency,
+        normalize_quote_form_factor,
+    )
+
+    raw_text = str(fixture.get("raw_text") or "")
+    publishable_rows = _sort_fixture_rows_by_source_order(
+        raw_text,
+        _fixture_publishable_rows(fixture),
+    )
+    if not publishable_rows:
+        raise ValueError(
+            f"fixture {fixture.get('fixture_name') or '<unknown>'} has no publishable rows for bootstrap"
+        )
+
+    section_defaults: dict[str, str] = {}
+    common_card_type = normalize_quote_card_type(
+        _fixture_common_row_value(publishable_rows, "card_type")
+    )
+    common_country = normalize_quote_country_or_currency(
+        _fixture_common_row_value(publishable_rows, "country_or_currency")
+    )
+    common_form_factor = normalize_quote_form_factor(
+        _fixture_common_row_value(publishable_rows, "form_factor") or "不限"
+    )
+    if common_card_type:
+        section_defaults["card_type"] = common_card_type
+    if common_country:
+        section_defaults["country_or_currency"] = common_country
+    if common_form_factor and common_form_factor != "不限":
+        section_defaults["form_factor"] = common_form_factor
+
+    quote_lines: list[dict[str, Any]] = []
+    for row in publishable_rows:
+        outputs = {
+            "card_type": normalize_quote_card_type(str(row.get("card_type") or "").strip()),
+            "country_or_currency": normalize_quote_country_or_currency(
+                str(row.get("country_or_currency") or "").strip()
+            ),
+            "form_factor": normalize_quote_form_factor(str(row.get("form_factor") or "不限")),
+        }
+        amount_range = normalize_quote_amount_range(str(row.get("amount_range") or "不限"))
+        if amount_range != "不限":
+            outputs["amount_range"] = amount_range
+        quote_lines.append(
+            {
+                "kind": "quote",
+                "pattern": _bootstrap_quote_pattern(
+                    str(row.get("_matched_source_line") or row.get("source_line") or "")
+                ),
+                "outputs": outputs,
+            }
+        )
+
+    first_section = (fixture.get("expected_sections") or [{}])[0]
+    section_label = str(
+        first_section.get("label") or fixture.get("fixture_name") or "bootstrap"
+    ).strip() or "bootstrap"
+    section_evidence = str(first_section.get("evidence") or section_label).strip() or section_label
+    return [
+        {
+            "id": "section-1",
+            "enabled": True,
+            "priority": 10,
+            "label": section_label,
+            "evidence": section_evidence,
+            "defaults": section_defaults,
+            "lines": quote_lines,
+        }
+    ]
+
+
+def build_group_parser_template_from_gold_fixture(
+    fixture: dict[str, Any]
+) -> dict[str, Any]:
+    return {
+        "version": _GROUP_PARSER_VERSION,
+        "defaults": {},
+        "sections": derive_group_parser_sections_from_gold_fixture(fixture),
+    }
 
 
 def _join_restriction_lines(lines: list[str]) -> str:

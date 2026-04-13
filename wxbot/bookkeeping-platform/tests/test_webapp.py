@@ -215,6 +215,37 @@ class WebAppTests(PostgresTestCase):
         ).fetchone()
         return int(row["cnt"] or 0)
 
+    def _upsert_bootstrap_profile(
+        self,
+        *,
+        fixture_name: str,
+        platform: str,
+        chat_id: str,
+        chat_name: str,
+    ) -> dict:
+        from scripts.bootstrap_quote_group_profiles import build_bootstrap_profile_payload
+
+        payload = build_bootstrap_profile_payload(
+            fixture_name=fixture_name,
+            platform=platform,
+            chat_id=chat_id,
+            chat_name=chat_name,
+        )
+        self.db.upsert_quote_group_profile(
+            platform=platform,
+            chat_id=chat_id,
+            chat_name=chat_name,
+            default_card_type=str(payload["default_card_type"]),
+            default_country_or_currency=str(payload["default_country_or_currency"]),
+            default_form_factor=str(payload["default_form_factor"]),
+            default_multiplier=str(payload["default_multiplier"]),
+            parser_template=str(payload["parser_template"]),
+            stale_after_minutes=int(payload["stale_after_minutes"]),
+            note=str(payload["note"]),
+            template_config=json.dumps(payload["template_config"], ensure_ascii=False),
+        )
+        return payload
+
     def test_dashboard_endpoint_returns_group_and_period_data(self) -> None:
         status, payload = self._request("GET", "/api/dashboard")
         self.assertEqual(status, 200)
@@ -4003,6 +4034,94 @@ class WebAppTests(PostgresTestCase):
         self.assertEqual(status, 200)
         self.assertEqual(payload["transaction"]["id"], tx_id)
         self.assertIn("trace_status", payload)
+
+    def test_bootstrap_profile_replay_remains_candidate_only(self) -> None:
+        from bookkeeping_web.app import _replay_latest_quote_document_with_current_template
+        from tests.support.quote_exception_corpus import load_gold_fixture
+
+        chat_id = "g-bootstrap-replay"
+        chat_name = "Bootstrap Replay 群"
+        self.db.set_group(
+            platform="wechat",
+            group_key=f"wechat:{chat_id}",
+            chat_id=chat_id,
+            chat_name=chat_name,
+            group_num=5,
+        )
+        payload = self._upsert_bootstrap_profile(
+            fixture_name="sk_steam_price_update",
+            platform="wechat",
+            chat_id=chat_id,
+            chat_name=chat_name,
+        )
+        fixture = load_gold_fixture(str(payload["canonical_fixture_name"]))
+        raw_text = str(fixture["raw_text"])
+        first_line = raw_text.splitlines()[0]
+
+        quote_document_id = self.db.record_quote_document(
+            platform="wechat",
+            source_group_key=f"wechat:{chat_id}",
+            chat_id=chat_id,
+            chat_name=chat_name,
+            message_id="msg-bootstrap-replay-origin",
+            source_name="报价员",
+            sender_id="seller-bootstrap",
+            raw_text=raw_text,
+            message_time="2026-04-14 18:00:00",
+            parser_template="group-parser",
+            parser_version="group-parser-v1",
+            confidence=0.0,
+            parse_status="empty",
+        )
+        exception_id = self.db.record_quote_exception(
+            quote_document_id=quote_document_id,
+            platform="wechat",
+            source_group_key=f"wechat:{chat_id}",
+            chat_id=chat_id,
+            chat_name=chat_name,
+            source_name="报价员",
+            sender_id="seller-bootstrap",
+            reason="missing_group_template",
+            source_line=first_line,
+            raw_text=raw_text,
+            message_time="2026-04-14 18:00:00",
+            parser_template="group-parser",
+            parser_version="group-parser-v1",
+            confidence=0.0,
+        )
+        exc_row = self.db.get_quote_exception(exception_id=exception_id)
+        self.assertIsNotNone(exc_row)
+        assert exc_row is not None
+
+        replay = _replay_latest_quote_document_with_current_template(
+            self.db,
+            exc_row=dict(exc_row),
+            record_exceptions=False,
+        )
+
+        self.assertTrue(replay["replayed"])
+        self.assertFalse(replay["mutated_active_facts"])
+        self.assertGreater(int(replay["rows"]), 0)
+        replay_document_id = int(replay["quote_document_id"])
+
+        validation_run = self.db.get_latest_quote_validation_run(
+            quote_document_id=replay_document_id
+        )
+        self.assertIsNotNone(validation_run)
+        assert validation_run is not None
+        self.assertGreater(int(validation_run["publishable_row_count"]), 0)
+
+        candidate_rows = self.db.list_quote_candidate_rows(
+            quote_document_id=replay_document_id
+        )
+        self.assertGreater(len(candidate_rows), 0)
+
+        quote_price_row_count = self._count_rows(
+            "quote_price_rows",
+            "WHERE quote_document_id = ?",
+            (replay_document_id,),
+        )
+        self.assertEqual(quote_price_row_count, 0)
 
 
 if __name__ == "__main__":
