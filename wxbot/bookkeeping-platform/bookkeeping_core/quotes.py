@@ -8,6 +8,7 @@ from typing import Any
 
 from .contracts import NormalizedMessageEnvelope
 from .quote_candidates import QuoteCandidateMessage, QuoteCandidateRow
+from .repair_cases import package_quote_repair_case
 from .quote_validation import validate_quote_candidate_document
 
 
@@ -1064,7 +1065,7 @@ class QuoteCaptureService:
             document_id, validation_run_id = self._record_candidate_with_validation(
                 candidate
             )
-            recorded_exception_id = self.db.record_quote_exception_unless_suppressed(
+            recorded_exception_id = self._record_exception_with_repair_case(
                 quote_document_id=document_id,
                 platform=envelope.platform,
                 source_group_key=f"{envelope.platform}:{envelope.chat_id}",
@@ -1140,7 +1141,7 @@ class QuoteCaptureService:
         document_id, validation_run_id = self._record_candidate_with_validation(candidate)
         recorded_exceptions = 0
         for item in recordable_parsed_exceptions:
-            if self.db.record_quote_exception_unless_suppressed(
+            if self._record_exception_with_repair_case(
                 quote_document_id=document_id,
                 platform=item.platform,
                 source_group_key=item.source_group_key,
@@ -1158,7 +1159,7 @@ class QuoteCaptureService:
             ):
                 recorded_exceptions += 1
         for item in recordable_row_exceptions:
-            if self.db.record_quote_exception_unless_suppressed(
+            if self._record_exception_with_repair_case(
                 quote_document_id=document_id,
                 platform=item.platform,
                 source_group_key=item.source_group_key,
@@ -1174,6 +1175,17 @@ class QuoteCaptureService:
                 parser_version=item.parser_version,
                 confidence=item.confidence,
             ):
+                recorded_exceptions += 1
+        if recorded_exceptions == 0:
+            validator_exception_id = self._record_validator_no_publish_repair_case(
+                candidate=candidate,
+                document_id=document_id,
+                validation_run_id=validation_run_id,
+                envelope=envelope,
+                raw_text=text,
+                message_time=message_time,
+            )
+            if validator_exception_id:
                 recorded_exceptions += 1
         return {
             "captured": True,
@@ -1296,6 +1308,99 @@ class QuoteCaptureService:
             validation_run=validation_run
         )
         return document_id, validation_run_id
+
+    def _record_exception_with_repair_case(
+        self,
+        *,
+        quote_document_id: int,
+        platform: str,
+        source_group_key: str,
+        chat_id: str,
+        chat_name: str,
+        source_name: str,
+        sender_id: str,
+        reason: str,
+        source_line: str,
+        raw_text: str,
+        message_time: str,
+        parser_template: str,
+        parser_version: str,
+        confidence: float,
+    ) -> int:
+        exception_id = self.db.record_quote_exception_unless_suppressed(
+            quote_document_id=quote_document_id,
+            platform=platform,
+            source_group_key=source_group_key,
+            chat_id=chat_id,
+            chat_name=chat_name,
+            source_name=source_name,
+            sender_id=sender_id,
+            reason=reason,
+            source_line=source_line,
+            raw_text=raw_text,
+            message_time=message_time,
+            parser_template=parser_template,
+            parser_version=parser_version,
+            confidence=confidence,
+        )
+        if exception_id:
+            package_quote_repair_case(db=self.db, exception_id=exception_id)
+        return int(exception_id or 0)
+
+    def _record_validator_no_publish_repair_case(
+        self,
+        *,
+        candidate: QuoteCandidateMessage,
+        document_id: int,
+        validation_run_id: int,
+        envelope: NormalizedMessageEnvelope,
+        raw_text: str,
+        message_time: str,
+    ) -> int:
+        validation_run = self.db.get_latest_quote_validation_run(
+            quote_document_id=document_id
+        )
+        if validation_run is None:
+            return 0
+        if int(validation_run["id"]) != int(validation_run_id):
+            return 0
+        if str(validation_run["message_decision"] or "") != "no_publish":
+            return 0
+        return self._record_exception_with_repair_case(
+            quote_document_id=document_id,
+            platform=envelope.platform,
+            source_group_key=f"{envelope.platform}:{envelope.chat_id}",
+            chat_id=envelope.chat_id,
+            chat_name=envelope.chat_name,
+            source_name=envelope.sender_name,
+            sender_id=envelope.sender_id,
+            reason="validator_no_publish",
+            source_line=self._validator_failure_source_line(
+                candidate=candidate,
+                raw_text=raw_text,
+            ),
+            raw_text=raw_text,
+            message_time=message_time,
+            parser_template=str(candidate.parser_template or ""),
+            parser_version=str(candidate.parser_version or ""),
+            confidence=float(candidate.confidence or 0.0),
+        )
+
+    @staticmethod
+    def _validator_failure_source_line(
+        *,
+        candidate: QuoteCandidateMessage,
+        raw_text: str,
+    ) -> str:
+        for row in candidate.rows:
+            source_line = str(getattr(row, "source_line", "") or "").strip()
+            if source_line:
+                return source_line
+        for line in str(raw_text or "").splitlines():
+            cleaned = line.strip()
+            if cleaned:
+                return cleaned
+        return str(raw_text or "").strip()
 
 
 def _extract_standalone_reply_price(text: str) -> float | None:

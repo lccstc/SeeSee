@@ -1773,6 +1773,437 @@ class UnifiedRuntimeTests(PostgresTestCase):
         )
         return payload
 
+
+class RuntimeRepairCaseTests(PostgresTestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        self.export_dir = self.temp_path / "exports"
+        self.db = BookkeepingDB(self.make_dsn("runtime-repair-cases"))
+        self.runtime = UnifiedBookkeepingRuntime(
+            db=self.db,
+            master_users=["master-user"],
+            export_dir=self.export_dir,
+        )
+
+    def tearDown(self) -> None:
+        self.db.close()
+        super().tearDown()
+
+    def test_parse_failures_open_repair_cases_for_strict_match_and_missing_template(self) -> None:
+        self.db.set_group(
+            platform="wechat",
+            group_key="wechat:room-repair-parse",
+            chat_id="room-repair-parse",
+            chat_name="修复解析群",
+            group_num=5,
+        )
+        self.db.upsert_quote_group_profile(
+            platform="wechat",
+            chat_id="room-repair-parse",
+            chat_name="修复解析群",
+            default_card_type="Apple",
+            default_country_or_currency="USD",
+            default_form_factor="横白卡",
+            parser_template="group-parser",
+            template_config=json.dumps(
+                {
+                    "version": "group-parser-v1",
+                    "defaults": {},
+                    "sections": [
+                        {
+                            "id": "apple-us-100",
+                            "enabled": True,
+                            "priority": 1,
+                            "defaults": {
+                                "card_type": "Apple",
+                                "country_or_currency": "USD",
+                                "form_factor": "横白卡",
+                            },
+                            "lines": [
+                                {
+                                    "kind": "quote",
+                                    "pattern": "{country}={price}",
+                                    "outputs": {
+                                        "card_type": "Apple",
+                                        "country_or_currency": "USD",
+                                        "amount_range": "100",
+                                        "form_factor": "横白卡",
+                                    },
+                                }
+                            ],
+                        }
+                    ],
+                },
+                ensure_ascii=False,
+            ),
+        )
+
+        self.runtime.process_envelope(
+            self._message(
+                platform="wechat",
+                message_id="msg-repair-strict-1",
+                chat_id="room-repair-parse",
+                chat_name="修复解析群",
+                text="US=5.10\nUK=6.20",
+            )
+        )
+
+        strict_document = self._get_quote_document(
+            platform="wechat",
+            chat_id="room-repair-parse",
+            message_id="msg-repair-strict-1",
+        )
+        self.assertIsNotNone(strict_document)
+        assert strict_document is not None
+        strict_validation_run = self.db.get_latest_quote_validation_run(
+            quote_document_id=int(strict_document["id"])
+        )
+        strict_exception = self.db.conn.execute(
+            """
+            SELECT *
+            FROM quote_parse_exceptions
+            WHERE quote_document_id = ?
+            ORDER BY id ASC
+            LIMIT 1
+            """,
+            (int(strict_document["id"]),),
+        ).fetchone()
+        self.assertIsNotNone(strict_exception)
+        assert strict_exception is not None
+        strict_repair_case = self.db.conn.execute(
+            """
+            SELECT *
+            FROM quote_repair_cases
+            WHERE origin_exception_id = ?
+            LIMIT 1
+            """,
+            (int(strict_exception["id"]),),
+        ).fetchone()
+        self.assertIsNotNone(strict_repair_case)
+        assert strict_validation_run is not None
+        assert strict_repair_case is not None
+        self.assertEqual(str(strict_exception["reason"]), "strict_match_failed")
+        self.assertEqual(
+            int(strict_repair_case["origin_quote_document_id"]),
+            int(strict_document["id"]),
+        )
+        self.assertEqual(
+            int(strict_repair_case["origin_validation_run_id"]),
+            int(strict_validation_run["id"]),
+        )
+        self.assertEqual(str(strict_repair_case["lifecycle_state"]), "packaged")
+
+        self.db.set_group(
+            platform="wechat",
+            group_key="wechat:room-repair-missing-template",
+            chat_id="room-repair-missing-template",
+            chat_name="修复缺模板群",
+            group_num=5,
+        )
+        self.runtime.process_envelope(
+            self._message(
+                platform="wechat",
+                message_id="msg-repair-missing-template-1",
+                chat_id="room-repair-missing-template",
+                chat_name="修复缺模板群",
+                text="【Apple】\nUS=5.10\nUK=6.20",
+            )
+        )
+
+        missing_document = self._get_quote_document(
+            platform="wechat",
+            chat_id="room-repair-missing-template",
+            message_id="msg-repair-missing-template-1",
+        )
+        self.assertIsNotNone(missing_document)
+        assert missing_document is not None
+        missing_validation_run = self.db.get_latest_quote_validation_run(
+            quote_document_id=int(missing_document["id"])
+        )
+        missing_exception = self.db.conn.execute(
+            """
+            SELECT *
+            FROM quote_parse_exceptions
+            WHERE quote_document_id = ?
+            ORDER BY id ASC
+            LIMIT 1
+            """,
+            (int(missing_document["id"]),),
+        ).fetchone()
+        self.assertIsNotNone(missing_exception)
+        assert missing_exception is not None
+        missing_repair_case = self.db.conn.execute(
+            """
+            SELECT *
+            FROM quote_repair_cases
+            WHERE origin_exception_id = ?
+            LIMIT 1
+            """,
+            (int(missing_exception["id"]),),
+        ).fetchone()
+        self.assertIsNotNone(missing_repair_case)
+        assert missing_validation_run is not None
+        assert missing_repair_case is not None
+        self.assertEqual(str(missing_exception["reason"]), "missing_group_template")
+        self.assertEqual(
+            int(missing_repair_case["origin_quote_document_id"]),
+            int(missing_document["id"]),
+        )
+        self.assertEqual(
+            int(missing_repair_case["origin_validation_run_id"]),
+            int(missing_validation_run["id"]),
+        )
+
+        self.assertEqual(
+            self._count_rows("quote_price_rows", "WHERE source_group_key IN (?, ?)", ("wechat:room-repair-parse", "wechat:room-repair-missing-template")),
+            0,
+        )
+
+    def test_validator_no_publish_outcomes_open_exception_and_repair_case(self) -> None:
+        from bookkeeping_core.quote_candidates import (
+            QuoteCandidateMessage,
+            QuoteCandidateRow,
+        )
+
+        self.db.set_group(
+            platform="wechat",
+            group_key="wechat:room-repair-validator",
+            chat_id="room-repair-validator",
+            chat_name="修复校验群",
+            group_num=5,
+        )
+        self.db.upsert_quote_group_profile(
+            platform="wechat",
+            chat_id="room-repair-validator",
+            chat_name="修复校验群",
+            default_card_type="Apple",
+            default_country_or_currency="USD",
+            default_form_factor="横白卡",
+            parser_template="group-parser",
+            template_config=json.dumps(
+                {"version": "group-parser-v1", "defaults": {}, "sections": []},
+                ensure_ascii=False,
+            ),
+        )
+
+        candidate = QuoteCandidateMessage(
+            platform="wechat",
+            source_group_key="wechat:room-repair-validator",
+            chat_id="room-repair-validator",
+            chat_name="修复校验群",
+            message_id="msg-repair-validator-1",
+            source_name="报价员",
+            sender_id="seller-runtime",
+            sender_display="报价员",
+            raw_message="validator no publish candidate",
+            message_time="2026-04-14 14:30:00",
+            parser_kind="group-parser",
+            parser_template="group-parser",
+            parser_version="group-parser-v1",
+            confidence=0.92,
+            parse_status="parsed",
+            message_fingerprint="repair-validator-fingerprint",
+            snapshot_hypothesis="unresolved",
+            snapshot_hypothesis_reason="phase1-default",
+            rows=[
+                QuoteCandidateRow(
+                    row_ordinal=1,
+                    source_line="US=5.10",
+                    source_line_index=0,
+                    line_confidence=0.61,
+                    normalized_sku_key="Apple|USD|100|横白卡",
+                    normalization_status="normalized",
+                    row_publishable=True,
+                    publishability_basis="parser_prevalidation",
+                    restriction_parse_status="ambiguous",
+                    card_type="Apple",
+                    country_or_currency="USD",
+                    amount_range="100",
+                    multiplier=None,
+                    form_factor="横白卡",
+                    price=5.10,
+                    quote_status="active",
+                    restriction_text="ask first",
+                ),
+                QuoteCandidateRow(
+                    row_ordinal=2,
+                    source_line="US inactive=6.10",
+                    source_line_index=1,
+                    line_confidence=0.95,
+                    normalized_sku_key="Apple|USD|200|横白卡",
+                    normalization_status="normalized",
+                    row_publishable=True,
+                    publishability_basis="parser_prevalidation",
+                    restriction_parse_status="parsed",
+                    card_type="Apple",
+                    country_or_currency="USD",
+                    amount_range="200",
+                    multiplier=None,
+                    form_factor="横白卡",
+                    price=6.10,
+                    quote_status="inactive",
+                    restriction_text="",
+                ),
+            ],
+        )
+
+        with patch(
+            "bookkeeping_core.quotes.should_attempt_template_quote_capture",
+            return_value=True,
+        ), patch(
+            "bookkeeping_core.quotes._parse_quote_message_to_candidate_details",
+            return_value=(candidate, [], []),
+        ):
+            self.runtime.process_envelope(
+                self._message(
+                    platform="wechat",
+                    message_id="msg-repair-validator-1",
+                    chat_id="room-repair-validator",
+                    chat_name="修复校验群",
+                    text="validator no publish candidate",
+                )
+            )
+
+        document = self._get_quote_document(
+            platform="wechat",
+            chat_id="room-repair-validator",
+            message_id="msg-repair-validator-1",
+        )
+        self.assertIsNotNone(document)
+        assert document is not None
+
+        validation_run = self.db.get_latest_quote_validation_run(
+            quote_document_id=int(document["id"])
+        )
+        self.assertIsNotNone(validation_run)
+        assert validation_run is not None
+        self.assertEqual(str(validation_run["message_decision"]), "no_publish")
+
+        exceptions = self.db.conn.execute(
+            """
+            SELECT *
+            FROM quote_parse_exceptions
+            WHERE quote_document_id = ?
+            ORDER BY id ASC
+            """,
+            (int(document["id"]),),
+        ).fetchall()
+        self.assertEqual(len(exceptions), 1)
+        self.assertEqual(str(exceptions[0]["reason"]), "validator_no_publish")
+
+        repair_case = self.db.conn.execute(
+            """
+            SELECT *
+            FROM quote_repair_cases
+            WHERE origin_exception_id = ?
+            LIMIT 1
+            """,
+            (int(exceptions[0]["id"]),),
+        ).fetchone()
+        self.assertIsNotNone(repair_case)
+        assert repair_case is not None
+        self.assertEqual(
+            int(repair_case["origin_validation_run_id"]),
+            int(validation_run["id"]),
+        )
+        self.assertEqual(str(repair_case["current_failure_reason"]), "validator_no_publish")
+        self.assertEqual(str(repair_case["lifecycle_state"]), "packaged")
+
+        self.assertEqual(
+            self._count_rows(
+                "quote_price_rows",
+                "WHERE message_id = ?",
+                ("msg-repair-validator-1",),
+            ),
+            0,
+        )
+
+    @staticmethod
+    def _message(
+        *,
+        platform: str,
+        message_id: str,
+        chat_id: str,
+        chat_name: str,
+        text: str,
+    ) -> NormalizedMessageEnvelope:
+        return NormalizedMessageEnvelope.from_dict(
+            {
+                "platform": platform,
+                "message_id": message_id,
+                "chat_id": chat_id,
+                "chat_name": chat_name,
+                "is_group": True,
+                "sender_id": "master-user",
+                "sender_name": "Master",
+                "sender_kind": "user",
+                "content_type": "text",
+                "text": text,
+                "received_at": "2026-03-21 10:00:00",
+            }
+        )
+
+    def _get_quote_document(
+        self,
+        *,
+        platform: str,
+        chat_id: str,
+        message_id: str,
+    ):
+        return self.db.conn.execute(
+            """
+            SELECT *
+            FROM quote_documents
+            WHERE platform = ? AND chat_id = ? AND message_id = ?
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (platform, chat_id, message_id),
+        ).fetchone()
+
+    def _count_rows(
+        self,
+        table_name: str,
+        where_clause: str = "",
+        params: tuple[object, ...] = (),
+    ) -> int:
+        row = self.db.conn.execute(
+            f"SELECT COUNT(*) AS cnt FROM {table_name} {where_clause}",
+            params,
+        ).fetchone()
+        return int(row["cnt"] or 0)
+
+    def _upsert_bootstrap_profile(
+        self,
+        *,
+        fixture_name: str,
+        platform: str,
+        chat_id: str,
+        chat_name: str,
+    ) -> dict:
+        from scripts.bootstrap_quote_group_profiles import build_bootstrap_profile_payload
+
+        payload = build_bootstrap_profile_payload(
+            fixture_name=fixture_name,
+            platform=platform,
+            chat_id=chat_id,
+            chat_name=chat_name,
+        )
+        self.db.upsert_quote_group_profile(
+            platform=platform,
+            chat_id=chat_id,
+            chat_name=chat_name,
+            default_card_type=str(payload["default_card_type"]),
+            default_country_or_currency=str(payload["default_country_or_currency"]),
+            default_form_factor=str(payload["default_form_factor"]),
+            default_multiplier=str(payload["default_multiplier"]),
+            parser_template=str(payload["parser_template"]),
+            stale_after_minutes=int(payload["stale_after_minutes"]),
+            note=str(payload["note"]),
+            template_config=json.dumps(payload["template_config"], ensure_ascii=False),
+        )
+        return payload
+
     def test_runtime_bootstrap_profiles_persist_candidate_rows_without_mutating_active_facts(
         self,
     ) -> None:
