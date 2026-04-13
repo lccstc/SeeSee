@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from datetime import datetime
+import hashlib
 import re
 from typing import Any
 
 from .contracts import NormalizedMessageEnvelope
+from .quote_candidates import QuoteCandidateMessage, QuoteCandidateRow
 
 
 PARSER_VERSION = "quote-v1"
@@ -555,6 +557,453 @@ class ParsedQuoteDocument:
     exceptions: list[ParsedQuoteException]
 
 
+def _quote_message_fingerprint(
+    *,
+    platform: str,
+    chat_id: str,
+    message_id: str,
+    sender_id: str,
+    raw_text: str,
+) -> str:
+    payload = "\n".join(
+        (
+            str(platform or ""),
+            str(chat_id or ""),
+            str(message_id or ""),
+            str(sender_id or ""),
+            str(raw_text or ""),
+        )
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _quote_row_publishable(row: ParsedQuoteRow) -> bool:
+    return row.quote_status == "active" and row.confidence >= AUTO_PUBLISH_CONFIDENCE
+
+
+def _quote_row_rejection_reasons(row: ParsedQuoteRow) -> list[dict[str, Any]]:
+    reasons: list[dict[str, Any]] = []
+    if row.quote_status != "active":
+        reasons.append(
+            {
+                "reason": "quote_status_not_active",
+                "quote_status": row.quote_status,
+            }
+        )
+    if row.confidence < AUTO_PUBLISH_CONFIDENCE:
+        reasons.append(
+            {
+                "reason": "confidence_below_auto_publish",
+                "confidence": row.confidence,
+                "required_confidence": AUTO_PUBLISH_CONFIDENCE,
+            }
+        )
+    return reasons
+
+
+def _quote_source_line_index(*, raw_text: str, source_line: str) -> int | None:
+    normalized_source_line = str(source_line or "").strip()
+    if not normalized_source_line:
+        return None
+    for index, line in enumerate(str(raw_text or "").splitlines()):
+        if line.strip() == normalized_source_line:
+            return index
+    return None
+
+
+def _extract_raw_fragment(*, source_line: str, candidates: tuple[str, ...]) -> str:
+    haystack = str(source_line or "")
+    for candidate in candidates:
+        text = str(candidate or "").strip()
+        if not text:
+            continue
+        match = re.search(re.escape(text), haystack, re.IGNORECASE)
+        if match is not None:
+            return match.group(0)
+    return ""
+
+
+def _extract_price_fragment(*, source_line: str, price: float | None) -> str:
+    if price is None:
+        return ""
+    for match in re.finditer(r"\d+(?:\.\d+)?", str(source_line or "")):
+        try:
+            if float(match.group(0)) == float(price):
+                return match.group(0)
+        except ValueError:
+            continue
+    return ""
+
+
+def _quote_row_field_sources(row: ParsedQuoteRow) -> dict[str, Any]:
+    source_line_index = _quote_source_line_index(
+        raw_text=row.raw_text,
+        source_line=row.source_line,
+    )
+    field_sources: dict[str, Any] = {
+        "line_evidence": {
+            "source_line": row.source_line,
+            "source_line_index": source_line_index,
+        }
+    }
+
+    fragments = {
+        "card_type": _extract_raw_fragment(
+            source_line=row.source_line,
+            candidates=(row.card_type,),
+        ),
+        "country_or_currency": _extract_raw_fragment(
+            source_line=row.source_line,
+            candidates=(row.country_or_currency,),
+        ),
+        "amount_range": _extract_raw_fragment(
+            source_line=row.source_line,
+            candidates=(
+                row.amount_range,
+                str(row.amount_range or "").replace("-", "/"),
+                str(row.amount_range or "").replace("-", " "),
+            ),
+        ),
+        "multiplier": _extract_raw_fragment(
+            source_line=row.source_line,
+            candidates=(row.multiplier or "",),
+        ),
+        "form_factor": _extract_raw_fragment(
+            source_line=row.source_line,
+            candidates=(row.form_factor,),
+        ),
+        "price": _extract_raw_fragment(
+            source_line=_extract_price_fragment(
+                source_line=row.source_line,
+                price=row.price,
+            )
+            or row.source_line,
+            candidates=(
+                _extract_price_fragment(
+                    source_line=row.source_line,
+                    price=row.price,
+                ),
+            ),
+        ),
+        "restriction_text": _extract_raw_fragment(
+            source_line=row.source_line,
+            candidates=(row.restriction_text,),
+        ),
+    }
+    for field_name, raw_fragment in fragments.items():
+        if raw_fragment:
+            field_sources[field_name] = {"raw_fragment": raw_fragment}
+    return field_sources
+
+
+def _quote_row_normalized_sku_key(row: ParsedQuoteRow) -> str:
+    return "|".join(
+        (
+            normalize_quote_card_type(row.card_type),
+            normalize_quote_country_or_currency(row.country_or_currency),
+            normalize_quote_amount_range(row.amount_range or "不限"),
+            normalize_quote_multiplier(row.multiplier or ""),
+            normalize_quote_form_factor(row.form_factor or "不限"),
+        )
+    )
+
+
+def _parsed_quote_row_to_candidate_row(
+    row: ParsedQuoteRow,
+    *,
+    row_ordinal: int,
+) -> QuoteCandidateRow:
+    normalized_card_type = normalize_quote_card_type(row.card_type)
+    normalized_country_or_currency = normalize_quote_country_or_currency(
+        row.country_or_currency
+    )
+    normalized_amount_range = normalize_quote_amount_range(row.amount_range or "不限")
+    normalized_multiplier = normalize_quote_multiplier(row.multiplier or "")
+    normalized_form_factor = normalize_quote_form_factor(row.form_factor or "不限")
+    normalization_status = "normalized"
+    if not normalized_card_type or not normalized_country_or_currency:
+        normalization_status = "partial"
+
+    return QuoteCandidateRow(
+        row_ordinal=row_ordinal,
+        source_line=row.source_line,
+        source_line_index=_quote_source_line_index(
+            raw_text=row.raw_text,
+            source_line=row.source_line,
+        ),
+        line_confidence=row.confidence,
+        normalized_sku_key=_quote_row_normalized_sku_key(row),
+        normalization_status=normalization_status,
+        row_publishable=_quote_row_publishable(row),
+        publishability_basis="parser_prevalidation",
+        restriction_parse_status="parsed" if row.restriction_text else "empty",
+        card_type=normalized_card_type or row.card_type,
+        country_or_currency=normalized_country_or_currency or row.country_or_currency,
+        amount_range=normalized_amount_range,
+        multiplier=normalized_multiplier or None,
+        form_factor=normalized_form_factor,
+        price=row.price,
+        quote_status=row.quote_status,
+        restriction_text=row.restriction_text,
+        field_sources=_quote_row_field_sources(row),
+        rejection_reasons=_quote_row_rejection_reasons(row),
+        parser_template=row.parser_template,
+        parser_version=row.parser_version,
+    )
+
+
+def _parsed_quote_exception_to_rejection_reason(
+    item: ParsedQuoteException,
+) -> dict[str, Any]:
+    return {
+        "reason": item.reason,
+        "source_line": item.source_line,
+        "parser_template": item.parser_template,
+        "parser_version": item.parser_version,
+        "confidence": item.confidence,
+    }
+
+
+def _missing_template_candidate(
+    *,
+    envelope: NormalizedMessageEnvelope,
+    raw_text: str,
+    group_profile: QuoteGroupProfile,
+    message_time: str,
+    run_kind: str,
+    replay_of_quote_document_id: int | None,
+    message_id_override: str | None,
+) -> QuoteCandidateMessage:
+    parser_template = str(getattr(group_profile, "parser_template", "") or "group-parser")
+    message_id = str(message_id_override or envelope.message_id)
+    first_line = raw_text.splitlines()[0].strip() if raw_text.splitlines() else raw_text
+    return QuoteCandidateMessage(
+        platform=envelope.platform,
+        source_group_key=f"{envelope.platform}:{envelope.chat_id}",
+        chat_id=envelope.chat_id,
+        chat_name=envelope.chat_name,
+        message_id=message_id,
+        source_name=envelope.sender_name,
+        sender_id=envelope.sender_id,
+        sender_display=envelope.sender_name,
+        raw_message=raw_text,
+        message_time=message_time,
+        parser_kind=parser_template,
+        parser_template=parser_template,
+        parser_version=PARSER_VERSION,
+        parse_status="empty",
+        message_fingerprint=_quote_message_fingerprint(
+            platform=envelope.platform,
+            chat_id=envelope.chat_id,
+            message_id=message_id,
+            sender_id=envelope.sender_id,
+            raw_text=raw_text,
+        ),
+        snapshot_hypothesis="unresolved",
+        snapshot_hypothesis_reason="phase1-default",
+        rejection_reasons=[
+            {
+                "reason": "missing_group_template",
+                "source_line": first_line,
+                "parser_template": parser_template,
+                "parser_version": PARSER_VERSION,
+            }
+        ],
+        run_kind=run_kind,
+        replay_of_quote_document_id=replay_of_quote_document_id,
+        rows=[],
+    )
+
+
+def _parsed_quote_document_to_candidate(
+    parsed: ParsedQuoteDocument,
+    *,
+    run_kind: str,
+    replay_of_quote_document_id: int | None,
+    message_id_override: str | None,
+) -> QuoteCandidateMessage:
+    message_id = str(message_id_override or parsed.message_id)
+    return QuoteCandidateMessage(
+        platform=parsed.platform,
+        source_group_key=parsed.source_group_key,
+        chat_id=parsed.chat_id,
+        chat_name=parsed.chat_name,
+        message_id=message_id,
+        source_name=parsed.source_name,
+        sender_id=parsed.sender_id,
+        sender_display=parsed.source_name,
+        raw_message=parsed.raw_text,
+        message_time=parsed.message_time,
+        parser_kind=parsed.parser_template,
+        parser_template=parsed.parser_template,
+        parser_version=parsed.parser_version,
+        parse_status=parsed.parse_status,
+        message_fingerprint=_quote_message_fingerprint(
+            platform=parsed.platform,
+            chat_id=parsed.chat_id,
+            message_id=message_id,
+            sender_id=parsed.sender_id,
+            raw_text=parsed.raw_text,
+        ),
+        snapshot_hypothesis="unresolved",
+        snapshot_hypothesis_reason="phase1-default",
+        rejection_reasons=[
+            _parsed_quote_exception_to_rejection_reason(item)
+            for item in parsed.exceptions
+        ],
+        run_kind=run_kind,
+        replay_of_quote_document_id=replay_of_quote_document_id,
+        rows=[
+            _parsed_quote_row_to_candidate_row(item, row_ordinal=index)
+            for index, item in enumerate(parsed.rows, start=1)
+        ],
+    )
+
+
+def _parse_quote_message_to_candidate_details(
+    *,
+    envelope: NormalizedMessageEnvelope,
+    raw_text: str,
+    group_profile: QuoteGroupProfile,
+    message_time: str,
+    template: Any | None = None,
+    run_kind: str = "runtime",
+    replay_of_quote_document_id: int | None = None,
+    message_id_override: str | None = None,
+) -> tuple[QuoteCandidateMessage, list[ParsedQuoteException], list[ParsedQuoteRow]]:
+    from .template_engine import TemplateConfig, parse_message_with_template
+
+    template_config_raw = str(getattr(group_profile, "template_config", "") or "").strip()
+    if not template_config_raw:
+        return (
+            _missing_template_candidate(
+                envelope=envelope,
+                raw_text=raw_text,
+                group_profile=group_profile,
+                message_time=message_time,
+                run_kind=run_kind,
+                replay_of_quote_document_id=replay_of_quote_document_id,
+                message_id_override=message_id_override,
+            ),
+            [],
+            [],
+        )
+
+    tpl = template if template is not None else TemplateConfig.from_json(template_config_raw)
+    parsed = parse_message_with_template(
+        text=raw_text,
+        template=tpl,
+        platform=envelope.platform,
+        chat_id=envelope.chat_id,
+        chat_name=envelope.chat_name,
+        message_id=str(message_id_override or envelope.message_id),
+        source_name=envelope.sender_name,
+        sender_id=envelope.sender_id,
+        source_group_key=f"{envelope.platform}:{envelope.chat_id}",
+        message_time=message_time,
+    )
+    return (
+        _parsed_quote_document_to_candidate(
+            parsed,
+            run_kind=run_kind,
+            replay_of_quote_document_id=replay_of_quote_document_id,
+            message_id_override=message_id_override,
+        ),
+        list(parsed.exceptions),
+        [item for item in parsed.rows if not _quote_row_publishable(item)],
+    )
+
+
+def parse_quote_message_to_candidate(
+    *,
+    envelope: NormalizedMessageEnvelope,
+    raw_text: str,
+    group_profile: QuoteGroupProfile,
+    message_time: str,
+    run_kind: str = "runtime",
+    replay_of_quote_document_id: int | None = None,
+    message_id_override: str | None = None,
+) -> QuoteCandidateMessage:
+    candidate, _parsed_exceptions, _non_publishable_rows = (
+        _parse_quote_message_to_candidate_details(
+            envelope=envelope,
+            raw_text=raw_text,
+            group_profile=group_profile,
+            message_time=message_time,
+            run_kind=run_kind,
+            replay_of_quote_document_id=replay_of_quote_document_id,
+            message_id_override=message_id_override,
+        )
+    )
+    return candidate
+
+
+def _build_inquiry_reply_candidate(
+    *,
+    envelope: NormalizedMessageEnvelope,
+    raw_text: str,
+    message_time: str,
+    context: dict[str, Any],
+) -> QuoteCandidateMessage:
+    price = _extract_standalone_reply_price(raw_text)
+    if price is None:
+        raise ValueError("inquiry reply candidate requires a parsable price")
+    parsed_row = ParsedQuoteRow(
+        source_group_key=str(context["source_group_key"]),
+        platform=envelope.platform,
+        chat_id=envelope.chat_id,
+        chat_name=envelope.chat_name,
+        message_id=envelope.message_id,
+        source_name=envelope.sender_name,
+        sender_id=envelope.sender_id,
+        card_type=str(context["card_type"]),
+        country_or_currency=str(context["country_or_currency"]),
+        amount_range=normalize_quote_amount_range(str(context["amount_range"])),
+        multiplier=str(context["multiplier"]) if context.get("multiplier") else None,
+        form_factor=normalize_quote_form_factor(str(context["form_factor"] or "不限")),
+        price=price,
+        quote_status="active",
+        restriction_text="询价上下文回复",
+        source_line=raw_text,
+        raw_text=raw_text,
+        message_time=message_time,
+        effective_at=message_time,
+        expires_at=None,
+        parser_template="inquiry_context_reply",
+        parser_version=PARSER_VERSION,
+        confidence=0.98,
+    )
+    return QuoteCandidateMessage(
+        platform=envelope.platform,
+        source_group_key=str(context["source_group_key"]),
+        chat_id=envelope.chat_id,
+        chat_name=envelope.chat_name,
+        message_id=envelope.message_id,
+        source_name=envelope.sender_name,
+        sender_id=envelope.sender_id,
+        sender_display=envelope.sender_name,
+        raw_message=raw_text,
+        message_time=message_time,
+        parser_kind="inquiry_context_reply",
+        parser_template="inquiry_context_reply",
+        parser_version=PARSER_VERSION,
+        parse_status="parsed",
+        message_fingerprint=_quote_message_fingerprint(
+            platform=envelope.platform,
+            chat_id=envelope.chat_id,
+            message_id=envelope.message_id,
+            sender_id=envelope.sender_id,
+            raw_text=raw_text,
+        ),
+        snapshot_hypothesis="unresolved",
+        snapshot_hypothesis_reason="phase1-default",
+        rejection_reasons=[],
+        run_kind="runtime",
+        replay_of_quote_document_id=None,
+        rows=[_parsed_quote_row_to_candidate_row(parsed_row, row_ordinal=1)],
+    )
+
+
 class QuoteCaptureService:
     def __init__(self, db) -> None:
         self.db = db
@@ -579,9 +1028,6 @@ class QuoteCaptureService:
             return inquiry_reply
         message_time = _normalize_message_time(envelope.received_at)
 
-        # 模板引擎解析
-        from .template_engine import TemplateConfig, parse_message_with_template
-
         template_config_raw = str(getattr(group_profile, "template_config", "") or "").strip()
         if not template_config_raw:
             if not looks_like_quote_message(
@@ -596,21 +1042,13 @@ class QuoteCaptureService:
                 raw_text=text,
             ):
                 return {"captured": False, "rows": 0, "exceptions": 0}
-            document_id = self.db.record_quote_document(
-                platform=envelope.platform,
-                source_group_key=f"{envelope.platform}:{envelope.chat_id}",
-                chat_id=envelope.chat_id,
-                chat_name=envelope.chat_name,
-                message_id=envelope.message_id,
-                source_name=envelope.sender_name,
-                sender_id=envelope.sender_id,
+            candidate = parse_quote_message_to_candidate(
+                envelope=envelope,
                 raw_text=text,
+                group_profile=group_profile,
                 message_time=message_time,
-                parser_template=str(getattr(group_profile, "parser_template", "") or "group-parser"),
-                parser_version=PARSER_VERSION,
-                confidence=0.0,
-                parse_status="empty",
             )
+            document_id = self.db.record_quote_candidate_bundle(candidate=candidate)
             recorded_exception_id = self.db.record_quote_exception_unless_suppressed(
                 quote_document_id=document_id,
                 platform=envelope.platform,
@@ -632,12 +1070,14 @@ class QuoteCaptureService:
             return {
                 "captured": True,
                 "document_id": document_id,
-                "rows": 0,
+                "rows": len(candidate.rows),
                 "exceptions": 1,
-                "template": str(getattr(group_profile, "parser_template", "") or "group-parser"),
-                "parse_status": "empty",
+                "template": candidate.parser_template,
+                "parse_status": candidate.parse_status,
             }
         try:
+            from .template_engine import TemplateConfig
+
             tpl = TemplateConfig.from_json(template_config_raw)
         except ValueError:
             return {"captured": False, "rows": 0, "exceptions": 0}
@@ -647,24 +1087,20 @@ class QuoteCaptureService:
             dictionary_aliases=group_profile.dictionary_aliases,
         ):
             return {"captured": False, "rows": 0, "exceptions": 0}
-
-        parsed = parse_message_with_template(
-            text=text,
-            template=tpl,
-            platform=envelope.platform,
-            chat_id=envelope.chat_id,
-            chat_name=envelope.chat_name,
-            message_id=envelope.message_id,
-            source_name=envelope.sender_name,
-            sender_id=envelope.sender_id,
-            source_group_key=f"{envelope.platform}:{envelope.chat_id}",
-            message_time=message_time,
+        candidate, parsed_exceptions, non_publishable_rows = (
+            _parse_quote_message_to_candidate_details(
+                envelope=envelope,
+                raw_text=text,
+                group_profile=group_profile,
+                message_time=message_time,
+                template=tpl,
+            )
         )
-        if not parsed.rows and not parsed.exceptions:
+        if not candidate.rows and not parsed_exceptions:
             return {"captured": False, "rows": 0, "exceptions": 0}
         recordable_parsed_exceptions = [
             item
-            for item in parsed.exceptions
+            for item in parsed_exceptions
             if not self.db.is_quote_exception_suppressed(
                 source_group_key=item.source_group_key,
                 reason=item.reason,
@@ -672,46 +1108,20 @@ class QuoteCaptureService:
                 raw_text=item.raw_text,
             )
         ]
-        publishable_rows = [
-            item
-            for item in parsed.rows
-            if item.quote_status == "active" and item.confidence >= AUTO_PUBLISH_CONFIDENCE
-        ]
         recordable_row_exceptions = [
             item
-            for item in parsed.rows
-            if (item.quote_status != "active" or item.confidence < AUTO_PUBLISH_CONFIDENCE)
-            and not self.db.is_quote_exception_suppressed(
+            for item in non_publishable_rows
+            if not self.db.is_quote_exception_suppressed(
                 source_group_key=item.source_group_key,
                 reason="low_confidence_or_non_active",
                 source_line=item.source_line,
                 raw_text=item.raw_text,
             )
         ]
-        if not publishable_rows and not recordable_parsed_exceptions and not recordable_row_exceptions:
+        if not candidate.rows and not recordable_parsed_exceptions and not recordable_row_exceptions:
             return {"captured": False, "rows": 0, "exceptions": 0}
 
-        # 同一群发新消息时，旧报价标记为不活跃
-        source_group_key = f"{envelope.platform}:{envelope.chat_id}"
-        deactivate_method = getattr(self.db, "deactivate_old_quotes_for_group", None)
-        if callable(deactivate_method):
-            deactivate_method(source_group_key=source_group_key)
-
-        document_id = self.db.record_quote_document(
-            platform=parsed.platform,
-            source_group_key=parsed.source_group_key,
-            chat_id=parsed.chat_id,
-            chat_name=parsed.chat_name,
-            message_id=parsed.message_id,
-            source_name=parsed.source_name,
-            sender_id=parsed.sender_id,
-            raw_text=parsed.raw_text,
-            message_time=parsed.message_time,
-            parser_template=parsed.parser_template,
-            parser_version=parsed.parser_version,
-            confidence=parsed.confidence,
-            parse_status=parsed.parse_status,
-        )
+        document_id = self.db.record_quote_candidate_bundle(candidate=candidate)
         recorded_exceptions = 0
         for item in recordable_parsed_exceptions:
             if self.db.record_quote_exception_unless_suppressed(
@@ -731,61 +1141,31 @@ class QuoteCaptureService:
                 confidence=item.confidence,
             ):
                 recorded_exceptions += 1
-        published_rows = 0
-        for item in parsed.rows:
-            if item.quote_status != "active" or item.confidence < AUTO_PUBLISH_CONFIDENCE:
-                if self.db.record_quote_exception_unless_suppressed(
-                    quote_document_id=document_id,
-                    platform=item.platform,
-                    source_group_key=item.source_group_key,
-                    chat_id=item.chat_id,
-                    chat_name=item.chat_name,
-                    source_name=item.source_name,
-                    sender_id=item.sender_id,
-                    reason="low_confidence_or_non_active",
-                    source_line=item.source_line,
-                    raw_text=item.raw_text,
-                    message_time=item.message_time,
-                    parser_template=item.parser_template,
-                    parser_version=item.parser_version,
-                    confidence=item.confidence,
-                ):
-                    recorded_exceptions += 1
-                continue
-            self.db.upsert_quote_price_row_with_history(
+        for item in recordable_row_exceptions:
+            if self.db.record_quote_exception_unless_suppressed(
                 quote_document_id=document_id,
-                message_id=item.message_id,
                 platform=item.platform,
                 source_group_key=item.source_group_key,
                 chat_id=item.chat_id,
                 chat_name=item.chat_name,
                 source_name=item.source_name,
                 sender_id=item.sender_id,
-                card_type=item.card_type,
-                country_or_currency=item.country_or_currency,
-                amount_range=item.amount_range,
-                multiplier=item.multiplier,
-                form_factor=item.form_factor,
-                price=item.price,
-                quote_status=item.quote_status,
-                restriction_text=item.restriction_text,
+                reason="low_confidence_or_non_active",
                 source_line=item.source_line,
                 raw_text=item.raw_text,
                 message_time=item.message_time,
-                effective_at=item.effective_at,
-                expires_at=item.expires_at,
                 parser_template=item.parser_template,
                 parser_version=item.parser_version,
                 confidence=item.confidence,
-            )
-            published_rows += 1
+            ):
+                recorded_exceptions += 1
         return {
             "captured": True,
             "document_id": document_id,
-            "rows": published_rows,
+            "rows": len(candidate.rows),
             "exceptions": recorded_exceptions,
-            "template": parsed.parser_template,
-            "parse_status": parsed.parse_status,
+            "template": candidate.parser_template,
+            "parse_status": candidate.parse_status,
         }
 
     def _group_profile_for_envelope(
@@ -860,47 +1240,13 @@ class QuoteCaptureService:
 
         message_time = _normalize_message_time(envelope.received_at)
         raw_text = text
-        document_id = self.db.record_quote_document(
-            platform=envelope.platform,
-            source_group_key=str(context["source_group_key"]),
-            chat_id=envelope.chat_id,
-            chat_name=envelope.chat_name,
-            message_id=envelope.message_id,
-            source_name=envelope.sender_name,
-            sender_id=envelope.sender_id,
+        candidate = _build_inquiry_reply_candidate(
+            envelope=envelope,
             raw_text=raw_text,
             message_time=message_time,
-            parser_template="inquiry_context_reply",
-            parser_version=PARSER_VERSION,
-            confidence=0.98,
-            parse_status="parsed",
+            context=context,
         )
-        self.db.upsert_quote_price_row_with_history(
-            quote_document_id=document_id,
-            message_id=envelope.message_id,
-            platform=envelope.platform,
-            source_group_key=str(context["source_group_key"]),
-            chat_id=envelope.chat_id,
-            chat_name=envelope.chat_name,
-            source_name=envelope.sender_name,
-            sender_id=envelope.sender_id,
-            card_type=str(context["card_type"]),
-            country_or_currency=str(context["country_or_currency"]),
-            amount_range=normalize_quote_amount_range(str(context["amount_range"])),
-            multiplier=str(context["multiplier"]) if context.get("multiplier") else None,
-            form_factor=normalize_quote_form_factor(str(context["form_factor"] or "不限")),
-            price=price,
-            quote_status="active",
-            restriction_text="询价上下文回复",
-            source_line=raw_text,
-            raw_text=raw_text,
-            message_time=message_time,
-            effective_at=message_time,
-            expires_at=None,
-            parser_template="inquiry_context_reply",
-            parser_version=PARSER_VERSION,
-            confidence=0.98,
-        )
+        document_id = self.db.record_quote_candidate_bundle(candidate=candidate)
         resolve_method = getattr(self.db, "resolve_quote_inquiry_context", None)
         if callable(resolve_method):
             resolve_method(
@@ -910,10 +1256,10 @@ class QuoteCaptureService:
         return {
             "captured": True,
             "document_id": document_id,
-            "rows": 1,
+            "rows": len(candidate.rows),
             "exceptions": 0,
-            "template": "inquiry_context_reply",
-            "parse_status": "parsed",
+            "template": candidate.parser_template,
+            "parse_status": candidate.parse_status,
         }
 
 
