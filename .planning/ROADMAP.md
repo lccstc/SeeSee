@@ -57,12 +57,18 @@ Plans:
 ### Phase 02.1: Real Exception Corpus & Candidate Coverage (INSERTED)
 
 **Goal:** Build a real exception corpus and improve candidate generation coverage against live customer quote shapes before guarded publisher work.
-**Requirements**: TBD
+**Requirements**: [CORP-01, CORP-02, COV-01, COV-02]
 **Depends on:** Phase 2
-**Plans:** 0 plans
+**Success Criteria** (what must be TRUE):
+  1. The repository contains a refreshable corpus index plus replayable gold samples for the top exception-heavy chats without hiding long-tail shapes
+  2. Candidate generation handles multi-section boards, mixed quote/rule/manual text, and scoped numeric rows conservatively with explicit evidence
+  3. Top-volume missing-template groups can be bootstrapped and verified through runtime/replay regressions without changing validator or publisher custody
+**Plans:** 3 plans
 
 Plans:
-- [ ] TBD (run /gsd-plan-phase 02.1 to break down)
+- [ ] 02.1-01-PLAN.md — Build refreshable corpus assets and curated gold fixtures with an operator approval gate
+- [ ] 02.1-02-PLAN.md — Harden deterministic candidate generation for dominant structural failure shapes
+- [ ] 02.1-03-PLAN.md — Bootstrap top-volume group coverage and prove it through runtime/replay regressions
 
 ### Phase 3: Fact Protection Publisher
 **Goal**: Ensure that only a guarded publisher can change active quote facts, and that failures never corrupt existing wall state.
@@ -163,7 +169,7 @@ Phases execute in numeric order: 1 → 2 → 2.1 → 3 → 4 → 5 → 6 → 7 �
 |-------|----------------|--------|-----------|
 | 1. Candidate Contract Foundation | 3/3 | Completed | 2026-04-14 |
 | 2. Validation Engine | 3/3 | Completed | 2026-04-14 |
-| 2.1. Real Exception Corpus & Candidate Coverage | 0/0 | Not started | - |
+| 2.1. Real Exception Corpus & Candidate Coverage | 0/3 | Not started | - |
 | 3. Fact Protection Publisher | 0/3 | Not started | - |
 | 4. Snapshot / Delta Semantics | 0/3 | Not started | - |
 | 5. Exception Replay Loop | 0/3 | Not started | - |

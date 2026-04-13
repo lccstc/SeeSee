@@ -21,6 +21,13 @@
 - [x] **VALI-02**: System applies explicit business-rule validation and records structured rejection reasons for invalid candidates
 - [x] **VALI-03**: System computes `publishable_rows` separately from rejected rows and held rows
 
+### Corpus & Candidate Coverage
+
+- [ ] **CORP-01**: System maintains a refreshable index of the live quote exception pool, prioritizing the current top 8 exception-heavy chats while keeping long-tail chats visible
+- [ ] **CORP-02**: System stores replayable gold samples with message-level and row-level expected outcomes, including `publishable` / `held` / `rejected` judgments and `full_snapshot` / `delta_update` / `unresolved` labels
+- [ ] **COV-01**: System deterministically improves candidate generation for dominant live failure shapes, including section splitting, quote-versus-rule/manual classification, and scoped numeric rows with explicit evidence
+- [ ] **COV-02**: System can bootstrap top-volume missing-template groups into conservative group-parser coverage and prove the result through runtime/replay regression tests without bypassing validator custody
+
 ### Fact Protection
 
 - [ ] **FACT-01**: Failed parse, validation, or publish attempts leave prior active quote facts untouched
@@ -86,6 +93,10 @@
 | VALI-01 | Phase 2 | Complete |
 | VALI-02 | Phase 2 | Complete |
 | VALI-03 | Phase 2 | Complete |
+| CORP-01 | Phase 2.1 | Pending |
+| CORP-02 | Phase 2.1 | Pending |
+| COV-01 | Phase 2.1 | Pending |
+| COV-02 | Phase 2.1 | Pending |
 | FACT-01 | Phase 3 | Pending |
 | FACT-02 | Phase 3 | Pending |
 | FACT-03 | Phase 3 | Pending |
@@ -102,8 +113,8 @@
 | GOV-01 | Phase 8 | Pending |
 
 **Coverage:**
-- v1 requirements: 21 total
-- Mapped to phases: 21
+- v1 requirements: 25 total
+- Mapped to phases: 25
 - Unmapped: 0 ✓
 
 ---
