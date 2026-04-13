@@ -11,6 +11,7 @@ This note captures a live slice of the quote exception pool to support a new pre
 - Sample size: `226` open exceptions
 - Coverage: `25` chats
 - Concentration: top `8` chats contribute `159 / 226` exceptions (`70%`)
+- This corpus is a live planning baseline, not a frozen final dataset. If coverage is insufficient during Phase `02.1`, pull additional samples directly from the same live exception endpoint because new exceptions continue to enter the pool.
 
 ## Reason Counts
 
