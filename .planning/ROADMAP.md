@@ -12,7 +12,7 @@ This roadmap turns the current brownfield quote wall into a formal validation pi
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Candidate Contract Foundation** - Split parsing output from active fact publication and formalize candidate objects
+- [x] **Phase 1: Candidate Contract Foundation** - Split parsing output from active fact publication and formalize candidate objects
 - [ ] **Phase 2: Validation Engine** - Add fixed schema validation, business validation, and `publishable_rows`
 - [ ] **Phase 3: Fact Protection Publisher** - Make one guarded publisher the only path that can mutate active quote facts
 - [ ] **Phase 4: Snapshot / Delta Semantics** - Distinguish `full_snapshot` from `delta_update` and default safely
@@ -34,9 +34,9 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans**: 3 plans
 
 Plans:
-- [ ] 01-01-PLAN.md — Define the candidate contract, additive quote-document metadata, and `quote_candidate_rows` persistence
-- [ ] 01-02-PLAN.md — Route runtime quote capture through candidate-only persistence and preserve exception evidence
-- [ ] 01-03-PLAN.md — Convert replay/harvest-save to replay candidate runs and rebaseline web tests away from board mutation
+- [x] 01-01-PLAN.md — Define the candidate contract, additive quote-document metadata, and `quote_candidate_rows` persistence
+- [x] 01-02-PLAN.md — Route runtime quote capture through candidate-only persistence and preserve exception evidence
+- [x] 01-03-PLAN.md — Convert replay/harvest-save to replay candidate runs and rebaseline web tests away from board mutation
 
 ### Phase 2: Validation Engine
 **Goal**: Build explicit schema and business validators that separate `publishable_rows` from invalid or held rows.
@@ -150,7 +150,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Candidate Contract Foundation | 0/3 | Not started | - |
+| 1. Candidate Contract Foundation | 3/3 | Completed | 2026-04-14 |
 | 2. Validation Engine | 0/3 | Not started | - |
 | 3. Fact Protection Publisher | 0/3 | Not started | - |
 | 4. Snapshot / Delta Semantics | 0/3 | Not started | - |
