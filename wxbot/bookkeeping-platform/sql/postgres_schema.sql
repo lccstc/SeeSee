@@ -437,6 +437,7 @@ CREATE TABLE IF NOT EXISTS quote_repair_cases (
   profile_snapshot_json JSONB NOT NULL DEFAULT '{}'::jsonb,
   validation_summary_json JSONB NOT NULL DEFAULT '{}'::jsonb,
   case_summary_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+  baseline_attempt_id BIGINT,
   case_fingerprint TEXT NOT NULL DEFAULT '',
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -445,6 +446,33 @@ CREATE TABLE IF NOT EXISTS quote_repair_cases (
 
 CREATE INDEX IF NOT EXISTS idx_quote_repair_cases_group_created
   ON quote_repair_cases(source_group_key, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS quote_repair_case_attempts (
+  id BIGSERIAL PRIMARY KEY,
+  repair_case_id BIGINT NOT NULL REFERENCES quote_repair_cases(id) ON DELETE CASCADE,
+  attempt_kind TEXT NOT NULL,
+  attempt_number INTEGER NOT NULL,
+  trigger TEXT NOT NULL DEFAULT '',
+  quote_document_id BIGINT REFERENCES quote_documents(id) ON DELETE SET NULL,
+  validation_run_id BIGINT REFERENCES quote_validation_runs(id) ON DELETE SET NULL,
+  replayed_from_quote_document_id BIGINT REFERENCES quote_documents(id) ON DELETE SET NULL,
+  group_profile_id BIGINT REFERENCES quote_group_profiles(id) ON DELETE SET NULL,
+  profile_snapshot_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+  remaining_lines_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+  attempt_summary_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+  outcome_state TEXT NOT NULL,
+  failure_note TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(repair_case_id, attempt_number)
+);
+
+CREATE INDEX IF NOT EXISTS idx_quote_repair_case_attempts_case_created
+  ON quote_repair_case_attempts(repair_case_id, created_at DESC);
+
+ALTER TABLE quote_repair_cases
+  ADD CONSTRAINT fk_quote_repair_cases_baseline_attempt
+  FOREIGN KEY (baseline_attempt_id) REFERENCES quote_repair_case_attempts(id)
+  ON DELETE SET NULL;
 
 CREATE TABLE IF NOT EXISTS quote_dictionary_aliases (
   id BIGSERIAL PRIMARY KEY,

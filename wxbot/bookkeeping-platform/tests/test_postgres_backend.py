@@ -887,6 +887,355 @@ class RepairCaseTests(PostgresTestCase):
         finally:
             db.close()
 
+    def test_create_baseline_attempt_is_idempotent_and_links_case_once(self) -> None:
+        from bookkeeping_core.repair_cases import (
+            create_baseline_repair_attempt,
+            package_quote_repair_case,
+        )
+
+        db = self.make_db("repair-case-baseline-idempotent")
+        try:
+            profile_id = db.upsert_quote_group_profile(
+                platform="wechat",
+                chat_id="repair-baseline-room",
+                chat_name="基线回放群",
+                default_card_type="Apple",
+                default_country_or_currency="USD",
+                default_form_factor="横白卡",
+                default_multiplier="1x",
+                parser_template="repair-template-baseline",
+                template_config=json.dumps(
+                    {"version": "repair-template-baseline", "sections": ["Apple"]},
+                    ensure_ascii=False,
+                ),
+            )
+            origin_document_id = db.record_quote_candidate_bundle(
+                candidate=_make_validation_candidate(message_id="repair-baseline-origin")
+            )
+            origin_validation_run_id = db.record_quote_validation_run(
+                validation_run=QuoteValidationRun(
+                    quote_document_id=origin_document_id,
+                    validator_version=VALIDATOR_VERSION_V1,
+                    run_kind="runtime",
+                    message_decision="no_publish",
+                    validation_status="completed",
+                    summary={"message_reasons": [build_validation_reason("strict_match_failed")]},
+                )
+            )
+            exception_id = db.record_quote_exception(
+                quote_document_id=origin_document_id,
+                platform="wechat",
+                source_group_key="wechat:repair-baseline-room",
+                chat_id="repair-baseline-room",
+                chat_name="基线回放群",
+                source_name="Repair Source",
+                sender_id="wxid-repair",
+                reason="strict_match_failed",
+                source_line="US 100 95.5",
+                raw_text="[Apple]\nUS 100 95.5",
+                message_time="2026-04-14 12:00:00",
+                parser_template="repair-template-baseline",
+                parser_version="candidate-v1",
+                confidence=0.52,
+            )
+            repair_case = package_quote_repair_case(db=db, exception_id=exception_id)
+
+            baseline_document_id = db.record_quote_candidate_bundle(
+                candidate=_make_validation_candidate(message_id="repair-baseline-replay")
+            )
+            baseline_validation_run_id = db.record_quote_validation_run(
+                validation_run=QuoteValidationRun(
+                    quote_document_id=baseline_document_id,
+                    validator_version=VALIDATOR_VERSION_V1,
+                    run_kind="replay",
+                    message_decision="no_publish",
+                    validation_status="completed",
+                    summary={"message_reasons": [build_validation_reason("strict_match_failed")]},
+                )
+            )
+
+            first_attempt = create_baseline_repair_attempt(
+                db=db,
+                repair_case_id=int(repair_case["id"]),
+                replay_result={
+                    "replayed": True,
+                    "reason": "",
+                    "quote_document_id": baseline_document_id,
+                    "validation_run_id": baseline_validation_run_id,
+                    "remaining_lines": ["US 100 95.5"],
+                    "mutated_active_facts": False,
+                    "comparison": {
+                        "classification": "same",
+                        "origin_row_count": 3,
+                        "attempt_row_count": 3,
+                        "origin_message_decision": "no_publish",
+                        "attempt_message_decision": "no_publish",
+                        "exception_count": 0,
+                    },
+                },
+            )
+            second_attempt = create_baseline_repair_attempt(
+                db=db,
+                repair_case_id=int(repair_case["id"]),
+                replay_result={
+                    "replayed": True,
+                    "reason": "",
+                    "quote_document_id": baseline_document_id + 99,
+                    "validation_run_id": baseline_validation_run_id + 99,
+                    "remaining_lines": ["should-not-overwrite"],
+                    "mutated_active_facts": False,
+                    "comparison": {"classification": "worse"},
+                },
+            )
+
+            self.assertEqual(int(first_attempt["id"]), int(second_attempt["id"]))
+            self.assertEqual(int(first_attempt["attempt_number"]), 0)
+            self.assertEqual(str(first_attempt["attempt_kind"]), "baseline")
+            count_row = db.conn.execute(
+                """
+                SELECT COUNT(*) AS cnt
+                FROM quote_repair_case_attempts
+                WHERE repair_case_id = ?
+                """,
+                (int(repair_case["id"]),),
+            ).fetchone()
+            self.assertEqual(int(count_row["cnt"]), 1)
+
+            stored_case = db.conn.execute(
+                "SELECT * FROM quote_repair_cases WHERE id = ?",
+                (int(repair_case["id"]),),
+            ).fetchone()
+            self.assertIsNotNone(stored_case)
+            assert stored_case is not None
+            self.assertEqual(int(stored_case["baseline_attempt_id"]), int(first_attempt["id"]))
+            self.assertEqual(int(stored_case["group_profile_id"]), profile_id)
+            self.assertEqual(int(stored_case["origin_quote_document_id"]), origin_document_id)
+            self.assertEqual(
+                int(stored_case["origin_validation_run_id"]), origin_validation_run_id
+            )
+        finally:
+            db.close()
+
+    def test_create_baseline_attempt_persists_lineage_and_frozen_snapshots(self) -> None:
+        from bookkeeping_core.repair_cases import (
+            create_baseline_repair_attempt,
+            package_quote_repair_case,
+        )
+
+        db = self.make_db("repair-case-baseline-lineage")
+        try:
+            profile_id = db.upsert_quote_group_profile(
+                platform="wechat",
+                chat_id="repair-baseline-lineage",
+                chat_name="基线谱系群",
+                default_card_type="Apple",
+                default_country_or_currency="USD",
+                default_form_factor="横白卡",
+                default_multiplier="1x",
+                parser_template="repair-template-lineage",
+                template_config=json.dumps(
+                    {"version": "repair-template-lineage", "sections": ["Apple", "Xbox"]},
+                    ensure_ascii=False,
+                ),
+            )
+            origin_document_id = db.record_quote_candidate_bundle(
+                candidate=_make_validation_candidate(message_id="repair-lineage-origin")
+            )
+            origin_validation_run_id = db.record_quote_validation_run(
+                validation_run=QuoteValidationRun(
+                    quote_document_id=origin_document_id,
+                    validator_version=VALIDATOR_VERSION_V1,
+                    run_kind="runtime",
+                    message_decision="no_publish",
+                    validation_status="completed",
+                    summary={
+                        "message_reasons": [
+                            build_validation_reason("validator_rejected_only")
+                        ]
+                    },
+                )
+            )
+            exception_id = db.record_quote_exception(
+                quote_document_id=origin_document_id,
+                platform="wechat",
+                source_group_key="wechat:repair-baseline-lineage",
+                chat_id="repair-baseline-lineage",
+                chat_name="基线谱系群",
+                source_name="Repair Source",
+                sender_id="wxid-repair",
+                reason="missing_group_template",
+                source_line="[Apple]",
+                raw_text="[Apple]\nUS 100 95.5",
+                message_time="2026-04-14 12:05:00",
+                parser_template="group-parser",
+                parser_version="candidate-v1",
+                confidence=0.0,
+            )
+            repair_case = package_quote_repair_case(db=db, exception_id=exception_id)
+
+            baseline_document_id = db.record_quote_candidate_bundle(
+                candidate=_make_validation_candidate(message_id="repair-lineage-replay")
+            )
+            baseline_validation_run_id = db.record_quote_validation_run(
+                validation_run=QuoteValidationRun(
+                    quote_document_id=baseline_document_id,
+                    validator_version=VALIDATOR_VERSION_V1,
+                    run_kind="replay",
+                    message_decision="held_only",
+                    validation_status="completed",
+                    summary={
+                        "message_reasons": [
+                            build_validation_reason(
+                                "business_low_confidence_hold",
+                                detail="replay still conservative",
+                            )
+                        ]
+                    },
+                )
+            )
+
+            attempt = create_baseline_repair_attempt(
+                db=db,
+                repair_case_id=int(repair_case["id"]),
+                replay_result={
+                    "replayed": True,
+                    "reason": "",
+                    "quote_document_id": baseline_document_id,
+                    "validation_run_id": baseline_validation_run_id,
+                    "remaining_lines": ["leftover-a", "leftover-b"],
+                    "mutated_active_facts": False,
+                    "comparison": {
+                        "classification": "better",
+                        "origin_row_count": 0,
+                        "attempt_row_count": 3,
+                        "origin_message_decision": "no_publish",
+                        "attempt_message_decision": "held_only",
+                        "exception_count": 1,
+                    },
+                },
+            )
+
+            stored_attempt = db.conn.execute(
+                "SELECT * FROM quote_repair_case_attempts WHERE id = ?",
+                (int(attempt["id"]),),
+            ).fetchone()
+            self.assertIsNotNone(stored_attempt)
+            assert stored_attempt is not None
+            self.assertEqual(int(stored_attempt["repair_case_id"]), int(repair_case["id"]))
+            self.assertEqual(int(stored_attempt["quote_document_id"]), baseline_document_id)
+            self.assertEqual(
+                int(stored_attempt["validation_run_id"]), baseline_validation_run_id
+            )
+            self.assertEqual(
+                int(stored_attempt["replayed_from_quote_document_id"]), origin_document_id
+            )
+            self.assertEqual(int(stored_attempt["group_profile_id"]), profile_id)
+            self.assertEqual(str(stored_attempt["outcome_state"]), "completed")
+            self.assertEqual(str(stored_attempt["failure_note"]), "")
+
+            profile_snapshot = _normalize_json_field(
+                stored_attempt["profile_snapshot_json"]
+            )
+            self.assertEqual(profile_snapshot["parser_template"], "repair-template-lineage")
+            self.assertEqual(
+                profile_snapshot["template_config"]["version"], "repair-template-lineage"
+            )
+
+            remaining_lines = _normalize_json_field(stored_attempt["remaining_lines_json"])
+            self.assertEqual(remaining_lines, ["leftover-a", "leftover-b"])
+
+            summary = _normalize_json_field(stored_attempt["attempt_summary_json"])
+            self.assertEqual(summary["comparison"]["classification"], "better")
+            self.assertEqual(summary["mutated_active_facts"], False)
+
+            stored_case = db.conn.execute(
+                "SELECT * FROM quote_repair_cases WHERE id = ?",
+                (int(repair_case["id"]),),
+            ).fetchone()
+            self.assertIsNotNone(stored_case)
+            assert stored_case is not None
+            self.assertEqual(int(stored_case["origin_quote_document_id"]), origin_document_id)
+            self.assertEqual(
+                int(stored_case["origin_validation_run_id"]), origin_validation_run_id
+            )
+            self.assertEqual(int(stored_case["baseline_attempt_id"]), int(attempt["id"]))
+        finally:
+            db.close()
+
+    def test_create_baseline_attempt_records_blocked_outcome_for_missing_prerequisites(
+        self,
+    ) -> None:
+        from bookkeeping_core.repair_cases import (
+            create_baseline_repair_attempt,
+            package_quote_repair_case,
+        )
+
+        db = self.make_db("repair-case-baseline-blocked")
+        try:
+            origin_document_id = db.record_quote_candidate_bundle(
+                candidate=_make_validation_candidate(message_id="repair-blocked-origin")
+            )
+            db.record_quote_validation_run(
+                validation_run=QuoteValidationRun(
+                    quote_document_id=origin_document_id,
+                    validator_version=VALIDATOR_VERSION_V1,
+                    run_kind="runtime",
+                    message_decision="no_publish",
+                    validation_status="completed",
+                    summary={"message_reasons": [build_validation_reason("missing_group_template")]},
+                )
+            )
+            exception_id = db.record_quote_exception(
+                quote_document_id=origin_document_id,
+                platform="wechat",
+                source_group_key="wechat:repair-blocked-room",
+                chat_id="repair-blocked-room",
+                chat_name="基线阻塞群",
+                source_name="Repair Source",
+                sender_id="wxid-repair",
+                reason="missing_group_template",
+                source_line="[Apple]",
+                raw_text="[Apple]\nUS 100 95.5",
+                message_time="2026-04-14 12:10:00",
+                parser_template="group-parser",
+                parser_version="candidate-v1",
+                confidence=0.0,
+            )
+            repair_case = package_quote_repair_case(db=db, exception_id=exception_id)
+
+            attempt = create_baseline_repair_attempt(
+                db=db,
+                repair_case_id=int(repair_case["id"]),
+                replay_result={
+                    "replayed": False,
+                    "reason": "missing_group_profile",
+                    "rows": 0,
+                    "exceptions": 0,
+                    "mutated_active_facts": False,
+                    "comparison": {"classification": "blocked"},
+                },
+            )
+
+            self.assertEqual(str(attempt["attempt_kind"]), "baseline")
+            self.assertEqual(int(attempt["attempt_number"]), 0)
+            self.assertEqual(str(attempt["outcome_state"]), "blocked")
+            summary = _normalize_json_field(attempt["attempt_summary_json"])
+            self.assertEqual(summary["comparison"]["classification"], "blocked")
+            self.assertEqual(summary["blocked_reason"], "missing_group_profile")
+            self.assertEqual(summary["mutated_active_facts"], False)
+            self.assertEqual(str(attempt["failure_note"]), "missing_group_profile")
+
+            stored_case = db.conn.execute(
+                "SELECT * FROM quote_repair_cases WHERE id = ?",
+                (int(repair_case["id"]),),
+            ).fetchone()
+            self.assertIsNotNone(stored_case)
+            assert stored_case is not None
+            self.assertEqual(int(stored_case["baseline_attempt_id"]), int(attempt["id"]))
+            self.assertEqual(int(stored_case["origin_quote_document_id"]), origin_document_id)
+        finally:
+            db.close()
+
 
 if __name__ == "__main__":
     unittest.main()

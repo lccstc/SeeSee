@@ -2091,6 +2091,52 @@ class _BookkeepingStoreBase:
         ).fetchone()
         return self._serialize_quote_db_row(row) if row else None
 
+    def get_quote_repair_case(self, *, repair_case_id: int) -> DBRow | None:
+        row = self.conn.execute(
+            """
+            SELECT *
+            FROM quote_repair_cases
+            WHERE id = ?
+            LIMIT 1
+            """,
+            (repair_case_id,),
+        ).fetchone()
+        return self._serialize_quote_db_row(row) if row else None
+
+    def get_quote_repair_case_attempt(
+        self,
+        *,
+        attempt_id: int,
+    ) -> DBRow | None:
+        row = self.conn.execute(
+            """
+            SELECT *
+            FROM quote_repair_case_attempts
+            WHERE id = ?
+            LIMIT 1
+            """,
+            (attempt_id,),
+        ).fetchone()
+        return self._serialize_quote_db_row(row) if row else None
+
+    def get_quote_repair_case_attempt_by_number(
+        self,
+        *,
+        repair_case_id: int,
+        attempt_number: int,
+    ) -> DBRow | None:
+        row = self.conn.execute(
+            """
+            SELECT *
+            FROM quote_repair_case_attempts
+            WHERE repair_case_id = ?
+              AND attempt_number = ?
+            LIMIT 1
+            """,
+            (repair_case_id, attempt_number),
+        ).fetchone()
+        return self._serialize_quote_db_row(row) if row else None
+
     def create_or_get_quote_repair_case(
         self,
         *,
@@ -2165,6 +2211,111 @@ class _BookkeepingStoreBase:
         ).fetchone()
         if row is None:
             raise RuntimeError("failed to persist quote repair case")
+        return self._serialize_quote_db_row(row)
+
+    def create_quote_repair_case_attempt(
+        self,
+        *,
+        repair_case_id: int,
+        attempt_kind: str,
+        attempt_number: int,
+        trigger: str,
+        quote_document_id: int | None,
+        validation_run_id: int | None,
+        replayed_from_quote_document_id: int | None,
+        group_profile_id: int | None,
+        profile_snapshot: dict[str, Any] | None,
+        remaining_lines: list[str] | None,
+        attempt_summary: dict[str, Any] | None,
+        outcome_state: str,
+        failure_note: str = "",
+    ) -> DBRow:
+        cur = self.conn.execute(
+            """
+            INSERT INTO quote_repair_case_attempts (
+              repair_case_id, attempt_kind, attempt_number, trigger,
+              quote_document_id, validation_run_id, replayed_from_quote_document_id,
+              group_profile_id, profile_snapshot_json, remaining_lines_json,
+              attempt_summary_json, outcome_state, failure_note
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?, ?)
+            """,
+            (
+                repair_case_id,
+                attempt_kind,
+                attempt_number,
+                trigger,
+                quote_document_id,
+                validation_run_id,
+                replayed_from_quote_document_id,
+                group_profile_id,
+                self._serialize_candidate_json(profile_snapshot, fallback={}),
+                self._serialize_candidate_json(remaining_lines, fallback=[]),
+                self._serialize_candidate_json(attempt_summary, fallback={}),
+                outcome_state,
+                failure_note,
+            ),
+        )
+        attempt_id = self._last_insert_id(cur)
+        self.conn.commit()
+        row = self.conn.execute(
+            """
+            SELECT *
+            FROM quote_repair_case_attempts
+            WHERE id = ?
+            LIMIT 1
+            """,
+            (attempt_id,),
+        ).fetchone()
+        if row is None:
+            raise RuntimeError("failed to persist quote repair case attempt")
+        return self._serialize_quote_db_row(row)
+
+    def link_quote_repair_case_baseline_attempt(
+        self,
+        *,
+        repair_case_id: int,
+        baseline_attempt_id: int,
+        lifecycle_state: str | None = None,
+    ) -> DBRow:
+        existing = self.get_quote_repair_case(repair_case_id=repair_case_id)
+        if existing is None:
+            raise ValueError(f"quote repair case not found: {repair_case_id}")
+        existing_baseline_attempt_id = existing.get("baseline_attempt_id")
+        if (
+            existing_baseline_attempt_id is not None
+            and int(existing_baseline_attempt_id) != int(baseline_attempt_id)
+        ):
+            raise ValueError(
+                "quote repair case baseline_attempt_id is already linked to a different attempt"
+            )
+
+        params: list[Any] = [baseline_attempt_id]
+        set_clause = "baseline_attempt_id = ?"
+        if lifecycle_state is not None:
+            set_clause += ", lifecycle_state = ?"
+            params.append(lifecycle_state)
+        params.append(repair_case_id)
+        self.conn.execute(
+            f"""
+            UPDATE quote_repair_cases
+            SET {set_clause},
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            tuple(params),
+        )
+        self.conn.commit()
+        row = self.conn.execute(
+            """
+            SELECT *
+            FROM quote_repair_cases
+            WHERE id = ?
+            LIMIT 1
+            """,
+            (repair_case_id,),
+        ).fetchone()
+        if row is None:
+            raise RuntimeError("failed to update quote repair case baseline linkage")
         return self._serialize_quote_db_row(row)
 
     def resolve_quote_exception(
@@ -3028,7 +3179,12 @@ class _BookkeepingStoreBase:
             "origin_exception_id",
             "origin_quote_document_id",
             "origin_validation_run_id",
+            "repair_case_id",
+            "baseline_attempt_id",
+            "validation_run_id",
+            "replayed_from_quote_document_id",
             "group_profile_id",
+            "attempt_number",
         ):
             if result.get(key) is not None:
                 result[key] = int(result[key])
@@ -3724,6 +3880,7 @@ class BookkeepingDB(_BookkeepingStoreBase):
               profile_snapshot_json JSONB NOT NULL DEFAULT '{}'::jsonb,
               validation_summary_json JSONB NOT NULL DEFAULT '{}'::jsonb,
               case_summary_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+              baseline_attempt_id BIGINT,
               case_fingerprint TEXT NOT NULL DEFAULT '',
               created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
               updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -3735,6 +3892,34 @@ class BookkeepingDB(_BookkeepingStoreBase):
             """
             CREATE INDEX IF NOT EXISTS idx_quote_repair_cases_group_created
             ON quote_repair_cases(source_group_key, created_at DESC)
+            """
+        )
+        self.conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS quote_repair_case_attempts (
+              id BIGSERIAL PRIMARY KEY,
+              repair_case_id BIGINT NOT NULL REFERENCES quote_repair_cases(id) ON DELETE CASCADE,
+              attempt_kind TEXT NOT NULL,
+              attempt_number INTEGER NOT NULL,
+              trigger TEXT NOT NULL DEFAULT '',
+              quote_document_id BIGINT REFERENCES quote_documents(id) ON DELETE SET NULL,
+              validation_run_id BIGINT REFERENCES quote_validation_runs(id) ON DELETE SET NULL,
+              replayed_from_quote_document_id BIGINT REFERENCES quote_documents(id) ON DELETE SET NULL,
+              group_profile_id BIGINT REFERENCES quote_group_profiles(id) ON DELETE SET NULL,
+              profile_snapshot_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+              remaining_lines_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+              attempt_summary_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+              outcome_state TEXT NOT NULL,
+              failure_note TEXT NOT NULL DEFAULT '',
+              created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              UNIQUE(repair_case_id, attempt_number)
+            )
+            """
+        )
+        self.conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_quote_repair_case_attempts_case_created
+            ON quote_repair_case_attempts(repair_case_id, created_at DESC)
             """
         )
         self.conn.execute(
@@ -3781,6 +3966,22 @@ class BookkeepingDB(_BookkeepingStoreBase):
         ):
             if not self._table_has_column("quote_dictionary_aliases", column_name):
                 self.conn.execute(ddl)
+        for column_name, ddl in (
+            ("baseline_attempt_id", "ALTER TABLE quote_repair_cases ADD COLUMN baseline_attempt_id BIGINT"),
+        ):
+            if not self._table_has_column("quote_repair_cases", column_name):
+                self.conn.execute(ddl)
+        if not self._constraint_exists(
+            "quote_repair_cases", "fk_quote_repair_cases_baseline_attempt"
+        ):
+            self.conn.execute(
+                """
+                ALTER TABLE quote_repair_cases
+                ADD CONSTRAINT fk_quote_repair_cases_baseline_attempt
+                FOREIGN KEY (baseline_attempt_id) REFERENCES quote_repair_case_attempts(id)
+                ON DELETE SET NULL
+                """
+            )
         if not self._table_has_column("outbound_actions", "claimed_at"):
             self.conn.execute(
                 """
@@ -4179,9 +4380,27 @@ class BookkeepingDB(_BookkeepingStoreBase):
                 "profile_snapshot_json",
                 "validation_summary_json",
                 "case_summary_json",
+                "baseline_attempt_id",
                 "case_fingerprint",
                 "created_at",
                 "updated_at",
+            },
+            "quote_repair_case_attempts": {
+                "id",
+                "repair_case_id",
+                "attempt_kind",
+                "attempt_number",
+                "trigger",
+                "quote_document_id",
+                "validation_run_id",
+                "replayed_from_quote_document_id",
+                "group_profile_id",
+                "profile_snapshot_json",
+                "remaining_lines_json",
+                "attempt_summary_json",
+                "outcome_state",
+                "failure_note",
+                "created_at",
             },
             "quote_inquiry_contexts": {
                 "id",
