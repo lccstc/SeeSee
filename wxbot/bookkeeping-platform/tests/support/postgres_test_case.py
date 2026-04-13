@@ -17,6 +17,8 @@ class PostgresTestCase(unittest.TestCase):
         super().setUp()
         self.tempdir = tempfile.TemporaryDirectory()
         self.temp_path = Path(self.tempdir.name)
+        self._previous_auto_backup_env = os.environ.get("BOOKKEEPING_AUTO_BACKUP_ON_CLOSE")
+        os.environ["BOOKKEEPING_AUTO_BACKUP_ON_CLOSE"] = "0"
         self._base_dsn = str(os.environ.get(DEFAULT_TEST_DSN_ENV, "")).strip()
         if not self._base_dsn:
             self._base_dsn = DEFAULT_LOCAL_TEST_DSN
@@ -24,6 +26,12 @@ class PostgresTestCase(unittest.TestCase):
 
     def tearDown(self) -> None:
         self._drop_created_schemas()
+        if self._previous_auto_backup_env is None:
+            os.environ.pop("BOOKKEEPING_AUTO_BACKUP_ON_CLOSE", None)
+        else:
+            os.environ["BOOKKEEPING_AUTO_BACKUP_ON_CLOSE"] = (
+                self._previous_auto_backup_env
+            )
         self.tempdir.cleanup()
         super().tearDown()
 
