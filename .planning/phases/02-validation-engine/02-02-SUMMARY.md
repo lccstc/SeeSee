@@ -22,6 +22,7 @@ key-files:
     - wxbot/bookkeeping-platform/bookkeeping_core/quote_validation.py
     - wxbot/bookkeeping-platform/bookkeeping_core/quotes.py
     - wxbot/bookkeeping-platform/bookkeeping_web/app.py
+    - wxbot/bookkeeping-platform/tests/support/postgres_test_case.py
     - wxbot/bookkeeping-platform/tests/test_runtime.py
     - wxbot/bookkeeping-platform/tests/test_webapp.py
 key-decisions:
@@ -80,7 +81,7 @@ None - plan executed exactly as written.
 
 ## Issues Encountered
 
-- The required module-level PostgreSQL quick suite (`tests.test_quote_validation tests.test_runtime tests.test_webapp`) hit multiple `psycopg.errors.DeadlockDetected` failures in `PostgresTestCase.tearDown()` while dropping per-test schemas. The deadlocks appeared across unrelated pre-existing tests, not in validator assertions. Focused PostgreSQL verification for the changed paths passed after rerunning without the long concurrent suite.
+- The first attempt at the Phase 02 quick suite hit `psycopg.errors.DeadlockDetected` in `PostgresTestCase.tearDown()` because PostgreSQL auto-backup `pg_dump` processes overlapped with per-test schema cleanup. The fix was to disable `BOOKKEEPING_AUTO_BACKUP_ON_CLOSE` inside `tests/support/postgres_test_case.py`, after which the full quick suite passed.
 - `graphify` rebuild still fails with `ModuleNotFoundError: No module named 'graphify'`, matching the pre-existing blocker already recorded in `.planning/STATE.md`.
 
 ## User Setup Required
@@ -97,3 +98,4 @@ None - no external service configuration required.
 - Found summary file: `.planning/phases/02-validation-engine/02-02-SUMMARY.md`
 - Found task commit: `0fd125e`
 - Found task commit: `e13c311`
+- Verified `BOOKKEEPING_TEST_DSN=postgresql://bookkeeping:password@127.0.0.1:5432/bookkeeping_test PYTHONPATH=. ./.venv/bin/python -m unittest tests.test_quote_validation tests.test_runtime tests.test_webapp -v` passed (`Ran 108 tests`, `OK`)
