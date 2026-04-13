@@ -46,12 +46,12 @@ Plans:
   1. Every candidate row is evaluated against a fixed quote schema before publication
   2. Business-rule failures are recorded with structured rejection reasons
   3. A message can produce valid, rejected, and held rows in the same evaluation without ambiguity
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 02-01: Define validator stages and normalized rejection taxonomy
-- [ ] 02-02: Implement schema validation and row normalization checks
-- [ ] 02-03: Implement business-rule validation and `publishable_rows` separation
+- [ ] 02-01-PLAN.md — Define validator contract, additive persistence schema, and durable rejection taxonomy
+- [ ] 02-02-PLAN.md — Implement schema validation and run it automatically for runtime/replay candidate bundles
+- [ ] 02-03-PLAN.md — Add business-rule validation and durable `publishable_rows` separation helpers
 
 ### Phase 3: Fact Protection Publisher
 **Goal**: Ensure that only a guarded publisher can change active quote facts, and that failures never corrupt existing wall state.
