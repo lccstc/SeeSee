@@ -15,6 +15,82 @@ from bookkeeping_web.app import create_app
 from tests.support.postgres_test_case import PostgresTestCase
 
 
+def _make_repair_candidate(
+    *,
+    message_id: str,
+    raw_message: str,
+    row_specs: list[dict[str, object]],
+    run_kind: str,
+    replay_of_quote_document_id: int | None,
+):
+    from bookkeeping_core.quote_candidates import QuoteCandidateMessage, QuoteCandidateRow
+
+    rows = []
+    for index, spec in enumerate(row_specs, start=1):
+        rows.append(
+            QuoteCandidateRow(
+                row_ordinal=index,
+                source_line=str(spec["source_line"]),
+                source_line_index=index - 1,
+                line_confidence=float(spec.get("line_confidence", 0.98)),
+                normalized_sku_key=str(
+                    spec.get(
+                        "normalized_sku_key",
+                        f"Apple|USD|{100 * index}|physical",
+                    )
+                ),
+                normalization_status=str(spec.get("normalization_status", "normalized")),
+                row_publishable=bool(spec.get("row_publishable", False)),
+                publishability_basis=str(
+                    spec.get("publishability_basis", "validator_pending")
+                ),
+                restriction_parse_status=str(
+                    spec.get("restriction_parse_status", "clear")
+                ),
+                card_type=str(spec.get("card_type", "Apple")),
+                country_or_currency=str(spec.get("country_or_currency", "USD")),
+                amount_range=str(spec.get("amount_range", str(100 * index))),
+                multiplier=str(spec.get("multiplier", "1x")),
+                form_factor=str(spec.get("form_factor", "physical")),
+                price=float(spec.get("price", 95.5 + index)),
+                quote_status=str(spec.get("quote_status", "candidate")),
+                restriction_text=str(spec.get("restriction_text", "")),
+                field_sources={"source_line": str(spec["source_line"])},
+                rejection_reasons=list(spec.get("rejection_reasons", [])),
+                parser_template=str(spec.get("parser_template", "repair-template-v1")),
+                parser_version=str(spec.get("parser_version", "candidate-v1")),
+            )
+        )
+    return QuoteCandidateMessage(
+        platform="wechat",
+        source_group_key="wechat:g-web-repair",
+        chat_id="g-web-repair",
+        chat_name="Repair Replay 群",
+        message_id=message_id,
+        source_name="报价员",
+        sender_id="seller-web-repair",
+        sender_display="报价员",
+        raw_message=raw_message,
+        message_time="2026-04-14 19:00:00",
+        parser_kind="group-parser",
+        parser_template="repair-template-v1",
+        parser_version="candidate-v1",
+        confidence=0.97,
+        parse_status="parsed",
+        message_fingerprint=f"fingerprint-{message_id}",
+        snapshot_hypothesis="delta_update",
+        snapshot_hypothesis_reason="repair baseline regression",
+        rejection_reasons=[],
+        run_kind=run_kind,
+        replay_of_quote_document_id=replay_of_quote_document_id,
+        rows=rows,
+    )
+
+
+def _json_field(value):
+    return json.loads(value) if isinstance(value, str) else value
+
+
 class WebAppTests(PostgresTestCase):
     def setUp(self) -> None:
         super().setUp()
@@ -4115,6 +4191,301 @@ class WebAppTests(PostgresTestCase):
             quote_document_id=replay_document_id
         )
         self.assertGreater(len(candidate_rows), 0)
+
+        quote_price_row_count = self._count_rows(
+            "quote_price_rows",
+            "WHERE quote_document_id = ?",
+            (replay_document_id,),
+        )
+        self.assertEqual(quote_price_row_count, 0)
+
+
+class WebRepairCaseTests(PostgresTestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        self.db_dsn = self.make_dsn("web-repair-case")
+        self.db = BookkeepingDB(self.db_dsn)
+        self.db.set_group(
+            platform="wechat",
+            group_key="wechat:g-web-repair",
+            chat_id="g-web-repair",
+            chat_name="Repair Replay 群",
+            group_num=5,
+        )
+
+    def tearDown(self) -> None:
+        self.db.close()
+        super().tearDown()
+
+    def _count_rows(
+        self,
+        table_name: str,
+        where_clause: str = "",
+        params: tuple[object, ...] = (),
+    ) -> int:
+        row = self.db.conn.execute(
+            f"SELECT COUNT(*) AS cnt FROM {table_name} {where_clause}",
+            params,
+        ).fetchone()
+        return int(row["cnt"] or 0)
+
+    def _upsert_bootstrap_profile(
+        self,
+        *,
+        fixture_name: str,
+        platform: str,
+        chat_id: str,
+        chat_name: str,
+    ) -> dict:
+        from scripts.bootstrap_quote_group_profiles import build_bootstrap_profile_payload
+
+        payload = build_bootstrap_profile_payload(
+            fixture_name=fixture_name,
+            platform=platform,
+            chat_id=chat_id,
+            chat_name=chat_name,
+        )
+        self.db.upsert_quote_group_profile(
+            platform=platform,
+            chat_id=chat_id,
+            chat_name=chat_name,
+            default_card_type=str(payload["default_card_type"]),
+            default_country_or_currency=str(payload["default_country_or_currency"]),
+            default_form_factor=str(payload["default_form_factor"]),
+            default_multiplier=str(payload["default_multiplier"]),
+            parser_template=str(payload["parser_template"]),
+            stale_after_minutes=int(payload["stale_after_minutes"]),
+            note=str(payload["note"]),
+            template_config=json.dumps(payload["template_config"], ensure_ascii=False),
+        )
+        return payload
+
+    def test_create_baseline_repair_attempt_uses_replay_helper_and_persists_comparison(
+        self,
+    ) -> None:
+        from bookkeeping_core.quote_validation import QuoteValidationRun
+        from bookkeeping_core.repair_cases import (
+            create_baseline_repair_attempt,
+            package_quote_repair_case,
+        )
+
+        self.db.upsert_quote_group_profile(
+            platform="wechat",
+            chat_id="g-web-repair",
+            chat_name="Repair Replay 群",
+            default_card_type="Apple",
+            default_country_or_currency="USD",
+            default_form_factor="physical",
+            default_multiplier="1x",
+            parser_template="repair-template-v1",
+            template_config=json.dumps(
+                {"version": "repair-template-v1", "sections": ["Apple"]},
+                ensure_ascii=False,
+            ),
+        )
+        origin_document_id = self.db.record_quote_candidate_bundle(
+            candidate=_make_repair_candidate(
+                message_id="repair-origin-web",
+                raw_message="[Apple]\nUS 100 95.5",
+                row_specs=[{"source_line": "US 100 95.5", "price": 95.5}],
+                run_kind="runtime",
+                replay_of_quote_document_id=None,
+            )
+        )
+        origin_candidate_rows = self.db.list_quote_candidate_rows(
+            quote_document_id=origin_document_id
+        )
+        origin_validation_run_id = self.db.record_quote_validation_run(
+            validation_run=QuoteValidationRun(
+                quote_document_id=origin_document_id,
+                validator_version="validator-v1",
+                run_kind="runtime",
+                message_decision="no_publish",
+                validation_status="completed",
+                summary={"message_reasons": [{"code": "strict_match_failed"}]},
+                row_results=[],
+            )
+        )
+        exception_id = self.db.record_quote_exception(
+            quote_document_id=origin_document_id,
+            platform="wechat",
+            source_group_key="wechat:g-web-repair",
+            chat_id="g-web-repair",
+            chat_name="Repair Replay 群",
+            source_name="报价员",
+            sender_id="seller-web-repair",
+            reason="strict_match_failed",
+            source_line="US 100 95.5",
+            raw_text="[Apple]\nUS 100 95.5",
+            message_time="2026-04-14 19:00:00",
+            parser_template="repair-template-v1",
+            parser_version="candidate-v1",
+            confidence=0.12,
+        )
+        repair_case = package_quote_repair_case(db=self.db, exception_id=exception_id)
+
+        replay_document_id = self.db.record_quote_candidate_bundle(
+            candidate=_make_repair_candidate(
+                message_id="repair-baseline-web",
+                raw_message="[Apple]\nUS 100 95.5\nUK 50 48.0",
+                row_specs=[
+                    {"source_line": "US 100 95.5", "price": 95.5},
+                    {"source_line": "UK 50 48.0", "price": 48.0},
+                ],
+                run_kind="replay",
+                replay_of_quote_document_id=origin_document_id,
+            )
+        )
+        replay_validation_run_id = self.db.record_quote_validation_run(
+            validation_run=QuoteValidationRun(
+                quote_document_id=replay_document_id,
+                validator_version="validator-v1",
+                run_kind="replay",
+                message_decision="held_only",
+                validation_status="completed",
+                summary={"message_reasons": [{"code": "business_low_confidence_hold"}]},
+                row_results=[],
+            )
+        )
+
+        with patch(
+            "bookkeeping_web.app._replay_latest_quote_document_with_current_template"
+        ) as replay_mock:
+            replay_mock.return_value = {
+                "replayed": True,
+                "rows": 2,
+                "exceptions": 0,
+                "detected_exceptions": 0,
+                "quote_document_id": replay_document_id,
+                "validation_run_id": replay_validation_run_id,
+                "remaining_lines": ["#manual-check"],
+                "mutated_active_facts": False,
+                "message_decision": "held_only",
+                "publishable_row_count": 0,
+                "held_row_count": 2,
+                "rejected_row_count": 0,
+            }
+            attempt = create_baseline_repair_attempt(
+                db=self.db,
+                repair_case_id=int(repair_case["id"]),
+                replay_result=None,
+            )
+
+        replay_mock.assert_called_once()
+        self.assertFalse(replay_mock.call_args.kwargs["record_exceptions"])
+        self.assertEqual(self._count_rows("quote_repair_cases"), 1)
+        self.assertEqual(self._count_rows("quote_parse_exceptions"), 1)
+        self.assertEqual(int(attempt["quote_document_id"]), replay_document_id)
+        self.assertEqual(int(attempt["validation_run_id"]), replay_validation_run_id)
+        self.assertEqual(str(attempt["outcome_state"]), "completed")
+
+        summary = _json_field(attempt["attempt_summary_json"])
+        self.assertEqual(summary["comparison"]["classification"], "better")
+        self.assertEqual(summary["comparison"]["origin"]["row_count"], 1)
+        self.assertEqual(summary["comparison"]["attempt"]["row_count"], 2)
+        self.assertEqual(
+            summary["comparison"]["origin"]["message_decision"], "no_publish"
+        )
+        self.assertEqual(
+            summary["comparison"]["attempt"]["message_decision"], "held_only"
+        )
+        self.assertEqual(summary["comparison"]["attempt"]["exception_count"], 0)
+        self.assertEqual(summary["comparison"]["attempt"]["remaining_lines"], ["#manual-check"])
+        self.assertEqual(summary["mutated_active_facts"], False)
+
+        stored_case = self.db.get_quote_repair_case(repair_case_id=int(repair_case["id"]))
+        self.assertIsNotNone(stored_case)
+        assert stored_case is not None
+        self.assertEqual(int(stored_case["baseline_attempt_id"]), int(attempt["id"]))
+
+        quote_price_row_count = self._count_rows(
+            "quote_price_rows",
+            "WHERE quote_document_id = ?",
+            (replay_document_id,),
+        )
+        self.assertEqual(quote_price_row_count, 0)
+        self.assertEqual(len(origin_candidate_rows), 1)
+        self.assertGreater(origin_validation_run_id, 0)
+
+    def test_create_baseline_repair_attempt_runs_live_candidate_only_replay_without_forking_cases(
+        self,
+    ) -> None:
+        from bookkeeping_core.repair_cases import (
+            create_baseline_repair_attempt,
+            package_quote_repair_case,
+        )
+        from tests.support.quote_exception_corpus import load_gold_fixture
+
+        payload = self._upsert_bootstrap_profile(
+            fixture_name="sk_steam_price_update",
+            platform="wechat",
+            chat_id="g-web-repair",
+            chat_name="Repair Replay 群",
+        )
+        fixture = load_gold_fixture(str(payload["canonical_fixture_name"]))
+        raw_text = str(fixture["raw_text"])
+        first_line = raw_text.splitlines()[0]
+
+        origin_document_id = self.db.record_quote_document(
+            platform="wechat",
+            source_group_key="wechat:g-web-repair",
+            chat_id="g-web-repair",
+            chat_name="Repair Replay 群",
+            message_id="msg-web-repair-origin",
+            source_name="报价员",
+            sender_id="seller-web-repair",
+            raw_text=raw_text,
+            message_time="2026-04-14 20:00:00",
+            parser_template="group-parser",
+            parser_version="group-parser-v1",
+            confidence=0.0,
+            parse_status="empty",
+        )
+        exception_id = self.db.record_quote_exception(
+            quote_document_id=origin_document_id,
+            platform="wechat",
+            source_group_key="wechat:g-web-repair",
+            chat_id="g-web-repair",
+            chat_name="Repair Replay 群",
+            source_name="报价员",
+            sender_id="seller-web-repair",
+            reason="missing_group_template",
+            source_line=first_line,
+            raw_text=raw_text,
+            message_time="2026-04-14 20:00:00",
+            parser_template="group-parser",
+            parser_version="group-parser-v1",
+            confidence=0.0,
+        )
+        repair_case = package_quote_repair_case(db=self.db, exception_id=exception_id)
+
+        attempt = create_baseline_repair_attempt(
+            db=self.db,
+            repair_case_id=int(repair_case["id"]),
+            replay_result=None,
+        )
+
+        self.assertEqual(self._count_rows("quote_repair_cases"), 1)
+        self.assertEqual(self._count_rows("quote_parse_exceptions"), 1)
+        self.assertTrue(int(attempt["quote_document_id"]) > 0)
+        self.assertTrue(int(attempt["validation_run_id"]) > 0)
+
+        summary = _json_field(attempt["attempt_summary_json"])
+        self.assertTrue(summary["replayed"])
+        self.assertEqual(summary["mutated_active_facts"], False)
+        self.assertIn(
+            summary["comparison"]["classification"],
+            {"better", "same", "worse"},
+        )
+        self.assertGreaterEqual(summary["comparison"]["attempt"]["row_count"], 1)
+
+        replay_document_id = int(attempt["quote_document_id"])
+        validation_run = self.db.get_latest_quote_validation_run(
+            quote_document_id=replay_document_id
+        )
+        self.assertIsNotNone(validation_run)
+        assert validation_run is not None
+        self.assertEqual(str(validation_run["run_kind"]), "replay")
 
         quote_price_row_count = self._count_rows(
             "quote_price_rows",

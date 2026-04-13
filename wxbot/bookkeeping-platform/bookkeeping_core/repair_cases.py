@@ -90,7 +90,7 @@ def create_baseline_repair_attempt(
     *,
     db,
     repair_case_id: int,
-    replay_result: dict[str, Any],
+    replay_result: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     repair_case = db.get_quote_repair_case(repair_case_id=repair_case_id)
     if repair_case is None:
@@ -117,17 +117,24 @@ def create_baseline_repair_attempt(
             )
         return existing_attempt
 
+    actual_replay_result = replay_result
+    if actual_replay_result is None:
+        actual_replay_result = _run_repair_case_baseline_replay(
+            db=db,
+            repair_case=repair_case,
+        )
     attempt_summary = _build_baseline_attempt_summary(
+        db=db,
         repair_case=repair_case,
-        replay_result=replay_result,
+        replay_result=actual_replay_result,
     )
     attempt = db.create_quote_repair_case_attempt(
         repair_case_id=repair_case_id,
         attempt_kind=REPAIR_ATTEMPT_KIND_BASELINE,
         attempt_number=0,
         trigger="baseline_replay",
-        quote_document_id=_maybe_int(replay_result.get("quote_document_id")),
-        validation_run_id=_maybe_int(replay_result.get("validation_run_id")),
+        quote_document_id=_maybe_int(actual_replay_result.get("quote_document_id")),
+        validation_run_id=_maybe_int(actual_replay_result.get("validation_run_id")),
         replayed_from_quote_document_id=_maybe_int(
             repair_case.get("origin_quote_document_id")
         ),
@@ -136,10 +143,10 @@ def create_baseline_repair_attempt(
             repair_case.get("profile_snapshot_json"),
             fallback={},
         ),
-        remaining_lines=_coerce_string_list(replay_result.get("remaining_lines")),
+        remaining_lines=_coerce_string_list(actual_replay_result.get("remaining_lines")),
         attempt_summary=attempt_summary,
-        outcome_state=_baseline_attempt_outcome_state(replay_result=replay_result),
-        failure_note=str(replay_result.get("reason") or ""),
+        outcome_state=_baseline_attempt_outcome_state(replay_result=actual_replay_result),
+        failure_note=str(actual_replay_result.get("reason") or ""),
     )
     db.link_quote_repair_case_baseline_attempt(
         repair_case_id=repair_case_id,
@@ -194,17 +201,26 @@ def _build_group_profile_snapshot(group_profile: dict[str, Any] | None) -> dict[
 
 def _build_baseline_attempt_summary(
     *,
+    db,
     repair_case: dict[str, Any],
     replay_result: dict[str, Any],
 ) -> dict[str, Any]:
-    comparison = dict(replay_result.get("comparison") or {})
-    classification = str(
-        comparison.get("classification")
-        or ("blocked" if not replay_result.get("replayed") else "same")
-    )
-    comparison["classification"] = classification
+    origin_metrics = _build_origin_metrics(db=db, repair_case=repair_case)
+    attempt_metrics = _build_attempt_metrics(db=db, replay_result=replay_result)
+    comparison = {
+        "classification": _classify_attempt_comparison(
+            replayed=bool(replay_result.get("replayed")),
+            origin_metrics=origin_metrics,
+            attempt_metrics=attempt_metrics,
+            explicit_classification=(replay_result.get("comparison") or {}).get(
+                "classification"
+            ),
+        ),
+        "origin": origin_metrics,
+        "attempt": attempt_metrics,
+    }
     blocked_reason = ""
-    if classification == "blocked":
+    if comparison["classification"] == "blocked":
         blocked_reason = str(replay_result.get("reason") or "")
     return {
         "replayed": bool(replay_result.get("replayed")),
@@ -225,6 +241,180 @@ def _baseline_attempt_outcome_state(*, replay_result: dict[str, Any]) -> str:
     if bool(replay_result.get("replayed")):
         return REPAIR_ATTEMPT_OUTCOME_COMPLETED
     return REPAIR_ATTEMPT_OUTCOME_BLOCKED
+
+
+def _run_repair_case_baseline_replay(*, db, repair_case: dict[str, Any]) -> dict[str, Any]:
+    from bookkeeping_web.app import _replay_latest_quote_document_with_current_template
+
+    exception_id = _maybe_int(repair_case.get("origin_exception_id"))
+    if exception_id is None:
+        raise ValueError("quote repair case missing origin_exception_id")
+    exc_row = db.get_quote_exception(exception_id=exception_id)
+    if exc_row is None:
+        raise ValueError(
+            f"quote repair case requires existing exception_id={exception_id}"
+        )
+    return _replay_latest_quote_document_with_current_template(
+        db,
+        exc_row=exc_row,
+        record_exceptions=False,
+    )
+
+
+def _build_origin_metrics(*, db, repair_case: dict[str, Any]) -> dict[str, Any]:
+    origin_quote_document_id = _maybe_int(repair_case.get("origin_quote_document_id"))
+    origin_validation_run_id = _maybe_int(repair_case.get("origin_validation_run_id"))
+    origin_row_count = 0
+    if origin_quote_document_id is not None:
+        origin_row_count = len(
+            db.list_quote_candidate_rows(quote_document_id=origin_quote_document_id)
+        )
+    validation_run = None
+    if origin_quote_document_id is not None:
+        validation_run = db.get_latest_quote_validation_run(
+            quote_document_id=origin_quote_document_id
+        )
+    source_line_snapshot = str(repair_case.get("source_line_snapshot") or "").strip()
+    remaining_lines = (
+        [line for line in source_line_snapshot.splitlines() if line.strip()]
+        if source_line_snapshot
+        else []
+    )
+    return {
+        "row_count": origin_row_count,
+        "message_decision": str((validation_run or {}).get("message_decision") or ""),
+        "exception_count": _count_quote_document_exceptions(
+            db=db,
+            quote_document_id=origin_quote_document_id,
+        ),
+        "remaining_lines": remaining_lines,
+        "publishable_row_count": int(
+            (validation_run or {}).get("publishable_row_count") or 0
+        ),
+        "held_row_count": int((validation_run or {}).get("held_row_count") or 0),
+        "rejected_row_count": int(
+            (validation_run or {}).get("rejected_row_count") or 0
+        ),
+        "validation_run_id": origin_validation_run_id,
+    }
+
+
+def _build_attempt_metrics(*, db, replay_result: dict[str, Any]) -> dict[str, Any]:
+    quote_document_id = _maybe_int(replay_result.get("quote_document_id"))
+    validation_run = None
+    row_count = int(replay_result.get("rows") or 0)
+    if quote_document_id is not None:
+        row_count = len(db.list_quote_candidate_rows(quote_document_id=quote_document_id))
+        validation_run = db.get_latest_quote_validation_run(
+            quote_document_id=quote_document_id
+        )
+    detected_exception_count = replay_result.get("detected_exceptions")
+    if detected_exception_count is None:
+        detected_exception_count = replay_result.get("exceptions") or 0
+    return {
+        "row_count": row_count,
+        "message_decision": str(
+            replay_result.get("message_decision")
+            or (validation_run or {}).get("message_decision")
+            or ""
+        ),
+        "exception_count": int(detected_exception_count or 0),
+        "remaining_lines": _coerce_string_list(replay_result.get("remaining_lines")),
+        "publishable_row_count": int(
+            replay_result.get("publishable_row_count")
+            or (validation_run or {}).get("publishable_row_count")
+            or 0
+        ),
+        "held_row_count": int(
+            replay_result.get("held_row_count")
+            or (validation_run or {}).get("held_row_count")
+            or 0
+        ),
+        "rejected_row_count": int(
+            replay_result.get("rejected_row_count")
+            or (validation_run or {}).get("rejected_row_count")
+            or 0
+        ),
+        "validation_run_id": _maybe_int(
+            replay_result.get("validation_run_id")
+            or (validation_run or {}).get("id")
+        ),
+    }
+
+
+def _classify_attempt_comparison(
+    *,
+    replayed: bool,
+    origin_metrics: dict[str, Any],
+    attempt_metrics: dict[str, Any],
+    explicit_classification: Any,
+) -> str:
+    explicit = str(explicit_classification or "").strip()
+    if explicit:
+        return explicit
+    if not replayed:
+        return "blocked"
+
+    origin_rank = _message_decision_rank(str(origin_metrics.get("message_decision") or ""))
+    attempt_rank = _message_decision_rank(
+        str(attempt_metrics.get("message_decision") or "")
+    )
+    origin_exceptions = int(origin_metrics.get("exception_count") or 0)
+    attempt_exceptions = int(attempt_metrics.get("exception_count") or 0)
+    origin_remaining = len(origin_metrics.get("remaining_lines") or [])
+    attempt_remaining = len(attempt_metrics.get("remaining_lines") or [])
+    origin_rows = int(origin_metrics.get("row_count") or 0)
+    attempt_rows = int(attempt_metrics.get("row_count") or 0)
+    origin_publishable = int(origin_metrics.get("publishable_row_count") or 0)
+    attempt_publishable = int(attempt_metrics.get("publishable_row_count") or 0)
+
+    improved = (
+        attempt_rank > origin_rank
+        or attempt_exceptions < origin_exceptions
+        or attempt_remaining < origin_remaining
+        or attempt_rows > origin_rows
+        or attempt_publishable > origin_publishable
+    )
+    regressed = (
+        attempt_rank < origin_rank
+        or attempt_exceptions > origin_exceptions
+        or attempt_remaining > origin_remaining
+        or attempt_publishable < origin_publishable
+    )
+    if improved and not regressed:
+        return "better"
+    if not improved and not regressed:
+        return "same"
+    if regressed and not improved:
+        return "worse"
+    return "same"
+
+
+def _count_quote_document_exceptions(*, db, quote_document_id: int | None) -> int:
+    if quote_document_id is None:
+        return 0
+    row = db.conn.execute(
+        """
+        SELECT COUNT(*) AS cnt
+        FROM quote_parse_exceptions
+        WHERE quote_document_id = ?
+        """,
+        (quote_document_id,),
+    ).fetchone()
+    if row is None:
+        return 0
+    return int(row["cnt"] or 0)
+
+
+def _message_decision_rank(value: str) -> int:
+    normalized = str(value or "").strip().lower()
+    if normalized in {"publish", "publishable", "partial_publish"}:
+        return 3
+    if normalized in {"mixed", "held_only"}:
+        return 2
+    if normalized in {"no_publish"}:
+        return 1
+    return 0
 
 
 def _coerce_string_list(value: Any) -> list[str]:

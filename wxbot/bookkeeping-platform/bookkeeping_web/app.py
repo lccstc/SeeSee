@@ -1124,8 +1124,10 @@ def _replay_latest_quote_document_with_current_template(
             quote_document_id=replay_document_id
         ),
     )
+    validation_summary = validation_run.to_run_payload()
     validation_run_id = db.record_quote_validation_run(validation_run=validation_run)
     recorded_exceptions = 0
+    detected_exceptions = len(parsed_exceptions) + len(non_publishable_rows)
     if record_exceptions:
         recordable_parsed_exceptions = [
             item
@@ -1187,10 +1189,19 @@ def _replay_latest_quote_document_with_current_template(
         "replayed": True,
         "rows": len(candidate.rows),
         "exceptions": recorded_exceptions,
+        "detected_exceptions": detected_exceptions,
         "quote_document_id": replay_document_id,
         "validation_run_id": validation_run_id,
         "remaining_lines": remaining_lines,
         "mutated_active_facts": False,
+        "message_decision": str(validation_summary.get("message_decision") or ""),
+        "publishable_row_count": int(
+            validation_summary.get("publishable_row_count") or 0
+        ),
+        "held_row_count": int(validation_summary.get("held_row_count") or 0),
+        "rejected_row_count": int(
+            validation_summary.get("rejected_row_count") or 0
+        ),
     }
 
 
