@@ -1015,63 +1015,130 @@ def _replay_latest_quote_document_with_current_template(
     exc_row: dict,
     record_exceptions: bool = True,
 ) -> dict:
-    from bookkeeping_core.quotes import AUTO_PUBLISH_CONFIDENCE
-    from bookkeeping_core.template_engine import TemplateConfig, parse_message_with_template
+    from bookkeeping_core.contracts import NormalizedMessageEnvelope
+    from bookkeeping_core.quotes import (
+        DEFAULT_STALE_AFTER_MINUTES,
+        QuoteGroupProfile,
+        _parse_quote_message_to_candidate_details,
+        parse_quote_message_to_candidate,
+    )
 
     quote_document_id = int(exc_row.get("quote_document_id") or 0)
     quote_document = _quote_document_row(db, quote_document_id=quote_document_id)
     if not quote_document:
-        return {"replayed": False, "rows": 0, "exceptions": 0, "reason": "missing_quote_document"}
+        return {
+            "replayed": False,
+            "rows": 0,
+            "exceptions": 0,
+            "reason": "missing_quote_document",
+            "mutated_active_facts": False,
+        }
     group_profile = db.get_quote_group_profile(
         platform=str(exc_row.get("platform") or ""),
         chat_id=str(exc_row.get("chat_id") or ""),
     )
     if not group_profile:
-        return {"replayed": False, "rows": 0, "exceptions": 0, "reason": "missing_group_profile"}
+        return {
+            "replayed": False,
+            "rows": 0,
+            "exceptions": 0,
+            "reason": "missing_group_profile",
+            "mutated_active_facts": False,
+        }
     template_config_raw = str(group_profile.get("template_config") or "").strip()
     if not template_config_raw:
-        return {"replayed": False, "rows": 0, "exceptions": 0, "reason": "missing_template_config"}
-    template = TemplateConfig.from_json(template_config_raw)
-    parsed = parse_message_with_template(
-        text=str(quote_document.get("raw_text") or ""),
-        template=template,
-        platform=str(quote_document.get("platform") or ""),
-        chat_id=str(quote_document.get("chat_id") or ""),
-        chat_name=str(quote_document.get("chat_name") or ""),
-        message_id=str(quote_document.get("message_id") or ""),
-        source_name=str(quote_document.get("source_name") or ""),
-        sender_id=str(quote_document.get("sender_id") or ""),
-        source_group_key=str(quote_document.get("source_group_key") or ""),
-        message_time=str(quote_document.get("message_time") or ""),
+        return {
+            "replayed": False,
+            "rows": 0,
+            "exceptions": 0,
+            "reason": "missing_template_config",
+            "mutated_active_facts": False,
+        }
+    raw_text = str(quote_document.get("raw_text") or "")
+    platform = str(quote_document.get("platform") or "")
+    chat_id = str(quote_document.get("chat_id") or "")
+    chat_name = str(quote_document.get("chat_name") or "")
+    message_id = str(quote_document.get("message_id") or "")
+    source_name = str(quote_document.get("source_name") or "")
+    sender_id = str(quote_document.get("sender_id") or "")
+    message_time = str(quote_document.get("message_time") or "")
+    replay_message_id = f"{message_id or 'replay'}#replay-{uuid.uuid4().hex[:12]}"
+    envelope = NormalizedMessageEnvelope(
+        platform=platform,
+        message_id=message_id,
+        chat_id=chat_id,
+        chat_name=chat_name,
+        is_group=True,
+        sender_id=sender_id,
+        sender_name=source_name,
+        text=raw_text,
+        received_at=message_time,
+    )
+    bound_group_profile = QuoteGroupProfile(
+        key=f"{platform}:{chat_id}",
+        default_card_type=str(group_profile.get("default_card_type") or "") or None,
+        default_country_or_currency=str(group_profile.get("default_country_or_currency") or "")
+        or None,
+        default_form_factor=str(group_profile.get("default_form_factor") or "") or None,
+        default_multiplier=str(group_profile.get("default_multiplier") or "") or None,
+        parser_template=str(group_profile.get("parser_template") or "") or None,
+        stale_after_minutes=int(
+            group_profile.get("stale_after_minutes") or DEFAULT_STALE_AFTER_MINUTES
+        ),
+        note=str(group_profile.get("note") or ""),
+        template_config=template_config_raw,
+    )
+    candidate = parse_quote_message_to_candidate(
+        envelope=envelope,
+        raw_text=raw_text,
+        group_profile=bound_group_profile,
+        message_time=message_time,
+        run_kind="replay",
+        replay_of_quote_document_id=quote_document_id,
+        message_id_override=replay_message_id,
+    )
+    _details_candidate, parsed_exceptions, non_publishable_rows = (
+        _parse_quote_message_to_candidate_details(
+            envelope=envelope,
+            raw_text=raw_text,
+            group_profile=bound_group_profile,
+            message_time=message_time,
+            run_kind="replay",
+            replay_of_quote_document_id=quote_document_id,
+            message_id_override=replay_message_id,
+        )
     )
     remaining_lines: list[str] = []
-    for item in parsed.exceptions:
+    for item in parsed_exceptions:
         for raw_line in str(item.source_line or "").splitlines():
             line = str(raw_line or "").strip()
             if line and line not in remaining_lines:
                 remaining_lines.append(line)
-    deactivate_method = getattr(db, "deactivate_old_quotes_for_group", None)
-    if callable(deactivate_method):
-        deactivate_method(source_group_key=str(quote_document.get("source_group_key") or ""))
-    replay_message_id = f"{parsed.message_id or 'replay'}#replay-{uuid.uuid4().hex[:12]}"
-    replay_document_id = db.record_quote_document(
-        platform=parsed.platform,
-        source_group_key=parsed.source_group_key,
-        chat_id=parsed.chat_id,
-        chat_name=parsed.chat_name,
-        message_id=replay_message_id,
-        source_name=parsed.source_name,
-        sender_id=parsed.sender_id,
-        raw_text=parsed.raw_text,
-        message_time=parsed.message_time,
-        parser_template=parsed.parser_template,
-        parser_version=parsed.parser_version,
-        confidence=parsed.confidence,
-        parse_status=parsed.parse_status,
-    )
+    replay_document_id = db.record_quote_candidate_bundle(candidate=candidate)
+    recorded_exceptions = 0
     if record_exceptions:
-        for item in parsed.exceptions:
-            db.record_quote_exception_unless_suppressed(
+        recordable_parsed_exceptions = [
+            item
+            for item in parsed_exceptions
+            if not db.is_quote_exception_suppressed(
+                source_group_key=item.source_group_key,
+                reason=item.reason,
+                source_line=item.source_line,
+                raw_text=item.raw_text,
+            )
+        ]
+        recordable_row_exceptions = [
+            item
+            for item in non_publishable_rows
+            if not db.is_quote_exception_suppressed(
+                source_group_key=item.source_group_key,
+                reason="low_confidence_or_non_active",
+                source_line=item.source_line,
+                raw_text=item.raw_text,
+            )
+        ]
+        for item in recordable_parsed_exceptions:
+            if db.record_quote_exception_unless_suppressed(
                 quote_document_id=replay_document_id,
                 platform=item.platform,
                 source_group_key=item.source_group_key,
@@ -1086,61 +1153,33 @@ def _replay_latest_quote_document_with_current_template(
                 parser_template=item.parser_template,
                 parser_version=item.parser_version,
                 confidence=item.confidence,
-            )
-    published_rows = 0
-    for item in parsed.rows:
-        if item.quote_status != "active" or item.confidence < AUTO_PUBLISH_CONFIDENCE:
-            if record_exceptions:
-                db.record_quote_exception_unless_suppressed(
-                    quote_document_id=replay_document_id,
-                    platform=item.platform,
-                    source_group_key=item.source_group_key,
-                    chat_id=item.chat_id,
-                    chat_name=item.chat_name,
-                    source_name=item.source_name,
-                    sender_id=item.sender_id,
-                    reason="low_confidence_or_non_active",
-                    source_line=item.source_line,
-                    raw_text=item.raw_text,
-                    message_time=item.message_time,
-                    parser_template=item.parser_template,
-                    parser_version=item.parser_version,
-                    confidence=item.confidence,
-                )
-            continue
-        db.upsert_quote_price_row_with_history(
-            quote_document_id=replay_document_id,
-            message_id=item.message_id,
-            platform=item.platform,
-            source_group_key=item.source_group_key,
-            chat_id=item.chat_id,
-            chat_name=item.chat_name,
-            source_name=item.source_name,
-            sender_id=item.sender_id,
-            card_type=item.card_type,
-            country_or_currency=item.country_or_currency,
-            amount_range=item.amount_range,
-            multiplier=item.multiplier,
-            form_factor=item.form_factor,
-            price=item.price,
-            quote_status=item.quote_status,
-            restriction_text=item.restriction_text,
-            source_line=item.source_line,
-            raw_text=item.raw_text,
-            message_time=item.message_time,
-            effective_at=item.effective_at,
-            expires_at=item.expires_at,
-            parser_template=item.parser_template,
-            parser_version=item.parser_version,
-            confidence=item.confidence,
-        )
-        published_rows += 1
+            ):
+                recorded_exceptions += 1
+        for item in recordable_row_exceptions:
+            if db.record_quote_exception_unless_suppressed(
+                quote_document_id=replay_document_id,
+                platform=item.platform,
+                source_group_key=item.source_group_key,
+                chat_id=item.chat_id,
+                chat_name=item.chat_name,
+                source_name=item.source_name,
+                sender_id=item.sender_id,
+                reason="low_confidence_or_non_active",
+                source_line=item.source_line,
+                raw_text=item.raw_text,
+                message_time=item.message_time,
+                parser_template=item.parser_template,
+                parser_version=item.parser_version,
+                confidence=item.confidence,
+            ):
+                recorded_exceptions += 1
     return {
         "replayed": True,
-        "rows": published_rows,
-        "exceptions": 1 if remaining_lines else 0,
+        "rows": len(candidate.rows),
+        "exceptions": recorded_exceptions,
         "quote_document_id": replay_document_id,
         "remaining_lines": remaining_lines,
+        "mutated_active_facts": False,
     }
 
 
@@ -1250,7 +1289,13 @@ def _handle_quotes_exception_harvest_save(db: BookkeepingDB, start_response, env
             note=str((group_profile or {}).get("note") or ""),
             template_config=merged_config,
         )
-        replay_result = {"replayed": False, "rows": 0, "exceptions": 0, "remaining_lines": []}
+        replay_result = {
+            "replayed": False,
+            "rows": 0,
+            "exceptions": 0,
+            "remaining_lines": [],
+            "mutated_active_facts": False,
+        }
         restriction_lines_attached = [
             str(line.get("pattern") or "").strip()
             for line in list(derived_section.get("lines") or [])
