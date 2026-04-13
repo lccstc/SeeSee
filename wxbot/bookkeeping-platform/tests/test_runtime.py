@@ -1170,6 +1170,185 @@ class UnifiedRuntimeTests(PostgresTestCase):
         profile_row = self.db.get_quote_group_profile(platform="wechat", chat_id="room-rename")
         self.assertEqual(str(profile_row["chat_name"]), "新群名")
 
+    def test_runtime_quote_capture_persists_candidate_bundle_without_mutating_quote_price_rows(self) -> None:
+        self.db.set_group(
+            platform="wechat",
+            group_key="wechat:room-quotes-runtime",
+            chat_id="room-quotes-runtime",
+            chat_name="报价群",
+            group_num=5,
+        )
+        self.db.upsert_quote_group_profile(
+            platform="wechat",
+            chat_id="room-quotes-runtime",
+            chat_name="报价群",
+            default_card_type="Apple",
+            default_country_or_currency="USD",
+            default_form_factor="横白卡",
+            parser_template="group-parser",
+            template_config=json.dumps(
+                {
+                    "version": "group-parser-v1",
+                    "defaults": {},
+                    "sections": [
+                        {
+                            "id": "apple-us-100",
+                            "enabled": True,
+                            "priority": 1,
+                            "defaults": {
+                                "card_type": "Apple",
+                                "country_or_currency": "USD",
+                                "form_factor": "横白卡",
+                            },
+                            "lines": [
+                                {
+                                    "kind": "quote",
+                                    "pattern": "{country}={price}",
+                                    "outputs": {
+                                        "card_type": "Apple",
+                                        "country_or_currency": "USD",
+                                        "amount_range": "100",
+                                        "form_factor": "横白卡",
+                                    },
+                                }
+                            ],
+                        }
+                    ],
+                },
+                ensure_ascii=False,
+            ),
+        )
+
+        self.runtime.process_envelope(
+            self._message(
+                platform="wechat",
+                message_id="msg-quote-runtime-1",
+                chat_id="room-quotes-runtime",
+                chat_name="报价群",
+                text="US=5.10\nUK=6.20",
+            )
+        )
+
+        document = self._get_quote_document(
+            platform="wechat",
+            chat_id="room-quotes-runtime",
+            message_id="msg-quote-runtime-1",
+        )
+
+        self.assertIsNotNone(document)
+        assert document is not None
+        self.assertEqual(str(document["run_kind"]), "runtime")
+        self.assertIn("run_kind", document.keys())
+        self.assertIn("replay_of_quote_document_id", document.keys())
+        self.assertEqual(document["replay_of_quote_document_id"], None)
+        self.assertTrue(str(document["message_fingerprint"]))
+        self.assertEqual(str(document["snapshot_hypothesis"]), "unresolved")
+        self.assertEqual(str(document["snapshot_hypothesis_reason"]), "phase1-default")
+        self.assertEqual(str(document["parser_kind"]), "group-parser")
+        self.assertEqual(str(document["parser_template"]), "group-parser")
+        self.assertEqual(str(document["parser_version"]), "group-parser-v1")
+
+        candidate_rows = self.db.list_quote_candidate_rows(
+            quote_document_id=int(document["id"])
+        )
+        self.assertEqual(len(candidate_rows), 1)
+        self.assertEqual(str(candidate_rows[0]["source_line"]), "US=5.10")
+        self.assertTrue(bool(candidate_rows[0]["row_publishable"]))
+        self.assertEqual(
+            str(candidate_rows[0]["publishability_basis"]),
+            "parser_prevalidation",
+        )
+        field_sources = self._decode_json(candidate_rows[0]["field_sources_json"])
+        self.assertEqual(
+            field_sources["line_evidence"]["source_line"],
+            "US=5.10",
+        )
+        self.assertEqual(field_sources["line_evidence"]["source_line_index"], 0)
+        self.assertEqual(field_sources["price"]["raw_fragment"], "5.10")
+
+        quote_price_row_count = self._count_rows(
+            "quote_price_rows",
+            "WHERE message_id = ?",
+            ("msg-quote-runtime-1",),
+        )
+        self.assertEqual(quote_price_row_count, 0)
+
+        parse_exceptions = self.db.conn.execute(
+            """
+            SELECT reason, source_line
+            FROM quote_parse_exceptions
+            WHERE quote_document_id = ?
+            ORDER BY id ASC
+            """,
+            (int(document["id"]),),
+        ).fetchall()
+        self.assertEqual(len(parse_exceptions), 1)
+        self.assertEqual(str(parse_exceptions[0]["reason"]), "strict_match_failed")
+        self.assertIn("UK=6.20", str(parse_exceptions[0]["source_line"]))
+
+    def test_runtime_quote_capture_records_missing_template_candidate_header(self) -> None:
+        self.db.set_group(
+            platform="wechat",
+            group_key="wechat:room-missing-template",
+            chat_id="room-missing-template",
+            chat_name="缺模板报价群",
+            group_num=5,
+        )
+
+        self.runtime.process_envelope(
+            self._message(
+                platform="wechat",
+                message_id="msg-missing-template-1",
+                chat_id="room-missing-template",
+                chat_name="缺模板报价群",
+                text="【Apple】\nUS=5.10\nUK=6.20",
+            )
+        )
+
+        document = self._get_quote_document(
+            platform="wechat",
+            chat_id="room-missing-template",
+            message_id="msg-missing-template-1",
+        )
+
+        self.assertIsNotNone(document)
+        assert document is not None
+        self.assertEqual(str(document["run_kind"]), "runtime")
+        self.assertEqual(document["replay_of_quote_document_id"], None)
+        self.assertTrue(str(document["message_fingerprint"]))
+        self.assertEqual(str(document["snapshot_hypothesis"]), "unresolved")
+        self.assertEqual(str(document["snapshot_hypothesis_reason"]), "phase1-default")
+        self.assertEqual(str(document["parser_kind"]), "group-parser")
+        self.assertEqual(str(document["parse_status"]), "empty")
+        rejection_reasons = self._decode_json(document["rejection_reasons_json"])
+        self.assertEqual(len(rejection_reasons), 1)
+        self.assertEqual(rejection_reasons[0]["reason"], "missing_group_template")
+
+        candidate_rows = self.db.list_quote_candidate_rows(
+            quote_document_id=int(document["id"])
+        )
+        self.assertEqual(candidate_rows, [])
+
+        quote_price_row_count = self._count_rows(
+            "quote_price_rows",
+            "WHERE message_id = ?",
+            ("msg-missing-template-1",),
+        )
+        self.assertEqual(quote_price_row_count, 0)
+
+        parse_exceptions = self.db.conn.execute(
+            """
+            SELECT reason, source_line
+            FROM quote_parse_exceptions
+            WHERE quote_document_id = ?
+            ORDER BY id ASC
+            """,
+            (int(document["id"]),),
+        ).fetchall()
+        self.assertEqual(len(parse_exceptions), 1)
+        self.assertEqual(str(parse_exceptions[0]["reason"]), "missing_group_template")
+        self.assertEqual(str(parse_exceptions[0]["source_line"]), "【Apple】")
+
     def test_whoami_command_returns_observed_and_canonical_identity_before_group_activation(self) -> None:
         self.db.bind_identity(
             platform="wechat",
@@ -1313,6 +1492,42 @@ class UnifiedRuntimeTests(PostgresTestCase):
                 "received_at": "2026-03-21 10:00:00",
             }
         )
+
+    def _get_quote_document(
+        self,
+        *,
+        platform: str,
+        chat_id: str,
+        message_id: str,
+    ):
+        return self.db.conn.execute(
+            """
+            SELECT *
+            FROM quote_documents
+            WHERE platform = ? AND chat_id = ? AND message_id = ?
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (platform, chat_id, message_id),
+        ).fetchone()
+
+    @staticmethod
+    def _decode_json(value):
+        if isinstance(value, (dict, list)):
+            return value
+        return json.loads(str(value))
+
+    def _count_rows(
+        self,
+        table_name: str,
+        where_clause: str = "",
+        params: tuple[object, ...] = (),
+    ) -> int:
+        row = self.db.conn.execute(
+            f"SELECT COUNT(*) AS cnt FROM {table_name} {where_clause}",
+            params,
+        ).fetchone()
+        return int(row["cnt"] or 0)
 
 
 if __name__ == "__main__":
