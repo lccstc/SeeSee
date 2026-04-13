@@ -372,17 +372,15 @@ Source: replacement pattern for the current runtime path that now mutates `quote
 
 All material claims in this research were verified from the local codebase, project planning documents, local environment probes, or official documentation. No unresolved `[ASSUMED]` claims remain.
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Should Phase 1 expose a minimal read API for candidate bundles, or keep candidate inspection DB-only until Phase 7?**
-   - What we know: The existing authenticated `/api/message-inspector` view only joins `incoming_messages`, `message_parse_results`, and transactions, so it cannot display quote candidates today. [VERIFIED: wxbot/bookkeeping-platform/bookkeeping_web/app.py] [VERIFIED: wxbot/bookkeeping-platform/tests/test_webapp.py]
-   - What's unclear: Whether Phase 1 needs a thin candidate inspection endpoint for debugging before the operator workbench phase. [VERIFIED: .planning/ROADMAP.md]
-   - Recommendation: Plan one minimal authenticated DB/query helper first, and treat an HTTP surface as optional unless implementation planning shows it materially reduces debugging cost. [VERIFIED: .planning/ROADMAP.md]
+   - Resolution: Keep Phase 1 inspection DB/query-helper only. Do not add a new HTTP inspection surface in this phase.
+   - Why: Phase 1’s job is to establish candidate custody and persistence boundaries, not to expand operator UI scope. A DB/query helper is enough to support tests, replay verification, and later workbench phases without dragging web/API surface area into this foundational cut. [VERIFIED: .planning/ROADMAP.md] [VERIFIED: .planning/phases/01-candidate-contract-foundation/01-CONTEXT.md]
 
 2. **How strict should the initial `field_sources_json` be?**
-   - What we know: Current parser outputs already retain `source_line` but do not expose structured per-field spans. [VERIFIED: wxbot/bookkeeping-platform/bookkeeping_core/quotes.py]
-   - What's unclear: Whether Phase 1 should require character offsets or whether line-level raw fragments are sufficient. [VERIFIED: .planning/phases/01-candidate-contract-foundation/01-CONTEXT.md]
-   - Recommendation: Plan for line-level evidence plus raw fragments now, and reserve character spans for a later tightening pass if replay/debugging proves line-level evidence insufficient. [VERIFIED: wxbot/bookkeeping-platform/bookkeeping_core/quotes.py]
+   - Resolution: Require line-level evidence plus raw field fragments in Phase 1. Do not require character offsets yet.
+   - Why: This satisfies `EVID-01` and Phase 1 replay/debugging needs with minimum schema complexity, while keeping the structure extensible for a later tightening pass if line-level evidence proves insufficient. [VERIFIED: .planning/phases/01-candidate-contract-foundation/01-CONTEXT.md] [VERIFIED: wxbot/bookkeeping-platform/bookkeeping_core/quotes.py]
 
 ## Environment Availability
 
