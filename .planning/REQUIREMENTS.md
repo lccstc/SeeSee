@@ -17,8 +17,8 @@
 
 ### Validation
 
-- [ ] **VALI-01**: System validates every candidate row against a fixed quote schema before publish evaluation
-- [ ] **VALI-02**: System applies explicit business-rule validation and records structured rejection reasons for invalid candidates
+- [x] **VALI-01**: System validates every candidate row against a fixed quote schema before publish evaluation
+- [x] **VALI-02**: System applies explicit business-rule validation and records structured rejection reasons for invalid candidates
 - [ ] **VALI-03**: System computes `publishable_rows` separately from rejected rows and held rows
 
 ### Fact Protection
@@ -83,8 +83,8 @@
 | EVID-02 | Phase 7 | Pending |
 | CAND-01 | Phase 1 | Pending |
 | CAND-02 | Phase 1 | Pending |
-| VALI-01 | Phase 2 | Pending |
-| VALI-02 | Phase 2 | Pending |
+| VALI-01 | Phase 2 | Complete |
+| VALI-02 | Phase 2 | Complete |
 | VALI-03 | Phase 2 | Pending |
 | FACT-01 | Phase 3 | Pending |
 | FACT-02 | Phase 3 | Pending |

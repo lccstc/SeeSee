@@ -49,7 +49,7 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 02-01-PLAN.md — Define validator contract, additive persistence schema, and durable rejection taxonomy
+- [x] 02-01-PLAN.md — Define validator contract, additive persistence schema, and durable rejection taxonomy
 - [ ] 02-02-PLAN.md — Implement schema validation and run it automatically for runtime/replay candidate bundles
 - [ ] 02-03-PLAN.md — Add business-rule validation and durable `publishable_rows` separation helpers
 
