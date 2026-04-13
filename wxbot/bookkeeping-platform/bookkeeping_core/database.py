@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from .models import ReminderPayload
+from .quote_candidates import QuoteCandidateMessage
 from .quotes import (
     normalize_quote_amount_range,
     normalize_quote_form_factor,
@@ -1324,6 +1325,100 @@ class _BookkeepingStoreBase:
         self.conn.commit()
         return self._last_insert_id(cur)
 
+    @staticmethod
+    def _serialize_candidate_json(value: Any, *, fallback: Any) -> str:
+        return json.dumps(
+            fallback if value is None else value,
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+
+    def record_quote_candidate_bundle(
+        self, *, candidate: QuoteCandidateMessage
+    ) -> int:
+        document = candidate.to_document_payload()
+        cur = self.conn.execute(
+            """
+            INSERT INTO quote_documents (
+              platform, source_group_key, chat_id, chat_name, message_id,
+              source_name, sender_id, raw_text, message_time, parser_kind,
+              parser_template, parser_version, confidence, parse_status,
+              message_fingerprint, snapshot_hypothesis,
+              snapshot_hypothesis_reason, rejection_reasons_json, run_kind,
+              replay_of_quote_document_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                document["platform"],
+                document["source_group_key"],
+                document["chat_id"],
+                document["chat_name"],
+                document["message_id"],
+                document["sender_display"],
+                document["sender_id"],
+                document["raw_message"],
+                document["message_time"],
+                document["parser_kind"],
+                document["parser_template"],
+                document["parser_version"],
+                0,
+                document["parse_status"],
+                document["message_fingerprint"],
+                document["snapshot_hypothesis"],
+                document["snapshot_hypothesis_reason"],
+                self._serialize_candidate_json(
+                    document["rejection_reasons"], fallback=[]
+                ),
+                document["run_kind"],
+                document["replay_of_quote_document_id"],
+            ),
+        )
+        quote_document_id = self._last_insert_id(cur)
+        for row in candidate.to_row_payloads():
+            self.conn.execute(
+                """
+                INSERT INTO quote_candidate_rows (
+                  quote_document_id, row_ordinal, source_line, source_line_index,
+                  line_confidence, normalized_sku_key, normalization_status,
+                  row_publishable, publishability_basis, restriction_parse_status,
+                  card_type, country_or_currency, amount_range, multiplier,
+                  form_factor, price, quote_status, restriction_text,
+                  field_sources_json, rejection_reasons_json, parser_template,
+                  parser_version
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    quote_document_id,
+                    row["row_ordinal"],
+                    row["source_line"],
+                    row["source_line_index"],
+                    row["line_confidence"],
+                    row["normalized_sku_key"],
+                    row["normalization_status"],
+                    row["row_publishable"],
+                    row["publishability_basis"],
+                    row["restriction_parse_status"],
+                    row["card_type"],
+                    row["country_or_currency"],
+                    row["amount_range"],
+                    row["multiplier"],
+                    row["form_factor"],
+                    row["price"],
+                    row["quote_status"],
+                    row["restriction_text"],
+                    self._serialize_candidate_json(
+                        row["field_sources"], fallback={}
+                    ),
+                    self._serialize_candidate_json(
+                        row["rejection_reasons"], fallback=[]
+                    ),
+                    row["parser_template"],
+                    row["parser_version"],
+                ),
+            )
+        self.conn.commit()
+        return quote_document_id
+
     def record_quote_document(
         self,
         *,
@@ -1367,6 +1462,17 @@ class _BookkeepingStoreBase:
         )
         self.conn.commit()
         return self._last_insert_id(cur)
+
+    def list_quote_candidate_rows(self, *, quote_document_id: int) -> list[DBRow]:
+        return self.conn.execute(
+            """
+            SELECT *
+            FROM quote_candidate_rows
+            WHERE quote_document_id = ?
+            ORDER BY row_ordinal ASC, id ASC
+            """,
+            (quote_document_id,),
+        ).fetchall()
 
     def deactivate_old_quotes_for_group(self, *, source_group_key: str) -> None:
         """同一群发新消息时，将旧的 active 报价标记为 inactive。"""
