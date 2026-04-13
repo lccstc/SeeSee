@@ -791,6 +791,7 @@ def _missing_template_candidate(
         parser_kind=parser_template,
         parser_template=parser_template,
         parser_version=PARSER_VERSION,
+        confidence=0.0,
         parse_status="empty",
         message_fingerprint=_quote_message_fingerprint(
             platform=envelope.platform,
@@ -837,6 +838,7 @@ def _parsed_quote_document_to_candidate(
         parser_kind=parsed.parser_template,
         parser_template=parsed.parser_template,
         parser_version=parsed.parser_version,
+        confidence=parsed.confidence,
         parse_status=parsed.parse_status,
         message_fingerprint=_quote_message_fingerprint(
             platform=parsed.platform,
@@ -987,6 +989,7 @@ def _build_inquiry_reply_candidate(
         parser_kind="inquiry_context_reply",
         parser_template="inquiry_context_reply",
         parser_version=PARSER_VERSION,
+        confidence=parsed_row.confidence,
         parse_status="parsed",
         message_fingerprint=_quote_message_fingerprint(
             platform=envelope.platform,

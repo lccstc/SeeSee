@@ -1361,7 +1361,7 @@ class _BookkeepingStoreBase:
                 document["parser_kind"],
                 document["parser_template"],
                 document["parser_version"],
-                0,
+                document["confidence"],
                 document["parse_status"],
                 document["message_fingerprint"],
                 document["snapshot_hypothesis"],
@@ -3231,9 +3231,40 @@ class BookkeepingDB(_BookkeepingStoreBase):
               snapshot_hypothesis_reason TEXT NOT NULL DEFAULT '',
               rejection_reasons_json JSONB NOT NULL DEFAULT '[]'::jsonb,
               run_kind TEXT NOT NULL DEFAULT 'runtime',
-              replay_of_quote_document_id BIGINT,
+              replay_of_quote_document_id BIGINT REFERENCES quote_documents(id) ON DELETE SET NULL,
               created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
               UNIQUE (platform, chat_id, message_id)
+            )
+            """
+        )
+        self.conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS quote_candidate_rows (
+              id BIGSERIAL PRIMARY KEY,
+              quote_document_id BIGINT NOT NULL REFERENCES quote_documents(id) ON DELETE CASCADE,
+              row_ordinal INTEGER NOT NULL,
+              source_line TEXT NOT NULL,
+              source_line_index INTEGER,
+              line_confidence NUMERIC(6, 4) NOT NULL,
+              normalized_sku_key TEXT NOT NULL,
+              normalization_status TEXT NOT NULL,
+              row_publishable BOOLEAN NOT NULL DEFAULT FALSE,
+              publishability_basis TEXT NOT NULL,
+              restriction_parse_status TEXT NOT NULL,
+              card_type TEXT,
+              country_or_currency TEXT,
+              amount_range TEXT,
+              multiplier TEXT,
+              form_factor TEXT,
+              price NUMERIC(18, 6),
+              quote_status TEXT NOT NULL,
+              restriction_text TEXT NOT NULL DEFAULT '',
+              field_sources_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+              rejection_reasons_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+              parser_template TEXT NOT NULL,
+              parser_version TEXT NOT NULL,
+              created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              UNIQUE (quote_document_id, row_ordinal)
             )
             """
         )

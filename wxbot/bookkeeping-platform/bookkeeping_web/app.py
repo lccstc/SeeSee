@@ -1317,14 +1317,24 @@ def _handle_quotes_exception_harvest_save(db: BookkeepingDB, start_response, env
             replay_result = _replay_latest_quote_document_with_current_template(
                 db,
                 exc_row=exc_row,
-                record_exceptions=False,
+                record_exceptions=True,
             )
+            if int(replay_result.get("exceptions") or 0) > 0:
+                resolved_fully = False
+                replay_remaining_lines = [
+                    str(line or "").strip()
+                    for line in list(replay_result.get("remaining_lines") or [])
+                    if str(line or "").strip()
+                ]
+                if replay_remaining_lines:
+                    remaining_lines = replay_remaining_lines
         resolution_note = (
             f"harvested section={derived_section.get('label') or '未命名 Section'} "
             f"rows={len(preview.get('preview_rows') or [])} "
             f"restrictions={len(restriction_lines_attached)} "
             f"remaining={len(remaining_lines)} "
-            f"replayed={'true' if replay_result.get('replayed') else 'false'}"
+            f"replayed={'true' if replay_result.get('replayed') else 'false'} "
+            f"replay_exceptions={int(replay_result.get('exceptions') or 0)}"
         )
         if resolved_fully:
             db.resolve_quote_exception(

@@ -247,14 +247,14 @@ CREATE TABLE IF NOT EXISTS quote_documents (
   snapshot_hypothesis_reason TEXT NOT NULL DEFAULT '',
   rejection_reasons_json JSONB NOT NULL DEFAULT '[]'::jsonb,
   run_kind TEXT NOT NULL DEFAULT 'runtime',
-  replay_of_quote_document_id BIGINT,
+  replay_of_quote_document_id BIGINT REFERENCES quote_documents(id) ON DELETE SET NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   UNIQUE (platform, chat_id, message_id)
 );
 
 CREATE TABLE IF NOT EXISTS quote_candidate_rows (
   id BIGSERIAL PRIMARY KEY,
-  quote_document_id BIGINT NOT NULL,
+  quote_document_id BIGINT NOT NULL REFERENCES quote_documents(id) ON DELETE CASCADE,
   row_ordinal INTEGER NOT NULL,
   source_line TEXT NOT NULL,
   source_line_index INTEGER,

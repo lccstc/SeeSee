@@ -193,6 +193,7 @@ class PostgresBackendTests(PostgresTestCase):
                 parser_kind="strict-section",
                 parser_template="apple_us_v1",
                 parser_version="candidate-v1",
+                confidence=0.97,
                 parse_status="parsed",
                 message_fingerprint="fp-quote-001",
                 snapshot_hypothesis="delta_update",
@@ -249,6 +250,7 @@ class PostgresBackendTests(PostgresTestCase):
             self.assertEqual(header["sender_id"], candidate.sender_id)
             self.assertEqual(header["message_time"].isoformat(sep=" "), "2026-04-14 10:30:00")
             self.assertEqual(header["parser_kind"], candidate.parser_kind)
+            self.assertEqual(float(header["confidence"]), candidate.confidence)
             self.assertEqual(header["message_fingerprint"], candidate.message_fingerprint)
             self.assertEqual(header["snapshot_hypothesis"], candidate.snapshot_hypothesis)
             self.assertEqual(
@@ -275,6 +277,36 @@ class PostgresBackendTests(PostgresTestCase):
             self.assertEqual(
                 _normalize_json_field(row["rejection_reasons_json"]),
                 candidate.rows[0].rejection_reasons,
+            )
+
+            fk_rows = db.conn.execute(
+                """
+                SELECT tc.table_name, kcu.column_name, ccu.table_name AS foreign_table_name
+                FROM information_schema.table_constraints AS tc
+                JOIN information_schema.key_column_usage AS kcu
+                  ON tc.constraint_name = kcu.constraint_name
+                 AND tc.table_schema = kcu.table_schema
+                JOIN information_schema.constraint_column_usage AS ccu
+                  ON ccu.constraint_name = tc.constraint_name
+                 AND ccu.table_schema = tc.table_schema
+                WHERE tc.constraint_type = 'FOREIGN KEY'
+                  AND tc.table_name IN ('quote_documents', 'quote_candidate_rows')
+                ORDER BY tc.table_name, kcu.column_name
+                """
+            ).fetchall()
+            fk_map = {
+                (str(item["table_name"]), str(item["column_name"])): str(
+                    item["foreign_table_name"]
+                )
+                for item in fk_rows
+            }
+            self.assertEqual(
+                fk_map[("quote_candidate_rows", "quote_document_id")],
+                "quote_documents",
+            )
+            self.assertEqual(
+                fk_map[("quote_documents", "replay_of_quote_document_id")],
+                "quote_documents",
             )
 
             count_row = db.conn.execute(

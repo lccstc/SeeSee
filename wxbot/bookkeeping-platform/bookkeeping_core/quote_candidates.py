@@ -55,6 +55,7 @@ class QuoteCandidateMessage:
     parser_kind: str
     parser_template: str
     parser_version: str
+    confidence: float
     parse_status: str
     message_fingerprint: str
     snapshot_hypothesis: str
@@ -82,6 +83,7 @@ class QuoteCandidateMessage:
             "parser_kind": self.parser_kind,
             "parser_template": self.parser_template,
             "parser_version": self.parser_version,
+            "confidence": self.confidence,
             "parse_status": self.parse_status,
             "message_fingerprint": self.message_fingerprint,
             "snapshot_hypothesis": self.snapshot_hypothesis,

@@ -5,6 +5,7 @@ import io
 import json
 import os
 import unittest
+from unittest.mock import patch
 from urllib.parse import urlencode
 from wsgiref.util import setup_testing_defaults
 
@@ -1089,6 +1090,7 @@ class WebAppTests(PostgresTestCase):
             self.assertIsNotNone(replay_document)
             self.assertEqual(replay_document["run_kind"], "replay")
             self.assertEqual(replay_document["replay_of_quote_document_id"], quote_document_id)
+            self.assertGreater(float(replay_document["confidence"]), 0.0)
             replay_candidate_rows = self.db.list_quote_candidate_rows(
                 quote_document_id=replay_document_id
             )
@@ -1101,6 +1103,108 @@ class WebAppTests(PostgresTestCase):
             profile = self.db.get_quote_group_profile(platform="wechat", chat_id="g-harvest")
             self.assertEqual(profile["parser_template"], "strict-section-v1")
             self.assertIn('"version": "strict-section-v1"', profile["template_config"])
+        finally:
+            if old_password is None:
+                os.environ.pop("QUOTE_ADMIN_PASSWORD", None)
+            else:
+                os.environ["QUOTE_ADMIN_PASSWORD"] = old_password
+
+    def test_quote_exception_harvest_save_keeps_exception_open_when_replay_still_fails(self) -> None:
+        old_password = os.environ.get("QUOTE_ADMIN_PASSWORD")
+        os.environ["QUOTE_ADMIN_PASSWORD"] = "harvest-secret"
+        try:
+            self.db.set_group(
+                platform="wechat",
+                group_key="wechat:g-harvest-replay-fail",
+                chat_id="g-harvest-replay-fail",
+                chat_name="收编群-重放失败",
+                group_num=5,
+            )
+            quote_document_id = self.db.record_quote_document(
+                platform="wechat",
+                source_group_key="wechat:g-harvest-replay-fail",
+                chat_id="g-harvest-replay-fail",
+                chat_name="收编群-重放失败",
+                message_id="msg-harvest-replay-fail",
+                source_name="报价员",
+                sender_id="u-harvest",
+                raw_text="Apple USA\n10-50=5.20",
+                message_time="2026-04-08 11:00:00",
+                parser_template="data-engine",
+                parser_version="data-engine-v1",
+                confidence=0.0,
+                parse_status="empty",
+            )
+            exception_id = self.db.record_quote_exception(
+                quote_document_id=quote_document_id,
+                platform="wechat",
+                source_group_key="wechat:g-harvest-replay-fail",
+                chat_id="g-harvest-replay-fail",
+                chat_name="收编群-重放失败",
+                source_name="报价员",
+                sender_id="u-harvest",
+                reason="strict_match_failed",
+                source_line="10-50=5.20",
+                raw_text="Apple USA\n10-50=5.20",
+                message_time="2026-04-08 11:00:00",
+                parser_template="data-engine",
+                parser_version="data-engine-v1",
+                confidence=0.0,
+            )
+
+            preview_payload = {
+                "exception_id": exception_id,
+                "section_start_line": 0,
+                "section_end_line": 1,
+                "defaults": {
+                    "section_label": "Apple USA",
+                    "priority": 10,
+                    "card_type": "it",
+                    "country_or_currency": "us",
+                    "form_factor": "card",
+                },
+                "rows": [
+                    {"source_line_index": 1, "amount": "10-50", "price": "5.20"},
+                ],
+                "ignored_line_indexes": [],
+            }
+            status, preview = self._request(
+                "POST",
+                "/api/quotes/exceptions/harvest-preview",
+                preview_payload,
+            )
+            self.assertEqual(status, 200)
+            self.assertTrue(preview["can_save"])
+            self.assertTrue(preview["is_latest_for_group"])
+
+            with patch(
+                "bookkeeping_web.app._replay_latest_quote_document_with_current_template"
+            ) as replay_mock:
+                replay_mock.return_value = {
+                    "replayed": True,
+                    "rows": 1,
+                    "exceptions": 1,
+                    "quote_document_id": quote_document_id + 1,
+                    "remaining_lines": ["10-50=5.20"],
+                    "mutated_active_facts": False,
+                }
+                status, saved = self._request(
+                    "POST",
+                    "/api/quotes/exceptions/harvest-save",
+                    {**preview_payload, "admin_password": "harvest-secret"},
+                )
+
+            self.assertEqual(status, 200)
+            self.assertTrue(saved["replay"]["replayed"])
+            self.assertFalse(saved["resolved_fully"])
+            self.assertEqual(saved["remaining_lines"], ["10-50=5.20"])
+            replay_mock.assert_called_once()
+            self.assertTrue(replay_mock.call_args.kwargs["record_exceptions"])
+
+            exception_row = self.db.get_quote_exception(exception_id=exception_id)
+            self.assertEqual(exception_row["resolution_status"], "open")
+            self.assertIn("replay_exceptions=1", str(exception_row["resolution_note"]))
+            self.assertEqual(str(exception_row["source_line"]), "10-50=5.20")
         finally:
             if old_password is None:
                 os.environ.pop("QUOTE_ADMIN_PASSWORD", None)
@@ -1569,10 +1673,11 @@ class WebAppTests(PostgresTestCase):
                 {**first_payload, "admin_password": "harvest-secret"},
             )
             self.assertEqual(status, 200)
-            self.assertTrue(first_saved["resolved_fully"])
+            self.assertFalse(first_saved["resolved_fully"])
             self.assertTrue(first_saved["replay"]["replayed"])
             self.assertFalse(first_saved["replay"]["mutated_active_facts"])
             self.assertEqual(first_saved["replay"]["rows"], 2)
+            self.assertGreater(first_saved["replay"]["exceptions"], 0)
             first_replay_document_id = int(first_saved["replay"]["quote_document_id"])
             self.assertNotEqual(first_replay_document_id, quote_document_id)
             first_replay_document = self._get_quote_document_by_id(first_replay_document_id)
@@ -1586,6 +1691,10 @@ class WebAppTests(PostgresTestCase):
                 quote_document_id=first_replay_document_id
             )
             self.assertEqual(len(first_replay_candidate_rows), 2)
+            exception_row_after_first_save = self.db.get_quote_exception(
+                exception_id=exception_id
+            )
+            self.assertEqual(exception_row_after_first_save["resolution_status"], "open")
 
             second_payload = {
                 "exception_id": exception_id,
