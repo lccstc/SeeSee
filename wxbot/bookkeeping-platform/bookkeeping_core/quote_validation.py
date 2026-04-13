@@ -24,6 +24,9 @@ BUSINESS_DUPLICATE_SKU_IN_MESSAGE_HOLD = "business_duplicate_sku_in_message_hold
 
 MESSAGE_NO_CANDIDATE_ROWS = "message_no_candidate_rows"
 
+VALIDATOR_AUTO_PUBLISH_CONFIDENCE = 0.8
+_NON_AMBIGUOUS_RESTRICTION_PARSE_STATUSES = frozenset({"empty", "parsed", "clear"})
+
 SCHEMA_REASON_CODES = frozenset(
     {
         SCHEMA_MISSING_CARD_TYPE,
@@ -121,20 +124,13 @@ class QuoteValidationRun:
     row_results: list[QuoteValidationRowResult] = field(default_factory=list)
 
     def computed_counts(self) -> dict[str, int]:
-        counts = {
+        separated = separate_publishable_rows(self.row_results)
+        return {
             "candidate_row_count": len(self.row_results),
-            "publishable_row_count": 0,
-            "rejected_row_count": 0,
-            "held_row_count": 0,
+            "publishable_row_count": len(separated["publishable_rows"]),
+            "rejected_row_count": len(separated["rejected_rows"]),
+            "held_row_count": len(separated["held_rows"]),
         }
-        for row in self.row_results:
-            if row.final_decision == "publishable":
-                counts["publishable_row_count"] += 1
-            elif row.final_decision == "rejected":
-                counts["rejected_row_count"] += 1
-            elif row.final_decision == "held":
-                counts["held_row_count"] += 1
-        return counts
 
     def to_run_payload(self) -> dict[str, Any]:
         counts = self.computed_counts()
@@ -166,6 +162,24 @@ class QuoteValidationRun:
         }
 
 
+def separate_publishable_rows(
+    row_results: list[QuoteValidationRowResult],
+) -> dict[str, list[QuoteValidationRowResult]]:
+    separated = {
+        "publishable_rows": [],
+        "rejected_rows": [],
+        "held_rows": [],
+    }
+    for row_result in row_results:
+        if row_result.final_decision == "publishable":
+            separated["publishable_rows"].append(row_result)
+        elif row_result.final_decision == "rejected":
+            separated["rejected_rows"].append(row_result)
+        elif row_result.final_decision == "held":
+            separated["held_rows"].append(row_result)
+    return separated
+
+
 def validate_quote_candidate_document(
     *,
     quote_document_id: int,
@@ -177,22 +191,58 @@ def validate_quote_candidate_document(
     row_results: list[QuoteValidationRowResult] = []
     message_reasons: list[dict[str, Any]] = []
     rejection_code_counts: dict[str, int] = {}
+    hold_code_counts: dict[str, int] = {}
+    duplicate_sku_counts = _duplicate_normalized_sku_counts(candidate_rows)
+    parser_advisory_counts = {
+        "parser_publishable_true_count": 0,
+        "parser_publishable_false_count": 0,
+    }
 
     for row in candidate_rows:
-        rejection_reasons = _schema_rejection_reasons(row)
-        for reason in rejection_reasons:
+        if _row_publishable_hint(row):
+            parser_advisory_counts["parser_publishable_true_count"] += 1
+        else:
+            parser_advisory_counts["parser_publishable_false_count"] += 1
+        schema_rejection_reasons = _schema_rejection_reasons(row)
+        for reason in schema_rejection_reasons:
             code = str(reason.get("code") or "")
             rejection_code_counts[code] = rejection_code_counts.get(code, 0) + 1
+        rejection_reasons = list(schema_rejection_reasons)
+        hold_reasons: list[dict[str, Any]] = []
+        business_status = "skipped"
+        final_decision = "rejected" if schema_rejection_reasons else "publishable"
+        decision_basis = "schema_validation"
+        if not schema_rejection_reasons:
+            rejection_reasons = _business_rejection_reasons(row)
+            hold_reasons = _business_hold_reasons(
+                row,
+                duplicate_sku_counts=duplicate_sku_counts,
+            )
+            for reason in rejection_reasons:
+                code = str(reason.get("code") or "")
+                rejection_code_counts[code] = rejection_code_counts.get(code, 0) + 1
+            for reason in hold_reasons:
+                code = str(reason.get("code") or "")
+                hold_code_counts[code] = hold_code_counts.get(code, 0) + 1
+            business_status = "passed"
+            final_decision = "publishable"
+            decision_basis = "business_validation"
+            if rejection_reasons:
+                business_status = "failed"
+                final_decision = "rejected"
+            elif hold_reasons:
+                business_status = "held"
+                final_decision = "held"
         row_results.append(
             QuoteValidationRowResult(
                 quote_candidate_row_id=int(_row_value(row, "id") or 0),
                 row_ordinal=int(_row_value(row, "row_ordinal") or 0),
-                schema_status="failed" if rejection_reasons else "passed",
-                business_status="skipped" if rejection_reasons else "not_evaluated",
-                final_decision="rejected" if rejection_reasons else "publishable",
-                decision_basis="schema_validation",
+                schema_status="failed" if schema_rejection_reasons else "passed",
+                business_status=business_status,
+                final_decision=final_decision,
+                decision_basis=decision_basis,
                 rejection_reasons=rejection_reasons,
-                hold_reasons=[],
+                hold_reasons=hold_reasons,
             )
         )
 
@@ -208,16 +258,22 @@ def validate_quote_candidate_document(
             )
         )
 
-    publishable_rows = sum(
-        1 for row_result in row_results if row_result.final_decision == "publishable"
-    )
+    separated_rows = separate_publishable_rows(row_results)
+    publishable_rows = len(separated_rows["publishable_rows"])
     message_decision = (
         "publishable_rows_available" if publishable_rows > 0 else "no_publish"
     )
 
     summary: dict[str, Any] = {
         "message_reasons": normalize_reason_payloads(message_reasons),
+        "row_decision_counts": {
+            "publishable": len(separated_rows["publishable_rows"]),
+            "rejected": len(separated_rows["rejected_rows"]),
+            "held": len(separated_rows["held_rows"]),
+        },
         "row_rejection_code_counts": rejection_code_counts,
+        "row_hold_code_counts": hold_code_counts,
+        "parser_advisory_counts": dict(parser_advisory_counts),
         "candidate_parse_status": _candidate_document_value(
             candidate_document,
             "parse_status",
@@ -242,8 +298,8 @@ def validate_quote_candidate_document(
         validation_status="completed",
         candidate_row_count=len(candidate_rows),
         publishable_row_count=publishable_rows,
-        rejected_row_count=len(candidate_rows) - publishable_rows,
-        held_row_count=0,
+        rejected_row_count=len(separated_rows["rejected_rows"]),
+        held_row_count=len(separated_rows["held_rows"]),
         summary=summary,
         row_results=row_results,
     )
@@ -298,6 +354,87 @@ def _schema_rejection_reasons(row: dict[str, Any] | Any) -> list[dict[str, Any]]
     return reasons
 
 
+def _business_rejection_reasons(row: dict[str, Any] | Any) -> list[dict[str, Any]]:
+    if _normalized_text(_row_value(row, "quote_status")).lower() == "active":
+        return []
+    return [
+        build_validation_reason(
+            BUSINESS_QUOTE_STATUS_NOT_ACTIVE,
+            detail="candidate row quote_status must be active for publication",
+            context={"quote_status": _normalized_text(_row_value(row, "quote_status"))},
+        )
+    ]
+
+
+def _business_hold_reasons(
+    row: dict[str, Any] | Any,
+    *,
+    duplicate_sku_counts: dict[str, int],
+) -> list[dict[str, Any]]:
+    reasons: list[dict[str, Any]] = []
+    line_confidence = _numeric_value(_row_value(row, "line_confidence"))
+    if line_confidence < VALIDATOR_AUTO_PUBLISH_CONFIDENCE:
+        reasons.append(
+            build_validation_reason(
+                BUSINESS_LOW_CONFIDENCE_HOLD,
+                detail="candidate row confidence is below validator publish threshold",
+                context={
+                    "line_confidence": line_confidence,
+                    "required_confidence": VALIDATOR_AUTO_PUBLISH_CONFIDENCE,
+                },
+            )
+        )
+    normalization_status = _normalized_text(_row_value(row, "normalization_status")).lower()
+    if normalization_status != "normalized":
+        reasons.append(
+            build_validation_reason(
+                BUSINESS_PARTIAL_NORMALIZATION_HOLD,
+                detail="candidate row normalization is not complete enough to publish",
+                context={
+                    "normalization_status": _normalized_text(
+                        _row_value(row, "normalization_status")
+                    )
+                },
+            )
+        )
+    restriction_parse_status = _normalized_text(
+        _row_value(row, "restriction_parse_status")
+    ).lower()
+    if restriction_parse_status not in _NON_AMBIGUOUS_RESTRICTION_PARSE_STATUSES:
+        reasons.append(
+            build_validation_reason(
+                BUSINESS_AMBIGUOUS_RESTRICTION_HOLD,
+                detail="candidate row restriction parsing is ambiguous",
+                context={
+                    "restriction_parse_status": _normalized_text(
+                        _row_value(row, "restriction_parse_status")
+                    )
+                },
+            )
+        )
+    normalized_sku_key = _normalized_text(_row_value(row, "normalized_sku_key"))
+    if normalized_sku_key and duplicate_sku_counts.get(normalized_sku_key, 0) > 1:
+        reasons.append(
+            build_validation_reason(
+                BUSINESS_DUPLICATE_SKU_IN_MESSAGE_HOLD,
+                detail="candidate row duplicates another normalized_sku_key in the same message",
+                context={"normalized_sku_key": normalized_sku_key},
+            )
+        )
+    return reasons
+
+
+def _duplicate_normalized_sku_counts(
+    candidate_rows: list[dict[str, Any] | Any],
+) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for row in candidate_rows:
+        normalized_sku_key = _normalized_text(_row_value(row, "normalized_sku_key"))
+        if normalized_sku_key:
+            counts[normalized_sku_key] = counts.get(normalized_sku_key, 0) + 1
+    return counts
+
+
 def _normalized_text(value: Any) -> str:
     return str(value or "").strip()
 
@@ -316,6 +453,20 @@ def _is_positive_numeric(value: Any) -> bool:
         return float(value) > 0.0
     except (TypeError, ValueError):
         return False
+
+
+def _numeric_value(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _row_publishable_hint(row: dict[str, Any] | Any) -> bool:
+    value = _row_value(row, "row_publishable")
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "yes"}
 
 
 def _candidate_document_value(
