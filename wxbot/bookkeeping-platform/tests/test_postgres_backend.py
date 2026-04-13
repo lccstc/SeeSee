@@ -5,11 +5,114 @@ import unittest
 
 from bookkeeping_core.database import BookkeepingDB
 from bookkeeping_core.quote_candidates import QuoteCandidateMessage, QuoteCandidateRow
+from bookkeeping_core.quote_validation import (
+    QuoteValidationRowResult,
+    QuoteValidationRun,
+    VALIDATOR_VERSION_V1,
+    build_validation_reason,
+)
 from tests.support.postgres_test_case import PostgresTestCase
 
 
 def _normalize_json_field(value):
     return json.loads(value) if isinstance(value, str) else value
+
+
+def _make_validation_candidate(*, message_id: str) -> QuoteCandidateMessage:
+    return QuoteCandidateMessage(
+        platform="wechat",
+        source_group_key="wechat:validation-room",
+        chat_id="validation-room",
+        chat_name="验证报价群",
+        message_id=message_id,
+        source_name="Validator Source",
+        sender_id="wxid-validator",
+        sender_display="Validator Source",
+        raw_message="[Apple]\nUS 100 95.5\nUK 50 0\nJP 10 9.1",
+        message_time="2026-04-14 11:15:00",
+        parser_kind="strict-section",
+        parser_template="validator_template_v1",
+        parser_version="candidate-v1",
+        confidence=0.92,
+        parse_status="parsed",
+        message_fingerprint=f"fp-{message_id}",
+        snapshot_hypothesis="delta_update",
+        snapshot_hypothesis_reason="validator persistence regression fixture",
+        rejection_reasons=[{"code": "validator_pending"}],
+        run_kind="runtime",
+        replay_of_quote_document_id=None,
+        rows=[
+            QuoteCandidateRow(
+                row_ordinal=1,
+                source_line="US 100 95.5",
+                source_line_index=1,
+                line_confidence=0.98,
+                normalized_sku_key="Apple|USD|100|physical",
+                normalization_status="normalized",
+                row_publishable=False,
+                publishability_basis="validator_pending",
+                restriction_parse_status="clear",
+                card_type="Apple",
+                country_or_currency="USD",
+                amount_range="100",
+                multiplier="1x",
+                form_factor="physical",
+                price=95.5,
+                quote_status="candidate",
+                restriction_text="",
+                field_sources={"source_line": "US 100 95.5"},
+                rejection_reasons=[{"code": "validator_pending"}],
+                parser_template="validator_template_v1",
+                parser_version="candidate-v1",
+            ),
+            QuoteCandidateRow(
+                row_ordinal=2,
+                source_line="UK 50 0",
+                source_line_index=2,
+                line_confidence=0.83,
+                normalized_sku_key="Apple|GBP|50|physical",
+                normalization_status="normalized",
+                row_publishable=False,
+                publishability_basis="validator_pending",
+                restriction_parse_status="clear",
+                card_type="Apple",
+                country_or_currency="GBP",
+                amount_range="50",
+                multiplier="1x",
+                form_factor="physical",
+                price=0,
+                quote_status="candidate",
+                restriction_text="",
+                field_sources={"source_line": "UK 50 0"},
+                rejection_reasons=[{"code": "validator_pending"}],
+                parser_template="validator_template_v1",
+                parser_version="candidate-v1",
+            ),
+            QuoteCandidateRow(
+                row_ordinal=3,
+                source_line="JP 10 9.1",
+                source_line_index=3,
+                line_confidence=0.61,
+                normalized_sku_key="Apple|JPY|10|physical",
+                normalization_status="partial",
+                row_publishable=False,
+                publishability_basis="validator_pending",
+                restriction_parse_status="ambiguous",
+                card_type="Apple",
+                country_or_currency="JPY",
+                amount_range="10",
+                multiplier="1x",
+                form_factor="physical",
+                price=9.1,
+                quote_status="candidate",
+                restriction_text="ask before reload",
+                field_sources={"source_line": "JP 10 9.1"},
+                rejection_reasons=[{"code": "validator_pending"}],
+                parser_template="validator_template_v1",
+                parser_version="candidate-v1",
+            ),
+        ],
+    )
 
 
 class PostgresBackendTests(PostgresTestCase):
@@ -71,7 +174,7 @@ class PostgresBackendTests(PostgresTestCase):
 
         with psycopg.connect(broken_dsn, autocommit=True) as conn:
             with conn.cursor() as cursor:
-                cursor.execute("DROP TABLE quote_candidate_rows")
+                cursor.execute("DROP TABLE quote_candidate_rows CASCADE")
                 cursor.execute(
                     """
                     ALTER TABLE quote_documents
@@ -82,6 +185,29 @@ class PostgresBackendTests(PostgresTestCase):
                     DROP COLUMN rejection_reasons_json,
                     DROP COLUMN run_kind,
                     DROP COLUMN replay_of_quote_document_id
+                    """
+                )
+
+        with self.assertRaisesRegex(RuntimeError, "PostgreSQL schema mismatch"):
+            BookkeepingDB(broken_dsn)
+
+    def test_bookkeeping_db_fails_fast_when_validator_schema_is_missing(self) -> None:
+        import psycopg
+
+        schema_name = self._schema_name("validator-missing")
+        self._create_schema(schema_name)
+        self._apply_schema(schema_name)
+        broken_dsn = self._dsn_with_search_path(schema_name)
+
+        with psycopg.connect(broken_dsn, autocommit=True) as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("DROP TABLE quote_validation_row_results")
+                cursor.execute(
+                    """
+                    ALTER TABLE quote_validation_runs
+                    DROP COLUMN validator_version,
+                    DROP COLUMN message_decision,
+                    DROP COLUMN summary_json
                     """
                 )
 
@@ -307,6 +433,198 @@ class PostgresBackendTests(PostgresTestCase):
             self.assertEqual(
                 fk_map[("quote_documents", "replay_of_quote_document_id")],
                 "quote_documents",
+            )
+
+            count_row = db.conn.execute(
+                "SELECT COUNT(*) AS cnt FROM quote_price_rows"
+            ).fetchone()
+            self.assertEqual(int(count_row["cnt"]), 0)
+        finally:
+            db.close()
+
+    def test_record_quote_validation_run_persists_row_decisions(self) -> None:
+        db = self.make_db("backend-quote-validation")
+        try:
+            quote_document_id = db.record_quote_candidate_bundle(
+                candidate=_make_validation_candidate(
+                    message_id="msg-validation-1"
+                )
+            )
+            candidate_rows = db.list_quote_candidate_rows(
+                quote_document_id=quote_document_id
+            )
+            validation_run_id = db.record_quote_validation_run(
+                validation_run=QuoteValidationRun(
+                    quote_document_id=quote_document_id,
+                    validator_version=VALIDATOR_VERSION_V1,
+                    run_kind="runtime",
+                    message_decision="mixed_outcome",
+                    validation_status="completed",
+                    summary={
+                        "message_codes": [
+                            build_validation_reason(
+                                "validation_mixed_outcome",
+                                detail="publishable, rejected, and held rows all present",
+                            )
+                        ],
+                        "candidate_row_ids": [
+                            int(candidate_row["id"]) for candidate_row in candidate_rows
+                        ],
+                    },
+                    row_results=[
+                        QuoteValidationRowResult(
+                            quote_candidate_row_id=int(candidate_rows[0]["id"]),
+                            row_ordinal=1,
+                            schema_status="passed",
+                            business_status="passed",
+                            final_decision="publishable",
+                            decision_basis="schema_and_business_passed",
+                        ),
+                        QuoteValidationRowResult(
+                            quote_candidate_row_id=int(candidate_rows[1]["id"]),
+                            row_ordinal=2,
+                            schema_status="failed",
+                            business_status="skipped",
+                            final_decision="rejected",
+                            decision_basis="schema_failed",
+                            rejection_reasons=[
+                                build_validation_reason(
+                                    "schema_invalid_price",
+                                    detail="price must be positive",
+                                    context={"value": "0"},
+                                ),
+                                build_validation_reason(
+                                    "business_quote_status_not_active",
+                                    detail="candidate status has not been promoted yet",
+                                ),
+                            ],
+                        ),
+                        QuoteValidationRowResult(
+                            quote_candidate_row_id=int(candidate_rows[2]["id"]),
+                            row_ordinal=3,
+                            schema_status="passed",
+                            business_status="held",
+                            final_decision="held",
+                            decision_basis="manual_review_required",
+                            hold_reasons=[
+                                build_validation_reason(
+                                    "business_low_confidence_hold",
+                                    detail="line confidence below safe publish threshold",
+                                    context={"line_confidence": "0.61"},
+                                ),
+                                build_validation_reason(
+                                    "business_ambiguous_restriction_hold",
+                                    detail="restriction text is not machine-safe yet",
+                                ),
+                            ],
+                        ),
+                    ],
+                )
+            )
+
+            latest_run = db.get_latest_quote_validation_run(
+                quote_document_id=quote_document_id
+            )
+            self.assertIsNotNone(latest_run)
+            assert latest_run is not None
+            self.assertEqual(int(latest_run["id"]), validation_run_id)
+            self.assertEqual(latest_run["validator_version"], VALIDATOR_VERSION_V1)
+            self.assertEqual(latest_run["message_decision"], "mixed_outcome")
+            self.assertEqual(latest_run["validation_status"], "completed")
+            self.assertEqual(int(latest_run["candidate_row_count"]), 3)
+            self.assertEqual(int(latest_run["publishable_row_count"]), 1)
+            self.assertEqual(int(latest_run["rejected_row_count"]), 1)
+            self.assertEqual(int(latest_run["held_row_count"]), 1)
+            self.assertEqual(
+                _normalize_json_field(latest_run["summary_json"]),
+                {
+                    "message_codes": [
+                        {
+                            "code": "validation_mixed_outcome",
+                            "detail": "publishable, rejected, and held rows all present",
+                        }
+                    ],
+                    "candidate_row_ids": [
+                        int(candidate_row["id"]) for candidate_row in candidate_rows
+                    ],
+                },
+            )
+
+            row_results = db.list_quote_validation_row_results(
+                validation_run_id=validation_run_id
+            )
+            self.assertEqual(len(row_results), 3)
+            self.assertEqual(int(row_results[0]["quote_candidate_row_id"]), int(candidate_rows[0]["id"]))
+            self.assertEqual(row_results[0]["final_decision"], "publishable")
+            self.assertEqual(
+                _normalize_json_field(row_results[1]["rejection_reasons_json"]),
+                [
+                    {
+                        "code": "schema_invalid_price",
+                        "detail": "price must be positive",
+                        "context": {"value": "0"},
+                    },
+                    {
+                        "code": "business_quote_status_not_active",
+                        "detail": "candidate status has not been promoted yet",
+                    },
+                ],
+            )
+            self.assertEqual(
+                _normalize_json_field(row_results[2]["hold_reasons_json"]),
+                [
+                    {
+                        "code": "business_low_confidence_hold",
+                        "detail": "line confidence below safe publish threshold",
+                        "context": {"line_confidence": "0.61"},
+                    },
+                    {
+                        "code": "business_ambiguous_restriction_hold",
+                        "detail": "restriction text is not machine-safe yet",
+                    },
+                ],
+            )
+
+            original_candidate_rows = db.list_quote_candidate_rows(
+                quote_document_id=quote_document_id
+            )
+            self.assertEqual(
+                _normalize_json_field(original_candidate_rows[1]["rejection_reasons_json"]),
+                [{"code": "validator_pending"}],
+            )
+
+            fk_rows = db.conn.execute(
+                """
+                SELECT tc.table_name, kcu.column_name, ccu.table_name AS foreign_table_name
+                FROM information_schema.table_constraints AS tc
+                JOIN information_schema.key_column_usage AS kcu
+                  ON tc.constraint_name = kcu.constraint_name
+                 AND tc.table_schema = kcu.table_schema
+                JOIN information_schema.constraint_column_usage AS ccu
+                  ON ccu.constraint_name = tc.constraint_name
+                 AND ccu.table_schema = tc.table_schema
+                WHERE tc.constraint_type = 'FOREIGN KEY'
+                  AND tc.table_name IN ('quote_validation_runs', 'quote_validation_row_results')
+                ORDER BY tc.table_name, kcu.column_name
+                """
+            ).fetchall()
+            fk_map = {
+                (str(item["table_name"]), str(item["column_name"])): str(
+                    item["foreign_table_name"]
+                )
+                for item in fk_rows
+            }
+            self.assertEqual(
+                fk_map[("quote_validation_runs", "quote_document_id")],
+                "quote_documents",
+            )
+            self.assertEqual(
+                fk_map[("quote_validation_row_results", "validation_run_id")],
+                "quote_validation_runs",
+            )
+            self.assertEqual(
+                fk_map[("quote_validation_row_results", "quote_candidate_row_id")],
+                "quote_candidate_rows",
             )
 
             count_row = db.conn.execute(
