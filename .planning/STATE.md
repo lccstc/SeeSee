@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: ready
-stopped_at: Phase 05 ready to execute
-last_updated: "2026-04-14T05:48:00+07:00"
-last_activity: 2026-04-14 -- planned Phase 05 exception repair state machine
+status: executing
+stopped_at: Completed 05-01-PLAN.md
+last_updated: "2026-04-13T23:28:03.277Z"
+last_activity: 2026-04-14 -- Completed 05-01 repair-case packaging and runtime wiring
 progress:
   total_phases: 9
   completed_phases: 3
   total_plans: 12
-  completed_plans: 9
-  percent: 75
+  completed_plans: 10
+  percent: 83
 ---
 
 # Project State
@@ -25,18 +25,18 @@ See: .planning/PROJECT.md (updated 2026-04-13)
 
 ## Current Position
 
-Phase: 05 (exception-repair-state-machine) — READY TO EXECUTE
-Plan: none active
-Status: Phase 05 planned; next step is executing 05-01
-Last activity: 2026-04-14 -- Phase 05 plans, validation strategy, and research completed
+Phase: 05 (exception-repair-state-machine) — EXECUTING
+Plan: 2 of 3
+Status: 05-01 completed; 05-02 ready to execute
+Last activity: 2026-04-14 -- Completed 05-01 repair-case packaging and runtime wiring
 
-Progress: [███████░░░] 75% of currently planned work
+Progress: [████████░░] 83% of currently planned work
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 9
+- Total plans completed: 10
 - Average duration: -
 - Total execution time: 45 min
 
@@ -61,6 +61,7 @@ Progress: [███████░░░] 75% of currently planned work
 | Phase 02.1-real-exception-corpus-candidate-coverage P01 | - | 4 tasks | corpus fixtures + tests |
 | Phase 02.1-real-exception-corpus-candidate-coverage P02 | - | 2 tasks | parser hardening + regressions |
 | Phase 02.1-real-exception-corpus-candidate-coverage P03 | - | 2 tasks | bootstrap tooling + runtime/web proofs |
+| Phase 05 P01 | 20min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -77,13 +78,17 @@ Recent decisions affecting current work:
 - [Phase 02-validation-engine]: Zero-row candidate documents persist an explicit no_publish validation run instead of relying on absence.
 - [Phase 02-validation-engine]: Business uncertainty now holds rows instead of promoting parser hints to publishable.
 - [Phase 02-validation-engine]: publishable_rows are now read from quote_validation_row_results rather than parser-side row_publishable flags.
+- [Phase 05]: Kept quote_parse_exceptions as raw failure events and added dedicated quote_repair_cases for workflow state.
+- [Phase 05]: Repair cases link origin exception/document/validation rows and freeze only mutable profile and summary evidence.
+- [Phase 05]: Runtime records validator_no_publish exceptions only when validation fails with no existing parse exception, then packages the repair case immediately.
 
 ### Roadmap Evolution
 
 - Phase 02.1 inserted after Phase 02: Real Exception Corpus & Candidate Coverage (URGENT)
 - Phase 02.1 completed: corpus, deterministic candidate hardening, and bootstrap coverage are now in repo and verified
 - Roadmap order changed: validate repair-state-machine and constrained remediation before guarded publisher / snapshot semantics
-- Phase 05 planned: repair cases, immutable baseline replay, cumulative attempts, and handler state sync are now the next execution target
+- Phase 05-01 completed: additive repair-case packaging now exists for runtime parse failures and validator no-publish outcomes
+- Phase 05 next: immutable baseline replay, before/after attempt linkage, and append-only attempt history remain for 05-02 and 05-03
 
 ### Pending Todos
 
@@ -97,6 +102,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-14T04:52:34+07:00
-Stopped at: Phase 05 ready to execute
+Last session: 2026-04-14T06:27:35+07:00
+Stopped at: Completed 05-01-PLAN.md
 Resume file: None

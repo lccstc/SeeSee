@@ -42,8 +42,8 @@
 
 ### Exceptions & Replay
 
-- [ ] **EXCP-01**: Every failed, partial, rejected, or unclassifiable parse attempt enters the exception pool as a durable repair case rather than a disposable log line
-- [ ] **EXCP-02**: Each repair case carries the raw message, current group profile/template version, candidate result, validator result, unmatched evidence, and replay baseline needed for constrained remediation
+- [x] **EXCP-01**: Every failed, partial, rejected, or unclassifiable parse attempt enters the exception pool as a durable repair case rather than a disposable log line
+- [x] **EXCP-02**: Each repair case carries the raw message, current group profile/template version, candidate result, validator result, unmatched evidence, and replay baseline needed for constrained remediation
 - [ ] **EXCP-03**: User can replay a stored raw message through the current parser and validator chain and compare before/after outcomes for a proposed fix
 
 ### Industrialization
@@ -98,8 +98,8 @@
 | CORP-02 | Phase 2.1 | Pending |
 | COV-01 | Phase 2.1 | Pending |
 | COV-02 | Phase 2.1 | Pending |
-| EXCP-01 | Phase 5 | Pending |
-| EXCP-02 | Phase 5 | Pending |
+| EXCP-01 | Phase 5 | Complete |
+| EXCP-02 | Phase 5 | Complete |
 | EXCP-03 | Phase 5 | Pending |
 | INDU-01 | Phase 6 | Pending |
 | INDU-02 | Phase 6 | Pending |
