@@ -2973,10 +2973,10 @@ function quoteExceptionHarvestStatus(row) {
     return '已整理，模板待应用';
   }
   if (note.includes('harvested') && note.includes('replayed=true')) {
-    return '已整理，已重放';
+    return '已整理，候选重放已生成';
   }
   if (note.includes('harvested') && note.includes('replayed=false')) {
-    return '已整理，未重放';
+    return '已整理，未生成候选重放';
   }
   if (status === 'open') {
     return '待整理';
@@ -4099,12 +4099,12 @@ function renderQuoteHarvestModal() {
     const replayed = Boolean(harvest?.lastSaveResult?.replay?.replayed);
     summary.textContent = harvest.completed
       ? (replayed
-        ? `已保存 ${harvest.savedSections} 段；该消息已整理完成，并已上墙 ${replayRows} 条报价。如发现漏段，可继续补一段并重放。`
-        : `已保存 ${harvest.savedSections} 段；模板已整理完成，但这条不是最新消息，未自动上墙。如发现漏段，仍可继续补一段。`)
+        ? `已保存 ${harvest.savedSections} 段；该消息已整理完成，已生成 ${replayRows} 条候选重放，未改动报价墙。如发现漏段，可继续补一段并重放。`
+        : `已保存 ${harvest.savedSections} 段；模板已整理完成，但这条不是最新消息，未生成候选重放，也未改动报价墙。如发现漏段，仍可继续补一段。`)
       : `已保存 ${harvest.savedSections} 段；剩余 ${remainingCount} 行待处理。`;
     previewButton.textContent = harvest.completed ? '继续预览这一段' : '预览这一段';
     saveButton.textContent = harvest.completed
-      ? (replayed ? '继续补一段并上墙' : '继续补一段')
+      ? (replayed ? '继续补一段并生成候选重放' : '继续补一段')
       : '保存这一段并继续';
     previewButton.disabled = harvest.previewLoading;
     saveButton.disabled = harvest.previewLoading || !Boolean(harvest.preview?.can_save);
@@ -4187,8 +4187,8 @@ document.querySelector('#quote-harvest-save').addEventListener('click', async ()
       const replayed = Boolean(data.replay?.replayed);
       const replayRows = Number(data.replay?.rows || 0);
       alert(replayed
-        ? `这一条异常已整理完成，并已上墙 ${replayRows} 条报价。如发现漏段，还可以继续补一段并重放。`
-        : '这一条异常已整理完成，模板已保存；但这条不是该群最新消息，所以没有自动上墙。如发现漏段，仍可继续补一段。');
+        ? `这一条异常已整理完成，已生成 ${replayRows} 条候选重放，未改动报价墙。如发现漏段，还可以继续补一段并重放。`
+        : '这一条异常已整理完成，模板已保存；但这条不是该群最新消息，所以没有生成候选重放，也未改动报价墙。如发现漏段，仍可继续补一段。');
     } else {
       alert('这一段已保存，可继续整理剩余内容。');
     }

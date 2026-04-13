@@ -174,6 +174,46 @@ class WebAppTests(PostgresTestCase):
         response["body"] = b"".join(chunks)
         return response["status"], response["headers"], response["body"]
 
+    def _get_quote_document_by_id(self, quote_document_id: int):
+        return self.db.conn.execute(
+            """
+            SELECT *
+            FROM quote_documents
+            WHERE id = ?
+            """,
+            (quote_document_id,),
+        ).fetchone()
+
+    def _get_quote_document(
+        self,
+        *,
+        platform: str,
+        chat_id: str,
+        message_id: str,
+    ):
+        return self.db.conn.execute(
+            """
+            SELECT *
+            FROM quote_documents
+            WHERE platform = ? AND chat_id = ? AND message_id = ?
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (platform, chat_id, message_id),
+        ).fetchone()
+
+    def _count_rows(
+        self,
+        table_name: str,
+        where_clause: str = "",
+        params: tuple[object, ...] = (),
+    ) -> int:
+        row = self.db.conn.execute(
+            f"SELECT COUNT(*) AS cnt FROM {table_name} {where_clause}",
+            params,
+        ).fetchone()
+        return int(row["cnt"] or 0)
+
     def test_dashboard_endpoint_returns_group_and_period_data(self) -> None:
         status, payload = self._request("GET", "/api/dashboard")
         self.assertEqual(status, 200)
@@ -211,11 +251,15 @@ class WebAppTests(PostgresTestCase):
         self.assertIn("生成预览", body)
         self.assertIn("默认只看待处理异常", body)
         self.assertIn("骨架 1 / N", body)
+        self.assertIn("未改动报价墙", body)
+        self.assertIn("继续补一段并生成候选重放", body)
+        self.assertNotIn("继续补一段并上墙", body)
+        self.assertNotIn("并已上墙", body)
 
     def test_quote_dictionary_page_and_api_require_admin_password_for_writes(self) -> None:
         status, body = self._request_text("GET", "/quote-dictionary")
         self.assertEqual(status, 200)
-        self.assertIn("报价字典", body)
+        self.assertIn("标准映射台", body)
         self.assertIn('id="quote-dictionary-form"', body)
 
         status, payload = self._request("GET", "/api/quotes/dictionary")
@@ -1034,13 +1078,25 @@ class WebAppTests(PostgresTestCase):
             self.assertEqual(status, 200)
             self.assertTrue(saved["saved"])
             self.assertTrue(saved["replay"]["replayed"])
+            self.assertFalse(saved["replay"]["mutated_active_facts"])
+            self.assertEqual(saved["replay"]["rows"], 2)
             self.assertTrue(saved["resolved_fully"])
             self.assertEqual(saved["remaining_lines"], [])
             self.assertEqual(saved["restriction_lines_attached"], ["使用时间3分钟"])
+            replay_document_id = int(saved["replay"]["quote_document_id"])
+            self.assertNotEqual(replay_document_id, quote_document_id)
+            replay_document = self._get_quote_document_by_id(replay_document_id)
+            self.assertIsNotNone(replay_document)
+            self.assertEqual(replay_document["run_kind"], "replay")
+            self.assertEqual(replay_document["replay_of_quote_document_id"], quote_document_id)
+            replay_candidate_rows = self.db.list_quote_candidate_rows(
+                quote_document_id=replay_document_id
+            )
+            self.assertEqual(len(replay_candidate_rows), 2)
 
             status, board = self._request("GET", "/api/quotes/board")
             self.assertEqual(status, 200)
-            self.assertEqual(len(board["rows"]), 2)
+            self.assertEqual(board["rows"], [])
 
             profile = self.db.get_quote_group_profile(platform="wechat", chat_id="g-harvest")
             self.assertEqual(profile["parser_template"], "strict-section-v1")
@@ -1307,7 +1363,9 @@ class WebAppTests(PostgresTestCase):
             else:
                 os.environ["QUOTE_ADMIN_PASSWORD"] = old_password
 
-    def test_quote_exception_harvest_multi_section_final_save_replays_board(self) -> None:
+    def test_quote_exception_harvest_multi_section_final_save_creates_replay_candidate_only(
+        self,
+    ) -> None:
         old_password = os.environ.get("QUOTE_ADMIN_PASSWORD")
         os.environ["QUOTE_ADMIN_PASSWORD"] = "harvest-secret"
         try:
@@ -1411,27 +1469,32 @@ class WebAppTests(PostgresTestCase):
             self.assertEqual(status, 200)
             self.assertTrue(second_saved["resolved_fully"])
             self.assertTrue(second_saved["replay"]["replayed"])
+            self.assertFalse(second_saved["replay"]["mutated_active_facts"])
+            self.assertEqual(second_saved["replay"]["rows"], 4)
             self.assertEqual(second_saved["remaining_lines"], [])
+            replay_document_id = int(second_saved["replay"]["quote_document_id"])
+            self.assertNotEqual(replay_document_id, quote_document_id)
+            replay_document = self._get_quote_document_by_id(replay_document_id)
+            self.assertIsNotNone(replay_document)
+            self.assertEqual(replay_document["run_kind"], "replay")
+            self.assertEqual(replay_document["replay_of_quote_document_id"], quote_document_id)
+            replay_candidate_rows = self.db.list_quote_candidate_rows(
+                quote_document_id=replay_document_id
+            )
+            self.assertEqual(len(replay_candidate_rows), 4)
 
             status, board = self._request("GET", "/api/quotes/board")
             self.assertEqual(status, 200)
-            self.assertEqual(len(board["rows"]), 4)
-            self.assertCountEqual(
-                [(row["country_or_currency"], row["amount_range"], row["price"]) for row in board["rows"]],
-                [
-                    ("GBP", "20-250", 6.0),
-                    ("GBP", "100-500", 6.35),
-                    ("CAD", "20-250", 3.9),
-                    ("CAD", "100-500", 4.1),
-                ],
-            )
+            self.assertEqual(board["rows"], [])
         finally:
             if old_password is None:
                 os.environ.pop("QUOTE_ADMIN_PASSWORD", None)
             else:
                 os.environ["QUOTE_ADMIN_PASSWORD"] = old_password
 
-    def test_quote_exception_harvest_save_can_append_missing_section_after_resolved(self) -> None:
+    def test_quote_exception_harvest_save_can_append_missing_section_after_resolved_with_replay_candidates(
+        self,
+    ) -> None:
         old_password = os.environ.get("QUOTE_ADMIN_PASSWORD")
         os.environ["QUOTE_ADMIN_PASSWORD"] = "harvest-secret"
         try:
@@ -1508,6 +1571,21 @@ class WebAppTests(PostgresTestCase):
             self.assertEqual(status, 200)
             self.assertTrue(first_saved["resolved_fully"])
             self.assertTrue(first_saved["replay"]["replayed"])
+            self.assertFalse(first_saved["replay"]["mutated_active_facts"])
+            self.assertEqual(first_saved["replay"]["rows"], 2)
+            first_replay_document_id = int(first_saved["replay"]["quote_document_id"])
+            self.assertNotEqual(first_replay_document_id, quote_document_id)
+            first_replay_document = self._get_quote_document_by_id(first_replay_document_id)
+            self.assertIsNotNone(first_replay_document)
+            self.assertEqual(first_replay_document["run_kind"], "replay")
+            self.assertEqual(
+                first_replay_document["replay_of_quote_document_id"],
+                quote_document_id,
+            )
+            first_replay_candidate_rows = self.db.list_quote_candidate_rows(
+                quote_document_id=first_replay_document_id
+            )
+            self.assertEqual(len(first_replay_candidate_rows), 2)
 
             second_payload = {
                 "exception_id": exception_id,
@@ -1534,18 +1612,22 @@ class WebAppTests(PostgresTestCase):
             self.assertTrue(second_saved["saved"])
             self.assertTrue(second_saved["resolved_fully"])
             self.assertTrue(second_saved["replay"]["replayed"])
+            self.assertFalse(second_saved["replay"]["mutated_active_facts"])
+            self.assertEqual(second_saved["replay"]["rows"], 3)
+            second_replay_document_id = int(second_saved["replay"]["quote_document_id"])
+            self.assertNotEqual(second_replay_document_id, quote_document_id)
+            replay_document = self._get_quote_document_by_id(second_replay_document_id)
+            self.assertIsNotNone(replay_document)
+            self.assertEqual(replay_document["run_kind"], "replay")
+            self.assertEqual(replay_document["replay_of_quote_document_id"], quote_document_id)
+            replay_candidate_rows = self.db.list_quote_candidate_rows(
+                quote_document_id=second_replay_document_id
+            )
+            self.assertEqual(len(replay_candidate_rows), 3)
 
             status, board = self._request("GET", "/api/quotes/board")
             self.assertEqual(status, 200)
-            self.assertEqual(len(board["rows"]), 3)
-            self.assertTrue(
-                any(
-                    row["country_or_currency"] == "CAD"
-                    and row["amount_range"] == "15-90"
-                    and float(row["price"]) == 3.9
-                    for row in board["rows"]
-                )
-            )
+            self.assertEqual(board["rows"], [])
         finally:
             if old_password is None:
                 os.environ.pop("QUOTE_ADMIN_PASSWORD", None)
@@ -2504,8 +2586,25 @@ class WebAppTests(PostgresTestCase):
                 query_string="source_group_key=wechat:g-runtime-parser",
             )
             self.assertEqual(status, 200)
-            self.assertEqual(len(board["rows"]), 5)
-            self.assertTrue(any(row["price"] == 5.54 and row["amount_range"] == "200-450" for row in board["rows"]))
+            self.assertEqual(board["rows"], [])
+            runtime_document = self._get_quote_document(
+                platform="wechat",
+                chat_id="g-runtime-parser",
+                message_id="msg-runtime-parser-2",
+            )
+            self.assertIsNotNone(runtime_document)
+            self.assertEqual(runtime_document["run_kind"], "runtime")
+            self.assertIsNone(runtime_document["replay_of_quote_document_id"])
+            runtime_candidate_rows = self.db.list_quote_candidate_rows(
+                quote_document_id=int(runtime_document["id"])
+            )
+            self.assertEqual(len(runtime_candidate_rows), 5)
+            self.assertTrue(
+                any(
+                    float(row["price"]) == 5.54 and row["amount_range"] == "200-450"
+                    for row in runtime_candidate_rows
+                )
+            )
         finally:
             if old_password is None:
                 os.environ.pop("QUOTE_ADMIN_PASSWORD", None)
