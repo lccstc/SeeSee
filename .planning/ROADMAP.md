@@ -31,12 +31,12 @@ Decimal phases appear between their surrounding integers in numeric order.
   1. Raw message evidence remains the authoritative input for quote parsing decisions
   2. Parser output is represented as candidate objects rather than direct active-fact writes
   3. Candidate objects retain source message, source line, and parser lineage needed for later validation
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 01-01: Trace current quote-wall write path and isolate where active facts are mutated today
-- [ ] 01-02: Introduce candidate-row data contract and message-level parse result container
-- [ ] 01-03: Route existing parser outputs through the candidate contract without changing finance behavior
+- [ ] 01-01-PLAN.md — Define the candidate contract, additive quote-document metadata, and `quote_candidate_rows` persistence
+- [ ] 01-02-PLAN.md — Route runtime quote capture through candidate-only persistence and preserve exception evidence
+- [ ] 01-03-PLAN.md — Convert replay/harvest-save to replay candidate runs and rebaseline web tests away from board mutation
 
 ### Phase 2: Validation Engine
 **Goal**: Build explicit schema and business validators that separate `publishable_rows` from invalid or held rows.
