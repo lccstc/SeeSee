@@ -13,7 +13,7 @@ This roadmap turns the current brownfield quote wall into a formal validation pi
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Candidate Contract Foundation** - Split parsing output from active fact publication and formalize candidate objects
-- [ ] **Phase 2: Validation Engine** - Add fixed schema validation, business validation, and `publishable_rows`
+- [x] **Phase 2: Validation Engine** - Add fixed schema validation, business validation, and `publishable_rows`
 - [ ] **Phase 3: Fact Protection Publisher** - Make one guarded publisher the only path that can mutate active quote facts
 - [ ] **Phase 4: Snapshot / Delta Semantics** - Distinguish `full_snapshot` from `delta_update` and default safely
 - [ ] **Phase 5: Exception Replay Loop** - Make every failure replayable and comparable before/after fixes
@@ -51,7 +51,7 @@ Plans:
 Plans:
 - [x] 02-01-PLAN.md — Define validator contract, additive persistence schema, and durable rejection taxonomy
 - [x] 02-02-PLAN.md — Implement schema validation and run it automatically for runtime/replay candidate bundles
-- [ ] 02-03-PLAN.md — Add business-rule validation and durable `publishable_rows` separation helpers
+- [x] 02-03-PLAN.md — Add business-rule validation and durable `publishable_rows` separation helpers
 
 ### Phase 3: Fact Protection Publisher
 **Goal**: Ensure that only a guarded publisher can change active quote facts, and that failures never corrupt existing wall state.
@@ -151,7 +151,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Candidate Contract Foundation | 3/3 | Completed | 2026-04-14 |
-| 2. Validation Engine | 0/3 | Not started | - |
+| 2. Validation Engine | 3/3 | Completed | 2026-04-14 |
 | 3. Fact Protection Publisher | 0/3 | Not started | - |
 | 4. Snapshot / Delta Semantics | 0/3 | Not started | - |
 | 5. Exception Replay Loop | 0/3 | Not started | - |
