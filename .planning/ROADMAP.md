@@ -14,6 +14,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Candidate Contract Foundation** - Split parsing output from active fact publication and formalize candidate objects
 - [x] **Phase 2: Validation Engine** - Add fixed schema validation, business validation, and `publishable_rows`
+- [ ] **Phase 2.1: Real Exception Corpus & Candidate Coverage (INSERTED)** - Build the real-sample corpus and harden candidate generation against live exception shapes
 - [ ] **Phase 3: Fact Protection Publisher** - Make one guarded publisher the only path that can mutate active quote facts
 - [ ] **Phase 4: Snapshot / Delta Semantics** - Distinguish `full_snapshot` from `delta_update` and default safely
 - [ ] **Phase 5: Exception Replay Loop** - Make every failure replayable and comparable before/after fixes
@@ -53,9 +54,19 @@ Plans:
 - [x] 02-02-PLAN.md — Implement schema validation and run it automatically for runtime/replay candidate bundles
 - [x] 02-03-PLAN.md — Add business-rule validation and durable `publishable_rows` separation helpers
 
+### Phase 02.1: Real Exception Corpus & Candidate Coverage (INSERTED)
+
+**Goal:** Build a real exception corpus and improve candidate generation coverage against live customer quote shapes before guarded publisher work.
+**Requirements**: TBD
+**Depends on:** Phase 2
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 02.1 to break down)
+
 ### Phase 3: Fact Protection Publisher
 **Goal**: Ensure that only a guarded publisher can change active quote facts, and that failures never corrupt existing wall state.
-**Depends on**: Phase 2
+**Depends on**: Phase 02.1
 **Requirements**: [FACT-01, FACT-02, FACT-03]
 **Success Criteria** (what must be TRUE):
   1. No parse, validation, or publish failure clears existing active quote facts
@@ -146,12 +157,13 @@ Plans:
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
+Phases execute in numeric order: 1 → 2 → 2.1 → 3 → 4 → 5 → 6 → 7 → 8
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Candidate Contract Foundation | 3/3 | Completed | 2026-04-14 |
 | 2. Validation Engine | 3/3 | Completed | 2026-04-14 |
+| 2.1. Real Exception Corpus & Candidate Coverage | 0/0 | Not started | - |
 | 3. Fact Protection Publisher | 0/3 | Not started | - |
 | 4. Snapshot / Delta Semantics | 0/3 | Not started | - |
 | 5. Exception Replay Loop | 0/3 | Not started | - |
