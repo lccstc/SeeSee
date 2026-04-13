@@ -2,7 +2,7 @@
 
 ## Overview
 
-This roadmap turns the current brownfield quote wall into a formal validation pipeline. The sequence is deliberate: first separate candidates from facts, then build validators and publisher safeguards, then make snapshot/delta semantics explicit, then convert failures into durable repair cases and a constrained remediation state machine, and only after that build the operator verification surfaces and shadow-mode gate needed to trust the system on real samples. The governing idea is not to train a万能解析器, but to keep evolving each group's own profile as a finite, verifiable grammar.
+This roadmap turns the current brownfield quote wall into a formal validation pipeline. The sequence is deliberate: first separate candidates from facts, then build validators, then prove the group-profile evolution loop against the real exception pool through a repair state machine and constrained remediation workflow, and only after that harden publish authority, snapshot semantics, operator verification, and shadow-mode gates. The governing idea is not to train a万能解析器, but to keep evolving each group's own profile as a finite, verifiable grammar.
 
 ## Phases
 
@@ -15,10 +15,10 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 1: Candidate Contract Foundation** - Split parsing output from active fact publication and formalize candidate objects
 - [x] **Phase 2: Validation Engine** - Add fixed schema validation, business validation, and `publishable_rows`
 - [x] **Phase 2.1: Real Exception Corpus & Candidate Coverage (INSERTED)** - Build the real-sample corpus and harden candidate generation against live exception shapes
-- [ ] **Phase 3: Fact Protection Publisher** - Make one guarded publisher the only path that can mutate active quote facts
-- [ ] **Phase 4: Snapshot / Delta Semantics** - Distinguish `full_snapshot` from `delta_update` and default safely
 - [ ] **Phase 5: Exception Repair State Machine** - Turn every failure into a durable repair case with replay baseline, attempt history, and escalation state
 - [ ] **Phase 6: Constrained Auto-Remediation Loop** - Let subagents propose bounded repairs that must survive replay, validator, and regression gates before absorption
+- [ ] **Phase 3: Fact Protection Publisher** - Make one guarded publisher the only path that can mutate active quote facts
+- [ ] **Phase 4: Snapshot / Delta Semantics** - Distinguish `full_snapshot` from `delta_update` and default safely
 - [ ] **Phase 7: Operator Verification Workbench** - Expose message-level candidate, rejection, and publish decision evidence for debugging
 - [ ] **Phase 8: Shadow Validation Gate** - Run the pipeline safely in validation mode without handing it default production authority
 
@@ -70,39 +70,9 @@ Plans:
 - [x] 02.1-02-PLAN.md — Harden deterministic candidate generation for dominant structural failure shapes
 - [x] 02.1-03-PLAN.md — Bootstrap top-volume group coverage and prove it through runtime/replay regressions
 
-### Phase 3: Fact Protection Publisher
-**Goal**: Ensure that only a guarded publisher can change active quote facts, and that failures never corrupt existing wall state.
-**Depends on**: Phase 02.1
-**Requirements**: [FACT-01, FACT-02, FACT-03]
-**Success Criteria** (what must be TRUE):
-  1. No parse, validation, or publish failure clears existing active quote facts
-  2. Messages with zero `publishable_rows` result in no active-fact mutation
-  3. UI actions, scripts, and agent-driven operations cannot bypass the guarded publish path
-**Plans**: TBD
-
-Plans:
-- [ ] 03-01: Centralize active-quote mutation behind one publisher service
-- [ ] 03-02: Add protective no-op behavior for failed or empty publish attempts
-- [ ] 03-03: Remove or block bypass paths that write active quotes directly
-
-### Phase 4: Snapshot / Delta Semantics
-**Goal**: Make `full_snapshot` and `delta_update` explicit message semantics with safe defaults and human confirmation in v1.
-**Depends on**: Phase 3
-**Requirements**: [SNAP-01, SNAP-02, SNAP-03, OPS-02]
-**Success Criteria** (what must be TRUE):
-  1. Each message carries an explicit snapshot-type decision or unresolved state
-  2. Unresolved messages behave as `delta_update` rather than destructive replacement
-  3. Only confirmed `full_snapshot` messages may inactivate unseen prior SKUs
-**Plans**: TBD
-
-Plans:
-- [ ] 04-01: Define message-level snapshot classification model and safe default behavior
-- [ ] 04-02: Wire classification into publisher inactivation rules
-- [ ] 04-03: Add v1 human confirmation flow for disputed snapshot classification
-
 ### Phase 5: Exception Repair State Machine
 **Goal**: Turn every failure into a durable repair case with explicit state, replay baseline, and cumulative remediation history.
-**Depends on**: Phase 4
+**Depends on**: Phase 02.1
 **Requirements**: [EXCP-01, EXCP-02, EXCP-03]
 **Success Criteria** (what must be TRUE):
   1. Failed, partial, and rejected parse attempts always enter the exception pool as structured repair cases
@@ -129,6 +99,36 @@ Plans:
 - [ ] 06-01: Implement bounded subagent remediation attempts with cumulative failure logging and max-attempt escalation
 - [ ] 06-02: Define remediation priority order: group profile -> group section -> bootstrap -> shared rule -> global core
 - [ ] 06-03: Close the loop by promoting successful repairs into deterministic templates, rules, scripts, skills, and tests
+
+### Phase 3: Fact Protection Publisher
+**Goal**: Ensure that only a guarded publisher can change active quote facts, and that failures never corrupt existing wall state.
+**Depends on**: Phase 6
+**Requirements**: [FACT-01, FACT-02, FACT-03]
+**Success Criteria** (what must be TRUE):
+  1. No parse, validation, or publish failure clears existing active quote facts
+  2. Messages with zero `publishable_rows` result in no active-fact mutation
+  3. UI actions, scripts, and agent-driven operations cannot bypass the guarded publish path
+**Plans**: TBD
+
+Plans:
+- [ ] 03-01: Centralize active-quote mutation behind one publisher service
+- [ ] 03-02: Add protective no-op behavior for failed or empty publish attempts
+- [ ] 03-03: Remove or block bypass paths that write active quotes directly
+
+### Phase 4: Snapshot / Delta Semantics
+**Goal**: Make `full_snapshot` and `delta_update` explicit message semantics with safe defaults and human confirmation in v1.
+**Depends on**: Phase 3
+**Requirements**: [SNAP-01, SNAP-02, SNAP-03, OPS-02]
+**Success Criteria** (what must be TRUE):
+  1. Each message carries an explicit snapshot-type decision or unresolved state
+  2. Unresolved messages behave as `delta_update` rather than destructive replacement
+  3. Only confirmed `full_snapshot` messages may inactivate unseen prior SKUs
+**Plans**: TBD
+
+Plans:
+- [ ] 04-01: Define message-level snapshot classification model and safe default behavior
+- [ ] 04-02: Wire classification into publisher inactivation rules
+- [ ] 04-03: Add v1 human confirmation flow for disputed snapshot classification
 
 ### Phase 7: Operator Verification Workbench
 **Goal**: Give the operator a message-level debugging view into candidate rows, rejected rows, held rows, and final publish decisions.
@@ -163,16 +163,16 @@ Plans:
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 2.1 → 3 → 4 → 5 → 6 → 7 → 8
+Phases execute in strategic order: 1 → 2 → 2.1 → 5 → 6 → 3 → 4 → 7 → 8
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Candidate Contract Foundation | 3/3 | Completed | 2026-04-14 |
 | 2. Validation Engine | 3/3 | Completed | 2026-04-14 |
 | 2.1. Real Exception Corpus & Candidate Coverage | 3/3 | Completed | 2026-04-14 |
-| 3. Fact Protection Publisher | 0/3 | Not started | - |
-| 4. Snapshot / Delta Semantics | 0/3 | Not started | - |
 | 5. Exception Repair State Machine | 0/3 | Not started | - |
 | 6. Constrained Auto-Remediation Loop | 0/3 | Not started | - |
+| 3. Fact Protection Publisher | 0/3 | Not started | - |
+| 4. Snapshot / Delta Semantics | 0/3 | Not started | - |
 | 7. Operator Verification Workbench | 0/3 | Not started | - |
 | 8. Shadow Validation Gate | 0/3 | Not started | - |

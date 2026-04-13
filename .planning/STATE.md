@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: ready
-stopped_at: Phase 03 ready for planning
+stopped_at: Phase 05 ready for planning
 last_updated: "2026-04-14T04:52:34+07:00"
-last_activity: 2026-04-14 -- Phase 02.1 execution completed
+last_activity: 2026-04-14 -- roadmap reordered to prioritize repair-state-machine validation
 progress:
   total_phases: 9
   completed_phases: 3
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-13)
 
 **Core value:** 把供应商群原始消息转成“可追溯、可验证、不可误发布”的报价事实，宁可不上墙，也绝不把错价、错面额、错国家/币种上墙。
-**Current focus:** Phase 03 — fact-protection-publisher
+**Current focus:** Phase 05 — exception-repair-state-machine
 
 ## Current Position
 
-Phase: 03 (fact-protection-publisher) — READY FOR PLANNING
+Phase: 05 (exception-repair-state-machine) — READY FOR PLANNING
 Plan: none active
-Status: Phase 02.1 completed; next step is planning Phase 03
-Last activity: 2026-04-14 -- Phase 02.1 execution completed
+Status: Phase 02.1 completed; next step is planning Phase 05
+Last activity: 2026-04-14 -- roadmap reordered to prioritize repair-state-machine validation
 
 Progress: [██████████] 100% of currently planned work
 
@@ -81,6 +81,7 @@ Recent decisions affecting current work:
 
 - Phase 02.1 inserted after Phase 02: Real Exception Corpus & Candidate Coverage (URGENT)
 - Phase 02.1 completed: corpus, deterministic candidate hardening, and bootstrap coverage are now in repo and verified
+- Roadmap order changed: validate repair-state-machine and constrained remediation before guarded publisher / snapshot semantics
 
 ### Pending Todos
 
@@ -95,5 +96,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-04-14T04:52:34+07:00
-Stopped at: Phase 03 ready for planning
+Stopped at: Phase 05 ready for planning
 Resume file: None
