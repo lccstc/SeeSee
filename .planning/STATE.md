@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 05-01-PLAN.md
-last_updated: "2026-04-13T23:28:03.277Z"
-last_activity: 2026-04-14 -- Completed 05-01 repair-case packaging and runtime wiring
+stopped_at: Completed 05-02-PLAN.md
+last_updated: "2026-04-13T23:52:55.564Z"
+last_activity: 2026-04-13
 progress:
   total_phases: 9
   completed_phases: 3
   total_plans: 12
-  completed_plans: 10
-  percent: 83
+  completed_plans: 11
+  percent: 92
 ---
 
 # Project State
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-04-13)
 ## Current Position
 
 Phase: 05 (exception-repair-state-machine) — EXECUTING
-Plan: 2 of 3
-Status: 05-01 completed; 05-02 ready to execute
-Last activity: 2026-04-14 -- Completed 05-01 repair-case packaging and runtime wiring
+Plan: 3 of 3
+Status: Ready to execute
+Last activity: 2026-04-13
 
 Progress: [████████░░] 83% of currently planned work
 
@@ -62,6 +62,7 @@ Progress: [████████░░] 83% of currently planned work
 | Phase 02.1-real-exception-corpus-candidate-coverage P02 | - | 2 tasks | parser hardening + regressions |
 | Phase 02.1-real-exception-corpus-candidate-coverage P03 | - | 2 tasks | bootstrap tooling + runtime/web proofs |
 | Phase 05 P01 | 20min | 2 tasks | 6 files |
+| Phase 05 P02 | 27min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -81,6 +82,9 @@ Recent decisions affecting current work:
 - [Phase 05]: Kept quote_parse_exceptions as raw failure events and added dedicated quote_repair_cases for workflow state.
 - [Phase 05]: Repair cases link origin exception/document/validation rows and freeze only mutable profile and summary evidence.
 - [Phase 05]: Runtime records validator_no_publish exceptions only when validation fails with no existing parse exception, then packages the repair case immediately.
+- [Phase 05]: Stored baseline lineage in dedicated quote_repair_case_attempts rows and linked them from quote_repair_cases.baseline_attempt_id.
+- [Phase 05]: Reused _replay_latest_quote_document_with_current_template(..., record_exceptions=False) for baseline proof so repair replays stay candidate-only and cannot open duplicate canonical repair cases.
+- [Phase 05]: Persisted before/after comparison data on attempt rows using candidate/validator metrics and classification rather than ephemeral handler output.
 
 ### Roadmap Evolution
 
@@ -102,6 +106,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-14T06:27:35+07:00
-Stopped at: Completed 05-01-PLAN.md
+Last session: 2026-04-13T23:52:55.560Z
+Stopped at: Completed 05-02-PLAN.md
 Resume file: None

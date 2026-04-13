@@ -82,7 +82,7 @@ Plans:
 
 Plans:
 - [x] 05-01-PLAN.md — Introduce repair-case state, additive persistence, and system-owned evidence packaging for every exception
-- [ ] 05-02-PLAN.md — Implement immutable baseline replay, replay-to-case linking, and durable before/after comparison substrate
+- [x] 05-02-PLAN.md — Implement immutable baseline replay, replay-to-case linking, and durable before/after comparison substrate
 - [ ] 05-03-PLAN.md — Add append-only attempt history, failure-log stacking, handler state sync, and escalation-ready summaries
 
 ### Phase 6: Constrained Auto-Remediation Loop
