@@ -345,17 +345,15 @@ Source: [VERIFIED: codebase `wxbot/bookkeeping-platform/bookkeeping_web/app.py`]
 | Baseline proof starts deciding snapshot semantics | Phase 04 | `quote_documents` already carry `snapshot_hypothesis`, but snapshot confirmation is not implemented yet. [VERIFIED: codebase `wxbot/bookkeeping-platform/sql/postgres_schema.sql`; `.planning/ROADMAP.md`] | Carry `snapshot_hypothesis` through the case package as evidence only; do not let case state trigger inactivation or full-snapshot logic. [VERIFIED: codebase `.planning/phases/05-exception-repair-state-machine/05-CONTEXT.md`; `.planning/PROJECT.md`] |
 | Phase 05 becomes an auto-remediation loop | Phase 06 | Current web save flows already mutate profiles directly, so it is easy to overreach. [VERIFIED: codebase `wxbot/bookkeeping-platform/bookkeeping_web/app.py`] | Phase 05 records case state and attempts only; automatic proposal generation, retry caps, and promotion order stay in Phase 06. [VERIFIED: codebase `.planning/ROADMAP.md`; `.planning/REQUIREMENTS.md`] |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Should Phase 05 create a new `run_kind` like `repair_baseline` / `repair_attempt`, or reuse `replay` with attempt metadata on the new attempt table?** [VERIFIED: codebase `wxbot/bookkeeping-platform/sql/postgres_schema.sql`; `wxbot/bookkeeping-platform/bookkeeping_web/app.py`]
    - What we know: `quote_documents.run_kind` already supports `runtime` and `replay`, and replay lineage uses `replay_of_quote_document_id`. [VERIFIED: codebase `wxbot/bookkeeping-platform/sql/postgres_schema.sql`; `wxbot/bookkeeping-platform/bookkeeping_web/app.py`]
-   - What's unclear: Whether introducing new `run_kind` values would simplify later debugging enough to justify touching existing replay consumers. [VERIFIED: codebase `wxbot/bookkeeping-platform/bookkeeping_web/app.py`]
-   - Recommendation: Keep document-level `run_kind='replay'` in Phase 05 for compatibility and distinguish baseline/attempt types in `quote_repair_case_attempts.attempt_kind`. [VERIFIED: codebase `.planning/phases/01-candidate-contract-foundation/01-03-PLAN.md`; `wxbot/bookkeeping-platform/tests/test_webapp.py`] |
+   - Resolution: Phase 05 should keep document-level `run_kind='replay'` for compatibility and distinguish baseline/attempt types in `quote_repair_case_attempts.attempt_kind`. This keeps current replay consumers stable while still giving repair work explicit lifecycle semantics. [VERIFIED: codebase `.planning/phases/01-candidate-contract-foundation/01-03-PLAN.md`; `wxbot/bookkeeping-platform/tests/test_webapp.py`]
 
-2. **Should existing exception-save web handlers open/update repair cases immediately, or can Phase 05 start with runtime/replay packaging only?** [VERIFIED: codebase `wxbot/bookkeeping-platform/bookkeeping_web/app.py`] 
-   - What we know: `harvest-save` and `result-save` already resolve or reopen exception rows and trigger replay. [VERIFIED: codebase `wxbot/bookkeeping-platform/bookkeeping_web/app.py`; `wxbot/bookkeeping-platform/tests/test_webapp.py`] 
-   - What's unclear: Whether planner wants Phase 05 to backfill those flows now or let them keep using exception rows until Phase 07 UI work. [VERIFIED: codebase `.planning/ROADMAP.md`] 
-   - Recommendation: Phase 05 should at least update repair-case state when these handlers touch an exception, even if the UI remains exception-first for now. [VERIFIED: codebase `.planning/phases/05-exception-repair-state-machine/05-CONTEXT.md`; `wxbot/bookkeeping-platform/bookkeeping_web/app.py`] |
+2. **Should existing exception-save web handlers open/update repair cases immediately, or can Phase 05 start with runtime/replay packaging only?** [VERIFIED: codebase `wxbot/bookkeeping-platform/bookkeeping_web/app.py`]
+   - What we know: `harvest-save` and `result-save` already resolve or reopen exception rows and trigger replay. [VERIFIED: codebase `wxbot/bookkeeping-platform/bookkeeping_web/app.py`; `wxbot/bookkeeping-platform/tests/test_webapp.py`]
+   - Resolution: Phase 05 must wire these handlers into repair-case state synchronization now. The UI can remain exception-first, but any harvest-save, result-save, replay, resolve, reopen, or ignore action that changes exception lifecycle must also append or update the linked repair case and attempt history so the state machine stays canonical. [VERIFIED: codebase `.planning/phases/05-exception-repair-state-machine/05-CONTEXT.md`; `wxbot/bookkeeping-platform/bookkeeping_web/app.py`; `.planning/ROADMAP.md`]
 
 ## Environment Availability
 

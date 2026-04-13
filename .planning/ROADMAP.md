@@ -78,12 +78,12 @@ Plans:
   1. Failed, partial, and rejected parse attempts always enter the exception pool as structured repair cases
   2. Each repair case carries replay-critical context, including current group profile/template version, candidate/validator result, unmatched evidence, and prior attempts
   3. Before/after replay comparisons show whether a proposed fix actually improved the owning group's grammar safely
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 05-01: Introduce repair-case state and replay-critical evidence packaging for every exception
-- [ ] 05-02: Implement deterministic before/after replay baselines tied to the owning group profile
-- [ ] 05-03: Add cumulative attempt history, failure-log stacking, and escalation-ready state transitions
+- [ ] 05-01-PLAN.md — Introduce repair-case state, additive persistence, and system-owned evidence packaging for every exception
+- [ ] 05-02-PLAN.md — Implement immutable baseline replay, replay-to-case linking, and durable before/after comparison substrate
+- [ ] 05-03-PLAN.md — Add append-only attempt history, failure-log stacking, handler state sync, and escalation-ready summaries
 
 ### Phase 6: Constrained Auto-Remediation Loop
 **Goal**: Ensure recurring failures move through a bounded remediation workflow that prefers group-level fixes, proves safety by replay, and escalates after repeated failure.

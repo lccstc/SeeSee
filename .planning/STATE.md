@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: ready
-stopped_at: Phase 05 ready for planning
-last_updated: "2026-04-14T04:52:34+07:00"
-last_activity: 2026-04-14 -- roadmap reordered to prioritize repair-state-machine validation
+stopped_at: Phase 05 ready to execute
+last_updated: "2026-04-14T05:48:00+07:00"
+last_activity: 2026-04-14 -- planned Phase 05 exception repair state machine
 progress:
   total_phases: 9
   completed_phases: 3
-  total_plans: 9
+  total_plans: 12
   completed_plans: 9
-  percent: 100
+  percent: 75
 ---
 
 # Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-04-13)
 
 ## Current Position
 
-Phase: 05 (exception-repair-state-machine) — READY FOR PLANNING
+Phase: 05 (exception-repair-state-machine) — READY TO EXECUTE
 Plan: none active
-Status: Phase 02.1 completed; next step is planning Phase 05
-Last activity: 2026-04-14 -- roadmap reordered to prioritize repair-state-machine validation
+Status: Phase 05 planned; next step is executing 05-01
+Last activity: 2026-04-14 -- Phase 05 plans, validation strategy, and research completed
 
-Progress: [██████████] 100% of currently planned work
+Progress: [███████░░░] 75% of currently planned work
 
 ## Performance Metrics
 
@@ -47,11 +47,12 @@ Progress: [██████████] 100% of currently planned work
 | 01 | 3 | - | - |
 | 02 | 3 | 45min | 15min |
 | 02.1 | 3 | - | - |
+| 05 | 0 | - | - |
 | 03 | 0 | - | - |
 
 **Recent Trend:**
 
-- Last 5 plans: 02.1 completed cleanly with corpus + parser + bootstrap coverage
+- Last 5 plans: 02.1 completed cleanly; Phase 05 planning passed checker after repair-state revisions
 - Trend: Stable
 
 | Phase 02-validation-engine P01 | 14min | 2 tasks | 4 files |
@@ -82,6 +83,7 @@ Recent decisions affecting current work:
 - Phase 02.1 inserted after Phase 02: Real Exception Corpus & Candidate Coverage (URGENT)
 - Phase 02.1 completed: corpus, deterministic candidate hardening, and bootstrap coverage are now in repo and verified
 - Roadmap order changed: validate repair-state-machine and constrained remediation before guarded publisher / snapshot semantics
+- Phase 05 planned: repair cases, immutable baseline replay, cumulative attempts, and handler state sync are now the next execution target
 
 ### Pending Todos
 
@@ -96,5 +98,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-04-14T04:52:34+07:00
-Stopped at: Phase 05 ready for planning
+Stopped at: Phase 05 ready to execute
 Resume file: None
