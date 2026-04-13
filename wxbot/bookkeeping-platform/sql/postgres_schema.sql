@@ -280,6 +280,36 @@ CREATE TABLE IF NOT EXISTS quote_candidate_rows (
   UNIQUE (quote_document_id, row_ordinal)
 );
 
+CREATE TABLE IF NOT EXISTS quote_validation_runs (
+  id BIGSERIAL PRIMARY KEY,
+  quote_document_id BIGINT NOT NULL REFERENCES quote_documents(id) ON DELETE CASCADE,
+  validator_version TEXT NOT NULL,
+  run_kind TEXT NOT NULL DEFAULT 'runtime',
+  message_decision TEXT NOT NULL,
+  validation_status TEXT NOT NULL,
+  candidate_row_count INTEGER NOT NULL DEFAULT 0,
+  publishable_row_count INTEGER NOT NULL DEFAULT 0,
+  rejected_row_count INTEGER NOT NULL DEFAULT 0,
+  held_row_count INTEGER NOT NULL DEFAULT 0,
+  summary_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS quote_validation_row_results (
+  id BIGSERIAL PRIMARY KEY,
+  validation_run_id BIGINT NOT NULL REFERENCES quote_validation_runs(id) ON DELETE CASCADE,
+  quote_candidate_row_id BIGINT NOT NULL REFERENCES quote_candidate_rows(id) ON DELETE CASCADE,
+  row_ordinal INTEGER NOT NULL,
+  schema_status TEXT NOT NULL,
+  business_status TEXT NOT NULL,
+  final_decision TEXT NOT NULL,
+  decision_basis TEXT NOT NULL,
+  rejection_reasons_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+  hold_reasons_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (validation_run_id, quote_candidate_row_id)
+);
+
 CREATE TABLE IF NOT EXISTS quote_price_rows (
   id BIGSERIAL PRIMARY KEY,
   quote_document_id BIGINT NOT NULL,
@@ -314,6 +344,12 @@ CREATE INDEX IF NOT EXISTS idx_quote_price_rows_active
 
 CREATE INDEX IF NOT EXISTS idx_quote_price_rows_source_lookup
   ON quote_price_rows(source_group_key, card_type, country_or_currency, amount_range, form_factor, effective_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_quote_validation_runs_document_created
+  ON quote_validation_runs(quote_document_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_quote_validation_row_results_run_decision
+  ON quote_validation_row_results(validation_run_id, final_decision, row_ordinal);
 
 CREATE TABLE IF NOT EXISTS quote_parse_exceptions (
   id BIGSERIAL PRIMARY KEY,

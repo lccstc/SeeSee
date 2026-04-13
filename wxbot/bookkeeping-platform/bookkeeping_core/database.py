@@ -9,6 +9,7 @@ from typing import Any
 
 from .models import ReminderPayload
 from .quote_candidates import QuoteCandidateMessage
+from .quote_validation import QuoteValidationRun
 from .quotes import (
     normalize_quote_amount_range,
     normalize_quote_form_factor,
@@ -1472,6 +1473,117 @@ class _BookkeepingStoreBase:
             ORDER BY row_ordinal ASC, id ASC
             """,
             (quote_document_id,),
+        ).fetchall()
+
+    def record_quote_validation_run(
+        self, *, validation_run: QuoteValidationRun
+    ) -> int:
+        run_payload = validation_run.to_run_payload()
+        candidate_rows = self.conn.execute(
+            """
+            SELECT id, row_ordinal
+            FROM quote_candidate_rows
+            WHERE quote_document_id = ?
+            ORDER BY row_ordinal ASC, id ASC
+            """,
+            (validation_run.quote_document_id,),
+        ).fetchall()
+        candidate_row_ordinals = {
+            int(row["id"]): int(row["row_ordinal"]) for row in candidate_rows
+        }
+        seen_candidate_row_ids: set[int] = set()
+        for row_result in validation_run.row_results:
+            candidate_row_id = int(row_result.quote_candidate_row_id)
+            if candidate_row_id not in candidate_row_ordinals:
+                raise ValueError(
+                    "validation row result must reference a candidate row in the same quote document"
+                )
+            if candidate_row_id in seen_candidate_row_ids:
+                raise ValueError(
+                    "validation row result must reference each candidate row at most once"
+                )
+            if candidate_row_ordinals[candidate_row_id] != int(row_result.row_ordinal):
+                raise ValueError(
+                    "validation row result row_ordinal must match the persisted candidate row"
+                )
+            seen_candidate_row_ids.add(candidate_row_id)
+
+        cur = self.conn.execute(
+            """
+            INSERT INTO quote_validation_runs (
+              quote_document_id, validator_version, run_kind, message_decision,
+              validation_status, candidate_row_count, publishable_row_count,
+              rejected_row_count, held_row_count, summary_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb)
+            """,
+            (
+                run_payload["quote_document_id"],
+                run_payload["validator_version"],
+                run_payload["run_kind"],
+                run_payload["message_decision"],
+                run_payload["validation_status"],
+                run_payload["candidate_row_count"],
+                run_payload["publishable_row_count"],
+                run_payload["rejected_row_count"],
+                run_payload["held_row_count"],
+                self._serialize_candidate_json(run_payload["summary"], fallback={}),
+            ),
+        )
+        validation_run_id = self._last_insert_id(cur)
+        for row_result in validation_run.row_results:
+            row_payload = row_result.to_row_payload()
+            self.conn.execute(
+                """
+                INSERT INTO quote_validation_row_results (
+                  validation_run_id, quote_candidate_row_id, row_ordinal,
+                  schema_status, business_status, final_decision,
+                  decision_basis, rejection_reasons_json, hold_reasons_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb)
+                """,
+                (
+                    validation_run_id,
+                    row_payload["quote_candidate_row_id"],
+                    row_payload["row_ordinal"],
+                    row_payload["schema_status"],
+                    row_payload["business_status"],
+                    row_payload["final_decision"],
+                    row_payload["decision_basis"],
+                    self._serialize_candidate_json(
+                        row_payload["rejection_reasons"], fallback=[]
+                    ),
+                    self._serialize_candidate_json(
+                        row_payload["hold_reasons"], fallback=[]
+                    ),
+                ),
+            )
+        self.conn.commit()
+        return validation_run_id
+
+    def get_latest_quote_validation_run(
+        self, *, quote_document_id: int
+    ) -> DBRow | None:
+        return self.conn.execute(
+            """
+            SELECT *
+            FROM quote_validation_runs
+            WHERE quote_document_id = ?
+            ORDER BY created_at DESC, id DESC
+            LIMIT 1
+            """,
+            (quote_document_id,),
+        ).fetchone()
+
+    def list_quote_validation_row_results(
+        self, *, validation_run_id: int
+    ) -> list[DBRow]:
+        return self.conn.execute(
+            """
+            SELECT *
+            FROM quote_validation_row_results
+            WHERE validation_run_id = ?
+            ORDER BY row_ordinal ASC, id ASC
+            """,
+            (validation_run_id,),
         ).fetchall()
 
     def deactivate_old_quotes_for_group(self, *, source_group_key: str) -> None:
@@ -3302,6 +3414,42 @@ class BookkeepingDB(_BookkeepingStoreBase):
         )
         self.conn.execute(
             """
+            CREATE TABLE IF NOT EXISTS quote_validation_runs (
+              id BIGSERIAL PRIMARY KEY,
+              quote_document_id BIGINT NOT NULL REFERENCES quote_documents(id) ON DELETE CASCADE,
+              validator_version TEXT NOT NULL,
+              run_kind TEXT NOT NULL DEFAULT 'runtime',
+              message_decision TEXT NOT NULL,
+              validation_status TEXT NOT NULL,
+              candidate_row_count INTEGER NOT NULL DEFAULT 0,
+              publishable_row_count INTEGER NOT NULL DEFAULT 0,
+              rejected_row_count INTEGER NOT NULL DEFAULT 0,
+              held_row_count INTEGER NOT NULL DEFAULT 0,
+              summary_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+              created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        self.conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS quote_validation_row_results (
+              id BIGSERIAL PRIMARY KEY,
+              validation_run_id BIGINT NOT NULL REFERENCES quote_validation_runs(id) ON DELETE CASCADE,
+              quote_candidate_row_id BIGINT NOT NULL REFERENCES quote_candidate_rows(id) ON DELETE CASCADE,
+              row_ordinal INTEGER NOT NULL,
+              schema_status TEXT NOT NULL,
+              business_status TEXT NOT NULL,
+              final_decision TEXT NOT NULL,
+              decision_basis TEXT NOT NULL,
+              rejection_reasons_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+              hold_reasons_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+              created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              UNIQUE (validation_run_id, quote_candidate_row_id)
+            )
+            """
+        )
+        self.conn.execute(
+            """
             CREATE INDEX IF NOT EXISTS idx_quote_price_rows_active
             ON quote_price_rows(card_type, country_or_currency, amount_range, multiplier, form_factor, effective_at DESC)
             """
@@ -3310,6 +3458,18 @@ class BookkeepingDB(_BookkeepingStoreBase):
             """
             CREATE INDEX IF NOT EXISTS idx_quote_price_rows_source_lookup
             ON quote_price_rows(source_group_key, card_type, country_or_currency, amount_range, form_factor, effective_at DESC)
+            """
+        )
+        self.conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_quote_validation_runs_document_created
+            ON quote_validation_runs(quote_document_id, created_at DESC)
+            """
+        )
+        self.conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_quote_validation_row_results_run_decision
+            ON quote_validation_row_results(validation_run_id, final_decision, row_ordinal)
             """
         )
         self.conn.execute(
@@ -3737,6 +3897,33 @@ class BookkeepingDB(_BookkeepingStoreBase):
                 "rejection_reasons_json",
                 "parser_template",
                 "parser_version",
+                "created_at",
+            },
+            "quote_validation_runs": {
+                "id",
+                "quote_document_id",
+                "validator_version",
+                "run_kind",
+                "message_decision",
+                "validation_status",
+                "candidate_row_count",
+                "publishable_row_count",
+                "rejected_row_count",
+                "held_row_count",
+                "summary_json",
+                "created_at",
+            },
+            "quote_validation_row_results": {
+                "id",
+                "validation_run_id",
+                "quote_candidate_row_id",
+                "row_ordinal",
+                "schema_status",
+                "business_status",
+                "final_decision",
+                "decision_basis",
+                "rejection_reasons_json",
+                "hold_reasons_json",
                 "created_at",
             },
             "quote_price_rows": {
