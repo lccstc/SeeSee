@@ -362,6 +362,11 @@ class WebAppTests(PostgresTestCase):
         self.assertIn("组实时", body)
         self.assertIn('id="quote-filter-form"', body)
         self.assertIn('id="quote-board-table"', body)
+        self.assertIn('id="quote-experimental-summary"', body)
+        self.assertIn('id="quote-wall-update-count"', body)
+        self.assertIn('id="quote-watchlist-grid"', body)
+        self.assertIn('id="quote-promotion-gate"', body)
+        self.assertIn('id="quote-promotion-criteria"', body)
         self.assertIn('id="quote-profile-table"', body)
         self.assertIn('id="quote-inquiry-table"', body)
         self.assertIn('id="quote-ranking-table"', body)
@@ -399,6 +404,133 @@ class WebAppTests(PostgresTestCase):
         self.assertNotIn("并已上墙", body)
         self.assertIn("/api/quotes/evidence", body)
         self.assertIn("/api/quotes/failure-dictionary", body)
+
+    def test_experimental_wall_mode_updates_board_through_core_without_downstream_actions(
+        self,
+    ) -> None:
+        from bookkeeping_core.quote_candidates import QuoteCandidateMessage, QuoteCandidateRow
+
+        self.db.set_group(
+            platform="wechat",
+            group_key="wechat:g-web-experimental",
+            chat_id="g-web-experimental",
+            chat_name="实验报价群",
+            group_num=5,
+        )
+        self.db.upsert_quote_group_profile(
+            platform="wechat",
+            chat_id="g-web-experimental",
+            chat_name="实验报价群",
+            default_card_type="Apple",
+            default_country_or_currency="USD",
+            default_form_factor="横白卡",
+            parser_template="group-parser",
+            template_config=json.dumps(
+                {
+                    "version": "group-parser-v1",
+                    "defaults": {
+                        "card_type": "Apple",
+                        "country_or_currency": "USD",
+                        "form_factor": "横白卡",
+                    },
+                    "sections": [],
+                },
+                ensure_ascii=False,
+            ),
+        )
+
+        candidate = QuoteCandidateMessage(
+            platform="wechat",
+            source_group_key="wechat:g-web-experimental",
+            chat_id="g-web-experimental",
+            chat_name="实验报价群",
+            message_id="msg-web-experimental-1",
+            source_name="报价员",
+            sender_id="u-web-experimental",
+            sender_display="报价员",
+            raw_message="[Apple]\n100=5.18",
+            message_time="2026-04-15 13:10:00",
+            parser_kind="group-parser",
+            parser_template="group-parser",
+            parser_version="group-parser-v1",
+            confidence=0.99,
+            parse_status="parsed",
+            message_fingerprint="web-experimental-fingerprint",
+            snapshot_hypothesis="unresolved",
+            snapshot_hypothesis_reason="phase08-webapp",
+            rows=[
+                QuoteCandidateRow(
+                    row_ordinal=1,
+                    source_line="100=5.18",
+                    source_line_index=1,
+                    line_confidence=0.98,
+                    normalized_sku_key="Apple|USD|100|横白卡",
+                    normalization_status="normalized",
+                    row_publishable=False,
+                    publishability_basis="parser_prevalidation",
+                    restriction_parse_status="parsed",
+                    card_type="Apple",
+                    country_or_currency="USD",
+                    amount_range="100",
+                    multiplier=None,
+                    form_factor="横白卡",
+                    price=5.18,
+                    quote_status="active",
+                    restriction_text="",
+                )
+            ],
+        )
+
+        with patch.dict(
+            os.environ,
+            {"BOOKKEEPING_QUOTE_WALL_MODE": "experimental_active_wall"},
+            clear=False,
+        ), patch(
+            "bookkeeping_core.quotes.should_attempt_template_quote_capture",
+            return_value=True,
+        ), patch(
+            "bookkeeping_core.quotes._parse_quote_message_to_candidate_details",
+            return_value=(candidate, [], []),
+        ):
+            status, payload = self._request(
+                "POST",
+                "/api/core/messages",
+                {
+                    "platform": "wechat",
+                    "message_id": "msg-web-experimental-1",
+                    "chat_id": "g-web-experimental",
+                    "chat_name": "实验报价群",
+                    "is_group": True,
+                    "sender_id": "u-web-experimental",
+                    "sender_name": "报价员",
+                    "content_type": "text",
+                    "text": "[Apple]\\n100=5.18",
+                    "received_at": "2026-04-15 13:10:00",
+                },
+                headers={"Authorization": "Bearer core-secret"},
+            )
+            self.assertEqual(status, 200)
+            self.assertEqual(payload["actions"], [])
+
+            status, board = self._request(
+                "GET",
+                "/api/quotes/board",
+                query_string="source_group_key=wechat:g-web-experimental",
+            )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(
+            board["experimental_wall"]["mode"],
+            "experimental_active_wall",
+        )
+        self.assertTrue(board["experimental_wall"]["real_wall_updates_enabled"])
+        self.assertFalse(board["experimental_wall"]["downstream_actions_enabled"])
+        self.assertIn("experimental_wall_overview", board)
+        self.assertIn("experimental_wall_gate", board)
+        self.assertIn("metrics", board["experimental_wall_overview"])
+        self.assertIn("watchlist", board["experimental_wall_overview"])
+        self.assertIn("criteria", board["experimental_wall_gate"])
+        self.assertGreaterEqual(len(board["rows"]), 1)
 
     def test_quote_dictionary_page_and_api_require_admin_password_for_writes(self) -> None:
         status, body = self._request_text("GET", "/quote-dictionary")

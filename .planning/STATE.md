@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: ready_to_execute
-stopped_at: Phase 08 ready to execute
-last_updated: "2026-04-15T15:45:00+07:00"
-last_activity: 2026-04-15 -- Phase 08 planned and ready to execute
+status: milestone_complete
+stopped_at: Phase 08 completed
+last_updated: "2026-04-15T06:23:23+07:00"
+last_activity: 2026-04-15 -- Phase 08 executed and verified
 progress:
   total_phases: 9
-  completed_phases: 8
-  total_plans: 24
-  completed_plans: 24
-  percent: 89
+  completed_phases: 9
+  total_plans: 27
+  completed_plans: 27
+  percent: 100
 ---
 
 # Project State
@@ -21,22 +21,22 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-13)
 
 **Core value:** 把供应商群原始消息转成“可追溯、可验证、不可误发布”的报价事实，宁可不上墙，也绝不把错价、错面额、错国家/币种上墙。
-**Current focus:** Phase 08 — experimental-active-wall-gate
+**Current focus:** Milestone complete — experimental active wall verified
 
 ## Current Position
 
-Phase: 08 (experimental-active-wall-gate) — READY FOR PLANNING
-Plan: 0 of 3
-Status: Phase 08 ready to execute
-Last activity: 2026-04-15 -- Phase 08 planned and ready to execute
+Phase: 08 (experimental-active-wall-gate) — COMPLETED
+Plan: 3 of 3
+Status: Phase 08 executed and verified
+Last activity: 2026-04-15 -- Phase 08 executed and verified
 
-Progress: [█████████░] 89% of milestone phases completed
+Progress: [██████████] 100% of milestone phases completed
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 24
+- Total plans completed: 27
 - Average duration: -
 - Total execution time: 45 min
 
@@ -54,7 +54,7 @@ Progress: [█████████░] 89% of milestone phases completed
 
 **Recent Trend:**
 
-- Last 5 plans: Phase 08 planned; the next gate is experimental active wall execution
+- Last 5 plans: Phase 08 completed; the milestone core validation chain is now closed
 - Trend: Stable
 
 | Phase 02-validation-engine P01 | 14min | 2 tasks | 4 files |
@@ -75,6 +75,9 @@ Progress: [█████████░] 89% of milestone phases completed
 | Phase 07 P01 | - | 1 workstream | message-level evidence payload + read-only API |
 | Phase 07 P02 | - | 2 tasks | operator verification workbench + proof-only wording |
 | Phase 07 P03 | - | 2 tasks | failure dictionary / repair lexicon + workbench lookup |
+| Phase 08 P01 | - | 2 tasks | experimental wall execution switch + downstream-off boundary |
+| Phase 08 P02 | - | 2 tasks | `/quotes` observation cockpit + high-risk watchlist |
+| Phase 08 P03 | - | 2 tasks | promotion boundary + operator-visible downstream-off gate |
 
 ## Accumulated Context
 
@@ -118,6 +121,7 @@ Recent decisions affecting current work:
 - Phase 04 completed: snapshot decisions are durable, unresolved defaults are delta-safe, only confirmed full snapshots may inactivate unseen SKUs, and operator confirmation remains proof-only
 - Phase 07 scope expanded: operator verification now also needs a searchable failure dictionary / repair lexicon so future agents do not depend on this long-session context
 - Phase 07 completed: the quotes page now exposes a read-only verification workbench and a searchable failure dictionary tied to live repair cases, fixtures, and test refs
+- Phase 08 completed: the system now updates an operator-owned experimental active wall through guarded publisher custody while `/quotes` exposes wall-health metrics, high-risk group watchlists, and a visible promotion boundary
 
 ### Pending Todos
 
@@ -132,5 +136,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-04-15T15:10:00+07:00
-Stopped at: Phase 08 ready to execute
+Stopped at: Phase 08 completed
 Resume file: None

@@ -4,6 +4,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime
 import hashlib
 import json
+import os
 import re
 from typing import Any
 
@@ -22,6 +23,17 @@ PARSER_VERSION = "quote-v1"
 AUTO_PUBLISH_CONFIDENCE = 0.8
 DEFAULT_STALE_AFTER_MINUTES = 120
 APPLE_STALE_AFTER_MINUTES = 30
+
+QUOTE_WALL_RUNTIME_MODE_ENV = "BOOKKEEPING_QUOTE_WALL_MODE"
+QUOTE_WALL_MODE_VALIDATION_ONLY = "validation_only"
+QUOTE_WALL_MODE_EXPERIMENTAL_ACTIVE = "experimental_active_wall"
+_EXPERIMENTAL_WALL_MODE_ALIASES = {
+    QUOTE_WALL_MODE_EXPERIMENTAL_ACTIVE,
+    "experimental",
+    "experimental_active",
+    "experimental_wall",
+    "live_experimental_wall",
+}
 
 _SECTION_HEADER_RE = re.compile(r"[【\[](?P<label>.+?)[】\]]")
 _PRICE_TOKEN_RE = re.compile(r"(￥|¥|RMB|人民币)\s*(?P<price>\d+(?:\.\d+)?)", re.IGNORECASE)
@@ -87,6 +99,41 @@ def _build_snapshot_hypothesis(
         hypothesis.reason,
         dict(hypothesis.evidence),
     )
+
+
+def get_quote_wall_runtime_mode(config_value: str | None = None) -> str:
+    raw_mode = (
+        config_value
+        if config_value is not None
+        else os.environ.get(
+            QUOTE_WALL_RUNTIME_MODE_ENV,
+            QUOTE_WALL_MODE_VALIDATION_ONLY,
+        )
+    )
+    normalized = str(raw_mode or "").strip().lower()
+    if normalized in _EXPERIMENTAL_WALL_MODE_ALIASES:
+        return QUOTE_WALL_MODE_EXPERIMENTAL_ACTIVE
+    return QUOTE_WALL_MODE_VALIDATION_ONLY
+
+
+def describe_quote_wall_runtime_mode(config_value: str | None = None) -> dict[str, Any]:
+    mode = get_quote_wall_runtime_mode(config_value)
+    real_wall_updates_enabled = mode == QUOTE_WALL_MODE_EXPERIMENTAL_ACTIVE
+    return {
+        "mode": mode,
+        "real_wall_updates_enabled": real_wall_updates_enabled,
+        "downstream_actions_enabled": False,
+        "status_label": (
+            "单人运营实验墙"
+            if real_wall_updates_enabled
+            else "验证证据模式"
+        ),
+        "summary_text": (
+            "当前报价墙会通过 guarded publisher 真实更新，但仍处于实验运行，且下游动作保持关闭。"
+            if real_wall_updates_enabled
+            else "当前只保留验证证据，不会通过 guarded publisher 真实更新报价墙。"
+        ),
+    }
 
 
 @dataclass(frozen=True, slots=True)
@@ -1184,8 +1231,9 @@ def _build_inquiry_reply_candidate(
 
 
 class QuoteCaptureService:
-    def __init__(self, db) -> None:
+    def __init__(self, db, *, wall_runtime_mode: str | None = None) -> None:
         self.db = db
+        self.wall_runtime_mode = get_quote_wall_runtime_mode(wall_runtime_mode)
         from .quote_publisher import QuoteFactPublisher
 
         self.publisher = QuoteFactPublisher(db)
@@ -1516,6 +1564,10 @@ class QuoteCaptureService:
             quote_document_id=document_id
         ) or {}
         proposed_publish_mode = get_guarded_publish_mode(snapshot_decision)
+        runtime_wall = describe_quote_wall_runtime_mode(self.wall_runtime_mode)
+        runtime_publish_mode = self.publisher.VALIDATION_ONLY_MODE
+        if runtime_wall["real_wall_updates_enabled"]:
+            runtime_publish_mode = proposed_publish_mode
         publish_result = self.publisher.publish_quote_document(
             quote_document_id=document_id,
             validation_run_id=validation_run_id,
@@ -1530,7 +1582,7 @@ class QuoteCaptureService:
             message_time=candidate.message_time,
             parser_template=candidate.parser_template,
             parser_version=candidate.parser_version,
-            publish_mode=self.publisher.VALIDATION_ONLY_MODE,
+            publish_mode=runtime_publish_mode,
         )
         return {
             "status": publish_result.status,
@@ -1542,6 +1594,7 @@ class QuoteCaptureService:
             "attempted_row_count": publish_result.attempted_row_count,
             "applied_row_count": publish_result.applied_row_count,
             "reason": publish_result.reason,
+            "experimental_wall": runtime_wall,
             "snapshot_hypothesis": str(
                 snapshot_decision.get("system_hypothesis")
                 or candidate.snapshot_hypothesis

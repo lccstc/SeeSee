@@ -694,6 +694,92 @@ _STYLE = """
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 12px;
   }
+  .quote-experimental-banner {
+    display: grid;
+    gap: 8px;
+    padding: 16px 18px;
+    border-radius: 22px;
+    margin-bottom: 18px;
+    background: linear-gradient(145deg, rgba(31, 92, 79, 0.14), rgba(10, 15, 20, 0.92));
+    border: 1px solid rgba(50, 196, 141, 0.2);
+    box-shadow: var(--shadow-soft);
+  }
+  .quote-experimental-banner strong {
+    font-size: 18px;
+  }
+  .quote-ops-metrics {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    margin-bottom: 18px;
+  }
+  .quote-watchlist {
+    display: grid;
+    gap: 12px;
+    margin-bottom: 18px;
+  }
+  .quote-watchlist-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    gap: 12px;
+  }
+  .quote-watch-card {
+    padding: 16px;
+    border-radius: 20px;
+    background: rgba(10, 15, 20, 0.92);
+    border: 1px solid rgba(243, 165, 47, 0.1);
+    box-shadow: var(--shadow-soft);
+    display: grid;
+    gap: 8px;
+  }
+  .quote-watch-card .risk {
+    font-size: 13px;
+    color: var(--warn);
+    font-weight: 700;
+  }
+  .quote-watch-card .meta {
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 1.6;
+  }
+  .quote-watch-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .quote-promotion-panel {
+    display: grid;
+    gap: 10px;
+    padding: 16px 18px;
+    border-radius: 22px;
+    margin-bottom: 18px;
+    background: rgba(10, 15, 20, 0.92);
+    border: 1px solid rgba(95, 135, 255, 0.14);
+    box-shadow: var(--shadow-soft);
+  }
+  .quote-promotion-criteria {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 10px;
+  }
+  .quote-promotion-criterion {
+    padding: 12px 14px;
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    display: grid;
+    gap: 6px;
+  }
+  .quote-promotion-criterion .status {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .quote-promotion-criterion[data-status="pass"] .status {
+    color: var(--ok);
+  }
+  .quote-promotion-criterion[data-status="watch"] .status {
+    color: var(--warn);
+  }
   .quote-metric {
     padding: 18px;
     border-radius: 20px;
@@ -1834,6 +1920,61 @@ def render_quotes_page() -> str:
       <a class="quote-link" href="#quote-exceptions">转到风险池</a>
     </div>
   </div>
+  <div class="quote-experimental-banner">
+    <div class="label">Experimental Active Wall</div>
+    <strong id="quote-experimental-summary">实验墙状态加载中...</strong>
+    <div class="muted" id="quote-experimental-boundary">当前墙的运行边界加载中...</div>
+  </div>
+  <div class="quote-metrics quote-ops-metrics">
+    <article class="quote-metric">
+      <div class="label">今日上墙消息</div>
+      <div class="value" id="quote-wall-update-count">0</div>
+    </article>
+    <article class="quote-metric">
+      <div class="label">今日异常</div>
+      <div class="value" id="quote-exception-today-count">0</div>
+    </article>
+    <article class="quote-metric">
+      <div class="label">今日 Mixed</div>
+      <div class="value" id="quote-mixed-outcome-count">0</div>
+    </article>
+    <article class="quote-metric">
+      <div class="label">修补成功</div>
+      <div class="value" id="quote-remediation-success-count">0</div>
+    </article>
+    <article class="quote-metric">
+      <div class="label">修补升级</div>
+      <div class="value" id="quote-remediation-escalation-count">0</div>
+    </article>
+    <article class="quote-metric">
+      <div class="label">整版风险</div>
+      <div class="value" id="quote-risky-snapshot-count">0</div>
+    </article>
+  </div>
+  <section class="quote-watchlist">
+    <div class="panel-heading" style="padding:0;">
+      <div>
+        <div class="section-kicker">Current Watchlist</div>
+        <h3 style="margin:0;">高风险群 / 今日盯盘</h3>
+        <div class="muted">先看哪几个群最吵、最危险、最值得优先修。</div>
+      </div>
+    </div>
+    <div id="quote-watchlist-grid" class="quote-watchlist-grid">
+      <div class="muted">观察台加载中...</div>
+    </div>
+  </section>
+  <section class="quote-promotion-panel" id="quote-promotion-gate">
+    <div class="panel-heading" style="padding:0;">
+      <div>
+        <div class="section-kicker">Promotion Boundary</div>
+        <h3 style="margin:0;">升格边界</h3>
+        <div class="muted" id="quote-promotion-summary">实验墙升格边界加载中...</div>
+      </div>
+    </div>
+    <div id="quote-promotion-criteria" class="quote-promotion-criteria">
+      <div class="muted">升格条件加载中...</div>
+    </div>
+  </section>
   <div class="quote-hero-grid">
     <div class="quote-command">
       <p>主屏只做一件事：先看当前最高价，再判断是继续收、切换来源群，还是进入模板治理和异常处理。价格、变动、来源、时效必须一眼扫出来。</p>
@@ -2499,6 +2640,77 @@ let quoteExceptionState = {
 function currentQuoteFilters() {
   const form = document.querySelector('#quote-filter-form');
   return Object.fromEntries(new FormData(form).entries());
+}
+
+function renderQuoteExperimentalOverview(payload) {
+  const experimental = payload?.experimental_wall || {};
+  const overview = payload?.experimental_wall_overview || {};
+  const gate = payload?.experimental_wall_gate || {};
+  const metrics = overview.metrics || {};
+  const bannerSummary = document.querySelector('#quote-experimental-summary');
+  const bannerBoundary = document.querySelector('#quote-experimental-boundary');
+  const watchlist = Array.isArray(overview.watchlist) ? overview.watchlist : [];
+  const criteria = Array.isArray(gate.criteria) ? gate.criteria : [];
+
+  bannerSummary.textContent = textValue(
+    experimental.summary_text || (payload?._load_error ? `实验墙观察台加载失败：${payload._load_error}` : ''),
+    '实验墙状态暂不可用',
+  );
+  bannerBoundary.textContent = textValue(
+    overview.promotion_hint || (experimental.real_wall_updates_enabled
+      ? '当前是真实更新实验墙，下游动作继续关闭。'
+      : '当前仍是验证证据模式，报价墙不会真实更新。'),
+    '当前墙的运行边界暂不可用',
+  );
+
+  document.querySelector('#quote-wall-update-count').textContent = String(metrics.wall_update_count || 0);
+  document.querySelector('#quote-exception-today-count').textContent = String(metrics.new_exception_count || 0);
+  document.querySelector('#quote-mixed-outcome-count').textContent = String(metrics.mixed_outcome_count || 0);
+  document.querySelector('#quote-remediation-success-count').textContent = String(metrics.remediation_success_count || 0);
+  document.querySelector('#quote-remediation-escalation-count').textContent = String(metrics.remediation_escalation_count || 0);
+  document.querySelector('#quote-risky-snapshot-count').textContent = String(metrics.risky_snapshot_count || 0);
+
+  const promotionSummaryNode = document.querySelector('#quote-promotion-summary');
+  const promotionCriteriaNode = document.querySelector('#quote-promotion-criteria');
+  promotionSummaryNode.textContent = textValue(
+    gate.summary_text || '当前仍是实验墙：真实更新开启，但下游动作继续关闭。',
+    '当前仍是实验墙：真实更新开启，但下游动作继续关闭。',
+  );
+  if (!criteria.length) {
+    promotionCriteriaNode.innerHTML = '<div class="muted">升格条件暂不可用；在此之前，这面墙仍不视为正式生产权威。</div>';
+  } else {
+    promotionCriteriaNode.innerHTML = criteria.map((item) => `
+      <article class="quote-promotion-criterion" data-status="${escapeHtml(textValue(item.status, 'watch'))}">
+        <div class="status">${escapeHtml(textValue(item.status === 'pass' ? '通过' : '观察中', '观察中'))}</div>
+        <strong>${escapeHtml(textValue(item.label))}</strong>
+        <div class="muted">${escapeHtml(textValue(item.detail))}</div>
+      </article>
+    `).join('');
+  }
+
+  const watchlistNode = document.querySelector('#quote-watchlist-grid');
+  if (!watchlist.length) {
+    watchlistNode.innerHTML = `<div class="muted">${payload?._load_error ? `观察台加载失败：${escapeHtml(payload._load_error)}` : '今天还没有需要优先盯的高风险群。'}</div>`;
+    return;
+  }
+  watchlistNode.innerHTML = watchlist.map((item) => `
+    <article class="quote-watch-card">
+      <div class="risk">风险分 ${textValue(item.risk_score, '0')}</div>
+      <strong>${textValue(item.chat_name || item.source_group_key)}</strong>
+      <div class="meta">
+        新异常 ${textValue(item.new_exception_count, '0')} ｜ Mixed ${textValue(item.mixed_outcome_count, '0')} ｜ 升级 ${textValue(item.escalation_count, '0')}
+      </div>
+      <div class="meta">
+        今日上墙 ${textValue(item.wall_update_count, '0')} ｜ 修补成功 ${textValue(item.remediation_success_count, '0')} ｜ 整版风险 ${textValue(item.risky_snapshot_count, '0')}
+      </div>
+      <div class="muted">${textValue(item.focus_text)}</div>
+      <div class="meta">群 Key：${textValue(item.source_group_key)}</div>
+      <div class="quote-watch-actions">
+        <a class="quote-link" href="#quote-exceptions">看风险池</a>
+        <a class="quote-link" href="#quote-failure-dictionary-panel">查修复词典</a>
+      </div>
+    </article>
+  `).join('');
 }
 
 function renderQuoteBoard(rows, loadError = '') {
@@ -4573,6 +4785,7 @@ async function loadQuotesData() {
   }
   allQuoteRows = Array.isArray(boardPayload.rows) ? boardPayload.rows : [];
   allQuoteExceptions = Array.isArray(exceptionPayload.rows) ? exceptionPayload.rows : [];
+  renderQuoteExperimentalOverview(boardPayload);
   renderQuoteBoard(allQuoteRows, boardPayload._load_error || '');
   renderQuoteExceptions(exceptionPayload);
   renderQuoteProfiles(Array.isArray(profilePayload.rows) ? profilePayload.rows : [], profilePayload._load_error || '');

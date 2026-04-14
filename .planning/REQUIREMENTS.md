@@ -59,7 +59,7 @@
 
 ### Governance
 
-- [ ] **GOV-01**: User can run the pipeline as an operator-owned experimental active wall that updates the wall through system custody, while still preventing automatic downstream actions or default production takeover
+- [x] **GOV-01**: User can run the pipeline as an operator-owned experimental active wall that updates the wall through system custody, while still preventing automatic downstream actions or default production takeover
 
 ## v2 Requirements
 
@@ -113,7 +113,7 @@
 | SNAP-03 | Phase 4 | Complete |
 | OPS-01 | Phase 7 | Complete |
 | OPS-02 | Phase 4 | Complete |
-| GOV-01 | Phase 8 | Pending |
+| GOV-01 | Phase 8 | Completed |
 
 **Coverage:**
 - v1 requirements: 26 total
@@ -122,4 +122,4 @@
 
 ---
 *Requirements defined: 2026-04-13*
-*Last updated: 2026-04-15 after Phase 07 operator verification and failure dictionary verification*
+*Last updated: 2026-04-15 after Phase 08 experimental active wall verification*

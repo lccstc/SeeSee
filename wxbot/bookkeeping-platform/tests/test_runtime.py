@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import json
+import os
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -1958,6 +1959,214 @@ class UnifiedRuntimeTests(PostgresTestCase):
             ("msg-runtime-snapshot-1",),
         )
         self.assertEqual(quote_price_row_count, 0)
+
+    def test_runtime_quote_capture_applies_publishable_rows_in_experimental_wall_mode(
+        self,
+    ) -> None:
+        from bookkeeping_core.quote_candidates import QuoteCandidateMessage, QuoteCandidateRow
+
+        self.db.set_group(
+            platform="wechat",
+            group_key="wechat:room-runtime-experimental",
+            chat_id="room-runtime-experimental",
+            chat_name="报价群-experimental",
+            group_num=5,
+        )
+        self.db.upsert_quote_group_profile(
+            platform="wechat",
+            chat_id="room-runtime-experimental",
+            chat_name="报价群-experimental",
+            default_card_type="Apple",
+            default_country_or_currency="USD",
+            default_form_factor="横白卡",
+            parser_template="group-parser",
+            template_config=json.dumps(
+                {"version": "group-parser-v1", "defaults": {}, "sections": []},
+                ensure_ascii=False,
+            ),
+        )
+
+        candidate = QuoteCandidateMessage(
+            platform="wechat",
+            source_group_key="wechat:room-runtime-experimental",
+            chat_id="room-runtime-experimental",
+            chat_name="报价群-experimental",
+            message_id="msg-runtime-experimental-1",
+            source_name="报价员",
+            sender_id="seller-runtime-experimental",
+            sender_display="报价员",
+            raw_message="US=5.21",
+            message_time="2026-04-15 12:10:00",
+            parser_kind="group-parser",
+            parser_template="group-parser",
+            parser_version="group-parser-v1",
+            confidence=0.99,
+            parse_status="parsed",
+            message_fingerprint="runtime-experimental-fingerprint",
+            snapshot_hypothesis="unresolved",
+            snapshot_hypothesis_reason="phase08-default",
+            rows=[
+                QuoteCandidateRow(
+                    row_ordinal=1,
+                    source_line="US=5.21",
+                    source_line_index=0,
+                    line_confidence=0.98,
+                    normalized_sku_key="Apple|USD|100|横白卡",
+                    normalization_status="normalized",
+                    row_publishable=False,
+                    publishability_basis="parser_prevalidation",
+                    restriction_parse_status="parsed",
+                    card_type="Apple",
+                    country_or_currency="USD",
+                    amount_range="100",
+                    multiplier=None,
+                    form_factor="横白卡",
+                    price=5.21,
+                    quote_status="active",
+                    restriction_text="",
+                )
+            ],
+        )
+
+        with patch.dict(
+            os.environ,
+            {"BOOKKEEPING_QUOTE_WALL_MODE": "experimental_active_wall"},
+            clear=False,
+        ), patch(
+            "bookkeeping_core.quotes.should_attempt_template_quote_capture",
+            return_value=True,
+        ), patch(
+            "bookkeeping_core.quotes._parse_quote_message_to_candidate_details",
+            return_value=(candidate, [], []),
+        ):
+            runtime = UnifiedBookkeepingRuntime(
+                db=self.db,
+                master_users=["master-user"],
+                export_dir=self.export_dir,
+            )
+            result = runtime.quote_capture.capture_from_message(
+                self._message(
+                    platform="wechat",
+                    message_id="msg-runtime-experimental-1",
+                    chat_id="room-runtime-experimental",
+                    chat_name="报价群-experimental",
+                    text="US=5.21",
+                )
+            )
+
+        self.assertEqual(result["publish_result"]["status"], "applied")
+        self.assertEqual(
+            result["publish_result"]["publish_mode"],
+            "delta_safe_upsert_only",
+        )
+        self.assertEqual(result["publish_result"]["applied_row_count"], 1)
+        self.assertTrue(
+            result["publish_result"]["experimental_wall"]["real_wall_updates_enabled"]
+        )
+
+        quote_price_row_count = self._count_rows(
+            "quote_price_rows",
+            "WHERE message_id = ?",
+            ("msg-runtime-experimental-1",),
+        )
+        self.assertEqual(quote_price_row_count, 1)
+
+    def test_runtime_quote_messages_still_emit_no_downstream_actions_in_experimental_wall_mode(
+        self,
+    ) -> None:
+        from bookkeeping_core.quote_candidates import QuoteCandidateMessage, QuoteCandidateRow
+
+        self.db.set_group(
+            platform="wechat",
+            group_key="wechat:room-runtime-experimental-actions",
+            chat_id="room-runtime-experimental-actions",
+            chat_name="报价群-experimental-actions",
+            group_num=5,
+        )
+        self.db.upsert_quote_group_profile(
+            platform="wechat",
+            chat_id="room-runtime-experimental-actions",
+            chat_name="报价群-experimental-actions",
+            default_card_type="Apple",
+            default_country_or_currency="USD",
+            default_form_factor="横白卡",
+            parser_template="group-parser",
+            template_config=json.dumps(
+                {"version": "group-parser-v1", "defaults": {}, "sections": []},
+                ensure_ascii=False,
+            ),
+        )
+
+        candidate = QuoteCandidateMessage(
+            platform="wechat",
+            source_group_key="wechat:room-runtime-experimental-actions",
+            chat_id="room-runtime-experimental-actions",
+            chat_name="报价群-experimental-actions",
+            message_id="msg-runtime-experimental-actions-1",
+            source_name="报价员",
+            sender_id="seller-runtime-experimental-actions",
+            sender_display="报价员",
+            raw_message="US=5.31",
+            message_time="2026-04-15 12:12:00",
+            parser_kind="group-parser",
+            parser_template="group-parser",
+            parser_version="group-parser-v1",
+            confidence=0.99,
+            parse_status="parsed",
+            message_fingerprint="runtime-experimental-actions-fingerprint",
+            snapshot_hypothesis="unresolved",
+            snapshot_hypothesis_reason="phase08-default",
+            rows=[
+                QuoteCandidateRow(
+                    row_ordinal=1,
+                    source_line="US=5.31",
+                    source_line_index=0,
+                    line_confidence=0.98,
+                    normalized_sku_key="Apple|USD|100|横白卡",
+                    normalization_status="normalized",
+                    row_publishable=False,
+                    publishability_basis="parser_prevalidation",
+                    restriction_parse_status="parsed",
+                    card_type="Apple",
+                    country_or_currency="USD",
+                    amount_range="100",
+                    multiplier=None,
+                    form_factor="横白卡",
+                    price=5.31,
+                    quote_status="active",
+                    restriction_text="",
+                )
+            ],
+        )
+
+        with patch.dict(
+            os.environ,
+            {"BOOKKEEPING_QUOTE_WALL_MODE": "experimental_active_wall"},
+            clear=False,
+        ), patch(
+            "bookkeeping_core.quotes.should_attempt_template_quote_capture",
+            return_value=True,
+        ), patch(
+            "bookkeeping_core.quotes._parse_quote_message_to_candidate_details",
+            return_value=(candidate, [], []),
+        ):
+            runtime = UnifiedBookkeepingRuntime(
+                db=self.db,
+                master_users=["master-user"],
+                export_dir=self.export_dir,
+            )
+            actions = runtime.process_envelope(
+                self._message(
+                    platform="wechat",
+                    message_id="msg-runtime-experimental-actions-1",
+                    chat_id="room-runtime-experimental-actions",
+                    chat_name="报价群-experimental-actions",
+                    text="US=5.31",
+                )
+            )
+
+        self.assertEqual(actions, [])
+        self.assertEqual(runtime.drain_outbound_actions(), [])
 
     def test_runtime_quote_capture_records_missing_template_candidate_header(self) -> None:
         self.db.set_group(

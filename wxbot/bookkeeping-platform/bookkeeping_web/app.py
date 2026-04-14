@@ -21,6 +21,7 @@ from bookkeeping_core.quote_snapshot import (
     snapshot_decision_label,
 )
 from bookkeeping_core.quotes import (
+    describe_quote_wall_runtime_mode,
     list_builtin_quote_dictionary_aliases,
     normalize_quote_card_type,
     normalize_quote_country_or_currency,
@@ -43,6 +44,10 @@ from bookkeeping_web.pages import (
 logger = logging.getLogger(__name__)
 
 _SUPERMARKET_CARD_PARSER_TEMPLATE = "supermarket-card"
+
+
+def _quote_wall_runtime_payload() -> dict[str, object]:
+    return describe_quote_wall_runtime_mode()
 
 
 def _coerce_replay_candidate_identity(
@@ -366,6 +371,7 @@ def _handle_quotes_board(db: BookkeepingDB, start_response, environ):
     params = _read_query_params(environ)
     payload = _call_optional_db_method(db, "list_quote_board", default={"rows": []})
     normalized = _normalize_quote_payload(payload)
+    normalized["experimental_wall"] = _quote_wall_runtime_payload()
     # 只展示客人组（组号 5/6/7/8）的报价
     rows = normalized.get("rows", [])
     customer_keys = set()
@@ -379,6 +385,23 @@ def _handle_quotes_board(db: BookkeepingDB, start_response, environ):
         rows = [r for r in rows if r.get("source_group_key") in customer_keys]
         normalized["rows"] = rows
         normalized["total"] = len(rows)
+    normalized["experimental_wall_overview"] = _call_optional_db_method(
+        db,
+        "get_quote_experimental_wall_overview",
+        default={"metrics": {}, "watchlist": [], "promotion_hint": ""},
+        source_group_keys=sorted(customer_keys) if customer_keys else None,
+    )
+    normalized["experimental_wall_gate"] = _call_optional_db_method(
+        db,
+        "get_quote_experimental_wall_promotion_gate",
+        default={
+            "promotion_ready": False,
+            "downstream_actions_enabled": False,
+            "summary_text": "",
+            "criteria": [],
+        },
+        source_group_keys=sorted(customer_keys) if customer_keys else None,
+    )
     if params:
         normalized["filters"] = {key: value for key, value in params.items() if value}
     return _respond_json(start_response, 200, normalized)
@@ -689,6 +712,7 @@ def _handle_quotes_exceptions(db: BookkeepingDB, start_response, environ):
     normalized.setdefault("handled_total", 0)
     normalized.setdefault("has_prev", offset > 0)
     normalized.setdefault("has_next", offset + len(normalized.get("rows") or []) < int(normalized.get("total") or 0))
+    normalized["experimental_wall"] = _quote_wall_runtime_payload()
     _annotate_quote_exception_repair_status_text(db=db, rows=normalized.get("rows") or [])
     return _respond_json(start_response, 200, normalized)
 
@@ -753,6 +777,7 @@ def _handle_quotes_evidence(db: BookkeepingDB, start_response, environ):
     )
     if payload is None:
         return _respond_json(start_response, 404, {"error": "quote document evidence not found"})
+    payload["experimental_wall"] = _quote_wall_runtime_payload()
     if payload.get("repair_case") and payload.get("repair_summary"):
         payload["repair_case"]["status_text"] = build_quote_repair_status_text(
             lifecycle_state=str(payload["repair_case"].get("lifecycle_state") or ""),

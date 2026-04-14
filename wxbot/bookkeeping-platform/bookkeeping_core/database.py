@@ -3915,6 +3915,295 @@ class _BookkeepingStoreBase:
             ),
         )
 
+    @staticmethod
+    def _quote_watchlist_focus(item: dict[str, Any]) -> str:
+        if int(item.get("escalation_count") or 0) > 0:
+            return "先看 repair 升级，自动修补已经顶到上限。"
+        if int(item.get("risky_snapshot_count") or 0) > 0:
+            return "先看整版快照授权，确认这类群没有误清旧 active。"
+        if int(item.get("mixed_outcome_count") or 0) > 0:
+            return "先看 mixed outcome，系统只吃下了一部分。"
+        if int(item.get("new_exception_count") or 0) > 0:
+            return "先看新异常，群级 profile 还在漏格式。"
+        return "当前更多是观察墙更新稳定性。"
+
+    def get_quote_experimental_wall_overview(
+        self,
+        *,
+        source_group_keys: list[str] | None = None,
+        watchlist_limit: int = 5,
+    ) -> dict[str, Any]:
+        allowed_keys = {
+            str(item).strip()
+            for item in (source_group_keys or [])
+            if str(item).strip()
+        }
+
+        def _allow(group_key: str) -> bool:
+            if not allowed_keys:
+                return True
+            return str(group_key or "").strip() in allowed_keys
+
+        def _ensure_item(group_key: str, chat_name: str) -> dict[str, Any]:
+            normalized_key = str(group_key or "").strip() or "unknown"
+            item = watch_map.setdefault(
+                normalized_key,
+                {
+                    "source_group_key": normalized_key,
+                    "chat_name": str(chat_name or normalized_key),
+                    "wall_update_count": 0,
+                    "wall_update_row_count": 0,
+                    "new_exception_count": 0,
+                    "mixed_outcome_count": 0,
+                    "remediation_success_count": 0,
+                    "escalation_count": 0,
+                    "risky_snapshot_count": 0,
+                },
+            )
+            incoming_name = str(chat_name or "").strip()
+            if incoming_name and str(item.get("chat_name") or "") == normalized_key:
+                item["chat_name"] = incoming_name
+            return item
+
+        watch_map: dict[str, dict[str, Any]] = {}
+
+        grouped_queries = (
+            (
+                """
+                SELECT
+                  qpr.source_group_key,
+                  COALESCE(NULLIF(MAX(qpr.chat_name), ''), MAX(g.chat_name), qpr.source_group_key) AS chat_name,
+                  COUNT(DISTINCT qpr.quote_document_id) AS wall_update_count,
+                  COUNT(*) AS wall_update_row_count
+                FROM quote_price_rows AS qpr
+                LEFT JOIN groups AS g
+                  ON g.group_key = qpr.source_group_key
+                 AND g.platform = qpr.platform
+                WHERE qpr.created_at::date = CURRENT_DATE
+                GROUP BY qpr.source_group_key
+                """,
+                ("wall_update_count", "wall_update_row_count"),
+            ),
+            (
+                """
+                SELECT
+                  qpe.source_group_key,
+                  COALESCE(NULLIF(MAX(qpe.chat_name), ''), MAX(g.chat_name), qpe.source_group_key) AS chat_name,
+                  COUNT(*) AS new_exception_count
+                FROM quote_parse_exceptions AS qpe
+                LEFT JOIN groups AS g
+                  ON g.group_key = qpe.source_group_key
+                 AND g.platform = qpe.platform
+                WHERE qpe.created_at::date = CURRENT_DATE
+                GROUP BY qpe.source_group_key
+                """,
+                ("new_exception_count",),
+            ),
+            (
+                """
+                SELECT
+                  qd.source_group_key,
+                  COALESCE(NULLIF(MAX(qd.chat_name), ''), MAX(g.chat_name), qd.source_group_key) AS chat_name,
+                  COUNT(*) AS mixed_outcome_count
+                FROM quote_validation_runs AS qvr
+                INNER JOIN quote_documents AS qd
+                  ON qd.id = qvr.quote_document_id
+                LEFT JOIN groups AS g
+                  ON g.group_key = qd.source_group_key
+                 AND g.platform = qd.platform
+                WHERE qvr.created_at::date = CURRENT_DATE
+                  AND qvr.message_decision = 'mixed_outcome'
+                GROUP BY qd.source_group_key
+                """,
+                ("mixed_outcome_count",),
+            ),
+            (
+                """
+                SELECT
+                  rc.source_group_key,
+                  COALESCE(NULLIF(MAX(rc.chat_name), ''), MAX(g.chat_name), rc.source_group_key) AS chat_name,
+                  COUNT(*) AS remediation_success_count
+                FROM quote_repair_case_attempts AS attempt
+                INNER JOIN quote_repair_cases AS rc
+                  ON rc.id = attempt.repair_case_id
+                LEFT JOIN groups AS g
+                  ON g.group_key = rc.source_group_key
+                WHERE attempt.created_at::date = CURRENT_DATE
+                  AND attempt.attempt_kind = 'remediation'
+                  AND attempt.outcome_state = 'completed'
+                  AND COALESCE((attempt.attempt_summary_json ->> 'absorption_decision'), '') = 'absorbed'
+                GROUP BY rc.source_group_key
+                """,
+                ("remediation_success_count",),
+            ),
+            (
+                """
+                SELECT
+                  rc.source_group_key,
+                  COALESCE(NULLIF(MAX(rc.chat_name), ''), MAX(g.chat_name), rc.source_group_key) AS chat_name,
+                  COUNT(*) AS escalation_count
+                FROM quote_repair_cases AS rc
+                LEFT JOIN groups AS g
+                  ON g.group_key = rc.source_group_key
+                WHERE rc.updated_at::date = CURRENT_DATE
+                  AND rc.lifecycle_state = 'escalated'
+                GROUP BY rc.source_group_key
+                """,
+                ("escalation_count",),
+            ),
+            (
+                """
+                SELECT
+                  qd.source_group_key,
+                  COALESCE(NULLIF(MAX(qd.chat_name), ''), MAX(g.chat_name), qd.source_group_key) AS chat_name,
+                  COUNT(*) AS risky_snapshot_count
+                FROM quote_snapshot_decisions AS qsd
+                INNER JOIN quote_documents AS qd
+                  ON qd.id = qsd.quote_document_id
+                LEFT JOIN groups AS g
+                  ON g.group_key = qd.source_group_key
+                 AND g.platform = qd.platform
+                WHERE qsd.confirmed_at::date = CURRENT_DATE
+                  AND qsd.resolved_decision = 'full_snapshot'
+                  AND qsd.decision_source = 'operator'
+                GROUP BY qd.source_group_key
+                """,
+                ("risky_snapshot_count",),
+            ),
+        )
+
+        for sql, metric_keys in grouped_queries:
+            for row in self.conn.execute(sql).fetchall():
+                group_key = str(row["source_group_key"] or "")
+                if not _allow(group_key):
+                    continue
+                item = _ensure_item(group_key, str(row["chat_name"] or ""))
+                for metric_key in metric_keys:
+                    item[metric_key] = int(row[metric_key] or 0)
+
+        watchlist_rows: list[dict[str, Any]] = []
+        for item in watch_map.values():
+            risk_score = (
+                int(item.get("new_exception_count") or 0) * 3
+                + int(item.get("mixed_outcome_count") or 0) * 2
+                + int(item.get("escalation_count") or 0) * 4
+                + int(item.get("risky_snapshot_count") or 0) * 3
+            )
+            item["risk_score"] = risk_score
+            item["focus_text"] = self._quote_watchlist_focus(item)
+            if (
+                risk_score > 0
+                or int(item.get("wall_update_count") or 0) > 0
+                or int(item.get("remediation_success_count") or 0) > 0
+            ):
+                watchlist_rows.append(item)
+
+        watchlist_rows.sort(
+            key=lambda item: (
+                -int(item.get("risk_score") or 0),
+                -int(item.get("new_exception_count") or 0),
+                -int(item.get("mixed_outcome_count") or 0),
+                -int(item.get("escalation_count") or 0),
+                -int(item.get("risky_snapshot_count") or 0),
+                -int(item.get("wall_update_count") or 0),
+                str(item.get("chat_name") or ""),
+            )
+        )
+
+        metrics = {
+            "wall_update_count": sum(
+                int(item.get("wall_update_count") or 0) for item in watch_map.values()
+            ),
+            "wall_update_row_count": sum(
+                int(item.get("wall_update_row_count") or 0)
+                for item in watch_map.values()
+            ),
+            "new_exception_count": sum(
+                int(item.get("new_exception_count") or 0) for item in watch_map.values()
+            ),
+            "mixed_outcome_count": sum(
+                int(item.get("mixed_outcome_count") or 0) for item in watch_map.values()
+            ),
+            "remediation_success_count": sum(
+                int(item.get("remediation_success_count") or 0)
+                for item in watch_map.values()
+            ),
+            "remediation_escalation_count": sum(
+                int(item.get("escalation_count") or 0) for item in watch_map.values()
+            ),
+            "risky_snapshot_count": sum(
+                int(item.get("risky_snapshot_count") or 0) for item in watch_map.values()
+            ),
+        }
+
+        return {
+            "metrics": metrics,
+            "watchlist": watchlist_rows[: max(1, int(watchlist_limit or 5))],
+            "promotion_hint": "当前墙是实验运行：真实更新开启，但下游动作仍关闭，未达升格门槛前不视为正式生产权威。",
+        }
+
+    def get_quote_experimental_wall_promotion_gate(
+        self,
+        *,
+        source_group_keys: list[str] | None = None,
+    ) -> dict[str, Any]:
+        overview = self.get_quote_experimental_wall_overview(
+            source_group_keys=source_group_keys,
+            watchlist_limit=5,
+        )
+        metrics = dict(overview.get("metrics") or {})
+        wall_update_count = int(metrics.get("wall_update_count") or 0)
+        new_exception_count = int(metrics.get("new_exception_count") or 0)
+        mixed_outcome_count = int(metrics.get("mixed_outcome_count") or 0)
+        remediation_escalation_count = int(
+            metrics.get("remediation_escalation_count") or 0
+        )
+        risky_snapshot_count = int(metrics.get("risky_snapshot_count") or 0)
+
+        criteria = [
+            {
+                "key": "wall_updates_observed",
+                "label": "实验墙已经持续产生真实上墙结果",
+                "status": "pass" if wall_update_count > 0 else "watch",
+                "detail": f"今日真实上墙消息 {wall_update_count} 条。",
+            },
+            {
+                "key": "exception_growth_controlled",
+                "label": "新增异常没有持续失控",
+                "status": "pass" if new_exception_count == 0 else "watch",
+                "detail": f"今日新增异常 {new_exception_count} 条。",
+            },
+            {
+                "key": "mixed_outcome_burden",
+                "label": "Mixed outcome 负担可控",
+                "status": "pass" if mixed_outcome_count == 0 else "watch",
+                "detail": f"今日 mixed outcome {mixed_outcome_count} 条。",
+            },
+            {
+                "key": "repair_escalation_burden",
+                "label": "自动修补升级压力可控",
+                "status": "pass" if remediation_escalation_count == 0 else "watch",
+                "detail": f"今日修补升级 {remediation_escalation_count} 条。",
+            },
+            {
+                "key": "snapshot_risk_burden",
+                "label": "整版快照风险仍受人工控制",
+                "status": "pass" if risky_snapshot_count == 0 else "watch",
+                "detail": f"今日人工确认整版 {risky_snapshot_count} 次。",
+            },
+        ]
+        promotion_ready = wall_update_count > 0 and all(
+            item["status"] == "pass" for item in criteria[1:]
+        )
+        return {
+            "promotion_ready": promotion_ready,
+            "downstream_actions_enabled": False,
+            "summary_text": (
+                "当前仍是实验墙：真实更新已开启，但下游动作继续关闭，只有观察指标长期稳定后才讨论升格。"
+            ),
+            "criteria": criteria,
+        }
+
     def _quote_row_with_change(self, row: DBRow) -> DBRow:
         result = dict(row)
         current_amount_key = self._quote_amount_board_key(str(result.get("amount_range") or "不限"))

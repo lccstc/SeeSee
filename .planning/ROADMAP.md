@@ -20,7 +20,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 3: Fact Protection Publisher** - Make one guarded publisher the only path that can mutate active quote facts
 - [x] **Phase 4: Snapshot / Delta Semantics** - Distinguish `full_snapshot` from `delta_update` and default safely
 - [x] **Phase 7: Operator Verification Workbench** - Expose message-level candidate, rejection, and publish decision evidence for debugging
-- [ ] **Phase 8: Experimental Active Wall Gate** - Let the system update a single-operator experimental wall under full custody, without granting automatic downstream or default production authority
+- [x] **Phase 8: Experimental Active Wall Gate** - Let the system update a single-operator experimental wall under full custody, without granting automatic downstream or default production authority
 
 ## Phase Details
 
@@ -154,12 +154,13 @@ Plans:
   1. The pipeline can update the experimental wall only through the guarded publisher and still preserve all validator / snapshot / evidence lineage
   2. The operator can see real wall mutations, untouched rows, exceptions, and repair evidence without granting any automatic downstream action
   3. The project has a clear go / no-go boundary before any future promotion from experimental wall to formal production authority
+  4. Promotion is gated by observed wall behavior: sustained real wall updates, controlled exception growth, low mixed-outcome burden, manageable repair escalations, and no evidence of mistaken destructive wall changes
 **Plans**: TBD
 
 Plans:
-- [ ] 08-01: Add experimental-wall execution switches and keep all quote mutations inside guarded publisher custody
-- [ ] 08-02: Expose operator-facing evidence for real wall updates, untouched rows, and exception carryover during experimental running
-- [ ] 08-03: Define promotion criteria from experimental wall to formal production authority, including downstream actions that must remain off
+- [x] 08-01: Add experimental-wall execution switches and keep all quote mutations inside guarded publisher custody
+- [x] 08-02: Expose operator-facing evidence for real wall updates, untouched rows, and exception carryover during experimental running
+- [x] 08-03: Define promotion criteria from experimental wall to formal production authority, including downstream actions that must remain off
 
 ## Progress
 
@@ -176,4 +177,4 @@ Phases execute in strategic order: 1 → 2 → 2.1 → 5 → 6 → 3 → 4 → 7
 | 3. Fact Protection Publisher | 3/3 | Completed | 2026-04-15 |
 | 4. Snapshot / Delta Semantics | 3/3 | Completed | 2026-04-15 |
 | 7. Operator Verification & Failure Dictionary | 3/3 | Completed | 2026-04-15 |
-| 8. Experimental Active Wall Gate | 0/3 | Ready to execute | - |
+| 8. Experimental Active Wall Gate | 3/3 | Completed | 2026-04-15 |

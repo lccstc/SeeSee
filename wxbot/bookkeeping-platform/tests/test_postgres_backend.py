@@ -1917,6 +1917,260 @@ class PostgresBackendTests(PostgresTestCase):
         finally:
             db.close()
 
+    def test_get_quote_experimental_wall_overview_aggregates_operational_metrics(
+        self,
+    ) -> None:
+        from bookkeeping_core.repair_cases import package_quote_repair_case
+
+        db = self.make_db("experimental-wall-overview")
+        try:
+            db.set_group(
+                platform="wechat",
+                group_key="wechat:exp-wall-room",
+                chat_id="exp-wall-room",
+                chat_name="实验墙观察群",
+                group_num=5,
+            )
+
+            publish_document_id, publish_validation_run_id = (
+                self._record_validation_backed_publish_fixture(
+                    db=db,
+                    message_id="exp-wall-publish",
+                    source_group_key="wechat:exp-wall-room",
+                    chat_id="exp-wall-room",
+                    chat_name="实验墙观察群",
+                    rows=[
+                        QuoteCandidateRow(
+                            row_ordinal=1,
+                            source_line="US 100 96.0",
+                            source_line_index=0,
+                            line_confidence=0.99,
+                            normalized_sku_key="Apple|USD|100||physical",
+                            normalization_status="normalized",
+                            row_publishable=True,
+                            publishability_basis="validator_pending",
+                            restriction_parse_status="clear",
+                            card_type="Apple",
+                            country_or_currency="USD",
+                            amount_range="100",
+                            multiplier=None,
+                            form_factor="physical",
+                            price=96.0,
+                            quote_status="active",
+                            restriction_text="",
+                        )
+                    ],
+                )
+            )
+            publisher = QuoteFactPublisher(db)
+            publish_result = publisher.publish_quote_document(
+                quote_document_id=publish_document_id,
+                validation_run_id=publish_validation_run_id,
+                source_group_key="wechat:exp-wall-room",
+                platform="wechat",
+                chat_id="exp-wall-room",
+                chat_name="实验墙观察群",
+                message_id="exp-wall-publish",
+                source_name="报价员",
+                sender_id="seller-exp-wall",
+                raw_text="[Apple]\nUS 100 96.0",
+                message_time="2026-04-15 14:00:00",
+                parser_template="group-parser-v1",
+                parser_version="candidate-v1",
+                publish_mode=publisher.DELTA_SAFE_UPSERT_ONLY_MODE,
+            )
+            self.assertEqual(publish_result.status, "applied")
+
+            mixed_candidate = QuoteCandidateMessage(
+                platform="wechat",
+                source_group_key="wechat:exp-wall-room",
+                chat_id="exp-wall-room",
+                chat_name="实验墙观察群",
+                message_id="exp-wall-mixed",
+                source_name="报价员",
+                sender_id="seller-exp-wall",
+                sender_display="报价员",
+                raw_message="[Apple]\nUS 100 96.0\nCA 100 ???",
+                message_time="2026-04-15 14:05:00",
+                parser_kind="group-parser",
+                parser_template="group-parser-v1",
+                parser_version="candidate-v1",
+                confidence=0.88,
+                parse_status="partial",
+                message_fingerprint="fp-exp-wall-mixed",
+                snapshot_hypothesis=SNAPSHOT_UNRESOLVED,
+                snapshot_hypothesis_reason="overview regression fixture",
+                rows=[
+                    QuoteCandidateRow(
+                        row_ordinal=1,
+                        source_line="US 100 96.0",
+                        source_line_index=0,
+                        line_confidence=0.99,
+                        normalized_sku_key="Apple|USD|100||physical",
+                        normalization_status="normalized",
+                        row_publishable=True,
+                        publishability_basis="validator_pending",
+                        restriction_parse_status="clear",
+                        card_type="Apple",
+                        country_or_currency="USD",
+                        amount_range="100",
+                        multiplier=None,
+                        form_factor="physical",
+                        price=96.0,
+                        quote_status="active",
+                        restriction_text="",
+                    ),
+                    QuoteCandidateRow(
+                        row_ordinal=2,
+                        source_line="CA 100 ???",
+                        source_line_index=1,
+                        line_confidence=0.31,
+                        normalized_sku_key="Apple|CAD|100||physical",
+                        normalization_status="partially_normalized",
+                        row_publishable=False,
+                        publishability_basis="validator_pending",
+                        restriction_parse_status="ambiguous",
+                        card_type="Apple",
+                        country_or_currency="CAD",
+                        amount_range="100",
+                        multiplier=None,
+                        form_factor="physical",
+                        price=0.0,
+                        quote_status="active",
+                        restriction_text="",
+                    ),
+                ],
+            )
+            mixed_document_id = db.record_quote_candidate_bundle(candidate=mixed_candidate)
+            mixed_rows = db.list_quote_candidate_rows(quote_document_id=mixed_document_id)
+            db.record_quote_validation_run(
+                validation_run=QuoteValidationRun(
+                    quote_document_id=mixed_document_id,
+                    validator_version=VALIDATOR_VERSION_V1,
+                    run_kind="runtime",
+                    message_decision="mixed_outcome",
+                    validation_status="completed",
+                    summary={
+                        "message_reasons": [
+                            build_validation_reason(
+                                "validator_mixed_outcome",
+                                detail="one row publishable and one row rejected",
+                            )
+                        ]
+                    },
+                    row_results=[
+                        QuoteValidationRowResult(
+                            quote_candidate_row_id=int(mixed_rows[0]["id"]),
+                            row_ordinal=1,
+                            schema_status="passed",
+                            business_status="passed",
+                            final_decision="publishable",
+                            decision_basis="schema_and_business_passed",
+                        ),
+                        QuoteValidationRowResult(
+                            quote_candidate_row_id=int(mixed_rows[1]["id"]),
+                            row_ordinal=2,
+                            schema_status="failed",
+                            business_status="rejected",
+                            final_decision="rejected",
+                            decision_basis="schema_missing_required_fields",
+                            rejection_reasons=[
+                                build_validation_reason(
+                                    "schema_price_invalid",
+                                    detail="price missing in source line",
+                                )
+                            ],
+                        ),
+                    ],
+                )
+            )
+
+            exception_id = db.record_quote_exception(
+                quote_document_id=mixed_document_id,
+                platform="wechat",
+                source_group_key="wechat:exp-wall-room",
+                chat_id="exp-wall-room",
+                chat_name="实验墙观察群",
+                source_name="报价员",
+                sender_id="seller-exp-wall",
+                reason="strict_match_failed",
+                source_line="CA 100 ???",
+                raw_text="[Apple]\nUS 100 96.0\nCA 100 ???",
+                message_time="2026-04-15 14:05:00",
+                parser_template="group-parser-v1",
+                parser_version="candidate-v1",
+                confidence=0.31,
+            )
+            repair_case = package_quote_repair_case(db=db, exception_id=exception_id)
+            db.conn.execute(
+                """
+                UPDATE quote_repair_cases
+                SET lifecycle_state = 'escalated',
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (int(repair_case["id"]),),
+            )
+            db.conn.commit()
+
+            self._record_validation_backed_publish_fixture(
+                db=db,
+                message_id="exp-wall-full-snapshot",
+                source_group_key="wechat:exp-wall-room",
+                chat_id="exp-wall-room",
+                chat_name="实验墙观察群",
+                snapshot_hypothesis=SNAPSHOT_FULL_SNAPSHOT,
+                resolved_snapshot_decision=SNAPSHOT_FULL_SNAPSHOT,
+                rows=[
+                    QuoteCandidateRow(
+                        row_ordinal=1,
+                        source_line="US 200 97.0",
+                        source_line_index=0,
+                        line_confidence=0.99,
+                        normalized_sku_key="Apple|USD|200||physical",
+                        normalization_status="normalized",
+                        row_publishable=True,
+                        publishability_basis="validator_pending",
+                        restriction_parse_status="clear",
+                        card_type="Apple",
+                        country_or_currency="USD",
+                        amount_range="200",
+                        multiplier=None,
+                        form_factor="physical",
+                        price=97.0,
+                        quote_status="active",
+                        restriction_text="",
+                    )
+                ],
+            )
+
+            overview = db.get_quote_experimental_wall_overview(
+                source_group_keys=["wechat:exp-wall-room"]
+            )
+            metrics = overview["metrics"]
+            self.assertEqual(metrics["wall_update_count"], 1)
+            self.assertEqual(metrics["wall_update_row_count"], 1)
+            self.assertEqual(metrics["new_exception_count"], 1)
+            self.assertEqual(metrics["mixed_outcome_count"], 1)
+            self.assertEqual(metrics["remediation_escalation_count"], 1)
+            self.assertEqual(metrics["risky_snapshot_count"], 1)
+            self.assertIn("remediation_success_count", metrics)
+            self.assertEqual(len(overview["watchlist"]), 1)
+            self.assertEqual(
+                overview["watchlist"][0]["source_group_key"], "wechat:exp-wall-room"
+            )
+            self.assertIn("repair 升级", overview["watchlist"][0]["focus_text"])
+
+            gate = db.get_quote_experimental_wall_promotion_gate(
+                source_group_keys=["wechat:exp-wall-room"]
+            )
+            self.assertFalse(gate["promotion_ready"])
+            self.assertFalse(gate["downstream_actions_enabled"])
+            self.assertEqual(len(gate["criteria"]), 5)
+            self.assertIn("实验墙", gate["summary_text"])
+        finally:
+            db.close()
+
 
 class RepairCaseTests(PostgresTestCase):
     def test_packaging_quote_exception_creates_one_repair_case_per_exception(self) -> None:
