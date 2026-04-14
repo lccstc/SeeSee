@@ -1344,7 +1344,16 @@ class QuoteCaptureService:
             confidence=confidence,
         )
         if exception_id:
-            package_quote_repair_case(db=self.db, exception_id=exception_id)
+            repair_case = package_quote_repair_case(db=self.db, exception_id=exception_id)
+            try:
+                from bookkeeping_core.remediation import bootstrap_quote_repair_workflow
+
+                bootstrap_quote_repair_workflow(
+                    db=self.db,
+                    repair_case_id=int(repair_case["id"]),
+                )
+            except ValueError:
+                pass
         return int(exception_id or 0)
 
     def _record_validator_no_publish_repair_case(

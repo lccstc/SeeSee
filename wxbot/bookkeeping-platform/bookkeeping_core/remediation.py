@@ -5,9 +5,12 @@ import json
 from typing import Any
 
 from bookkeeping_core.repair_cases import (
+    REPAIR_ATTEMPT_OUTCOME_COMPLETED,
     REPAIR_CASE_STATE_ATTEMPT_FAILED,
     REPAIR_CASE_STATE_ATTEMPT_SUCCEEDED,
     REPAIR_CASE_STATE_BASELINE_READY,
+    REPAIR_CASE_STATE_CLOSED_IGNORED,
+    REPAIR_CASE_STATE_CLOSED_RESOLVED,
     REPAIR_CASE_STATE_ESCALATED,
     REPAIR_CASE_STATE_PACKAGED,
     REPAIR_CASE_STATE_READY_FOR_ATTEMPT,
@@ -15,6 +18,7 @@ from bookkeeping_core.repair_cases import (
     _build_repair_attempt_summary,
     _refresh_quote_repair_case_rollup,
     advance_quote_repair_case_state,
+    create_baseline_repair_attempt,
 )
 
 
@@ -206,6 +210,58 @@ def begin_quote_repair_remediation_attempt(
     )
     _refresh_quote_repair_case_rollup(db=db, repair_case_id=repair_case_id)
     return db.get_quote_repair_case_attempt(attempt_id=int(attempt["id"])) or attempt
+
+
+def bootstrap_quote_repair_workflow(
+    *,
+    db,
+    repair_case_id: int,
+) -> dict[str, Any]:
+    repair_case = db.get_quote_repair_case(repair_case_id=repair_case_id)
+    if repair_case is None:
+        raise ValueError(f"quote repair case requires existing repair_case_id={repair_case_id}")
+
+    lifecycle_state = str(repair_case.get("lifecycle_state") or "").strip()
+    if lifecycle_state in {
+        REPAIR_CASE_STATE_CLOSED_RESOLVED,
+        REPAIR_CASE_STATE_CLOSED_IGNORED,
+        REPAIR_CASE_STATE_ESCALATED,
+    }:
+        return repair_case
+
+    scope_payload = choose_quote_repair_scope(
+        **_build_initial_scope_inputs(repair_case=repair_case)
+    )
+
+    try:
+        baseline_attempt = create_baseline_repair_attempt(
+            db=db,
+            repair_case_id=repair_case_id,
+        )
+    except Exception:
+        # Runtime exception capture must remain fact-neutral; baseline replay can fail
+        # on synthetic/patched inputs and should not break repair-case packaging.
+        return db.get_quote_repair_case(repair_case_id=repair_case_id) or repair_case
+    baseline_outcome = str(baseline_attempt.get("outcome_state") or "")
+    baseline_failure_note = str(baseline_attempt.get("failure_note") or "")
+    if baseline_outcome != REPAIR_ATTEMPT_OUTCOME_COMPLETED:
+        if not (
+            str(scope_payload["scope"]) == REMEDIATION_SCOPE_BOOTSTRAP
+            and baseline_failure_note in {"missing_group_profile", "missing_template_config"}
+        ):
+            return db.get_quote_repair_case(repair_case_id=repair_case_id) or repair_case
+
+    if _list_non_baseline_attempts(db=db, repair_case_id=repair_case_id):
+        return db.get_quote_repair_case(repair_case_id=repair_case_id) or repair_case
+
+    begin_quote_repair_remediation_attempt(
+        db=db,
+        repair_case_id=repair_case_id,
+        trigger="auto_bootstrap",
+        proposal_scope=str(scope_payload["scope"]),
+        proposal_kind=_initial_proposal_kind(str(scope_payload["scope"])),
+    )
+    return db.get_quote_repair_case(repair_case_id=repair_case_id) or repair_case
 
 
 def build_quote_repair_history_fingerprint(
@@ -446,6 +502,39 @@ def build_quote_repair_status_text(
     if normalized_state == REPAIR_CASE_STATE_READY_FOR_ATTEMPT:
         return "修复提案待验证，未改动报价墙。"
     return "当前仅记录修复证据与验证状态，未改动报价墙。"
+
+
+def _build_initial_scope_inputs(*, repair_case: dict[str, Any]) -> dict[str, Any]:
+    current_failure_reason = str(repair_case.get("current_failure_reason") or "").strip()
+    group_profile_id = _maybe_int(repair_case.get("group_profile_id"))
+    parser_template_snapshot = str(
+        repair_case.get("parser_template_snapshot") or ""
+    ).strip()
+    return {
+        "has_group_profile": group_profile_id is not None,
+        "section_local_only": False,
+        "section_identifier": "",
+        "bootstrap_candidate": (
+            group_profile_id is None
+            or current_failure_reason == "missing_group_template"
+            or parser_template_snapshot == "quote-v1"
+        ),
+        "cross_group_match_count": 0,
+        "global_core_required": False,
+    }
+
+
+def _initial_proposal_kind(scope: str) -> str:
+    normalized_scope = str(scope or "").strip()
+    if normalized_scope == REMEDIATION_SCOPE_BOOTSTRAP:
+        return "bootstrap_seed"
+    if normalized_scope == REMEDIATION_SCOPE_GROUP_SECTION:
+        return "section_patch"
+    if normalized_scope == REMEDIATION_SCOPE_SHARED_RULE:
+        return "shared_rule_patch"
+    if normalized_scope == REMEDIATION_SCOPE_GLOBAL_CORE:
+        return "global_core_patch"
+    return "group_profile_patch"
 
 
 def _build_history_read_payload(

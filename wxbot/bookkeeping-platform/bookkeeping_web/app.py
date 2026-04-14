@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import inspect
 import json
 import logging
@@ -37,6 +38,23 @@ from bookkeeping_web.pages import (
 logger = logging.getLogger(__name__)
 
 _SUPERMARKET_CARD_PARSER_TEMPLATE = "supermarket-card"
+
+
+def _coerce_replay_candidate_identity(
+    *,
+    candidate,
+    platform: str,
+    chat_id: str,
+    sender_id: str,
+    replay_message_id: str,
+) -> None:
+    if str(getattr(candidate, "message_id", "") or "") == replay_message_id:
+        return
+    candidate.message_id = replay_message_id
+    raw_message = str(getattr(candidate, "raw_message", "") or "")
+    candidate.message_fingerprint = hashlib.sha256(
+        f"{platform}|{chat_id}|{sender_id}|{replay_message_id}|{raw_message}".encode("utf-8")
+    ).hexdigest()
 
 
 def create_app(
@@ -1145,6 +1163,13 @@ def _replay_latest_quote_document_with_current_template(
         run_kind="replay",
         replay_of_quote_document_id=quote_document_id,
         message_id_override=replay_message_id,
+    )
+    _coerce_replay_candidate_identity(
+        candidate=candidate,
+        platform=platform,
+        chat_id=chat_id,
+        sender_id=sender_id,
+        replay_message_id=replay_message_id,
     )
     _details_candidate, parsed_exceptions, non_publishable_rows = (
         _parse_quote_message_to_candidate_details(

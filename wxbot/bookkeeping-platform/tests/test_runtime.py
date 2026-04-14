@@ -1891,7 +1891,27 @@ class RuntimeRepairCaseTests(PostgresTestCase):
             int(strict_repair_case["origin_validation_run_id"]),
             int(strict_validation_run["id"]),
         )
-        self.assertEqual(str(strict_repair_case["lifecycle_state"]), "packaged")
+        self.assertEqual(str(strict_repair_case["lifecycle_state"]), "ready_for_attempt")
+        self.assertIsNotNone(strict_repair_case["baseline_attempt_id"])
+        strict_summary = self.db.get_quote_repair_case_summary(
+            repair_case_id=int(strict_repair_case["id"])
+        )
+        self.assertIsNotNone(strict_summary)
+        assert strict_summary is not None
+        self.assertEqual(strict_summary["attempt_count"], 1)
+        self.assertEqual(strict_summary["baseline_attempt_id"], int(strict_repair_case["baseline_attempt_id"]))
+        self.assertEqual(strict_summary["last_attempt_outcome"], "pending")
+        strict_attempts = self.db.list_quote_repair_case_attempts(
+            repair_case_id=int(strict_repair_case["id"])
+        )
+        strict_remediation = [
+            item for item in strict_attempts if str(item.get("attempt_kind") or "") == "remediation"
+        ]
+        self.assertEqual(len(strict_remediation), 1)
+        strict_attempt_summary = strict_remediation[0]["attempt_summary_json"]
+        if isinstance(strict_attempt_summary, str):
+            strict_attempt_summary = json.loads(strict_attempt_summary)
+        self.assertEqual(strict_attempt_summary["proposal_scope"], "group_profile")
 
         self.db.set_group(
             platform="wechat",
@@ -1953,6 +1973,26 @@ class RuntimeRepairCaseTests(PostgresTestCase):
             int(missing_repair_case["origin_validation_run_id"]),
             int(missing_validation_run["id"]),
         )
+        self.assertEqual(str(missing_repair_case["lifecycle_state"]), "ready_for_attempt")
+        self.assertIsNotNone(missing_repair_case["baseline_attempt_id"])
+        missing_summary = self.db.get_quote_repair_case_summary(
+            repair_case_id=int(missing_repair_case["id"])
+        )
+        self.assertIsNotNone(missing_summary)
+        assert missing_summary is not None
+        self.assertEqual(missing_summary["attempt_count"], 1)
+        self.assertEqual(missing_summary["last_attempt_outcome"], "pending")
+        missing_attempts = self.db.list_quote_repair_case_attempts(
+            repair_case_id=int(missing_repair_case["id"])
+        )
+        missing_remediation = [
+            item for item in missing_attempts if str(item.get("attempt_kind") or "") == "remediation"
+        ]
+        self.assertEqual(len(missing_remediation), 1)
+        missing_attempt_summary = missing_remediation[0]["attempt_summary_json"]
+        if isinstance(missing_attempt_summary, str):
+            missing_attempt_summary = json.loads(missing_attempt_summary)
+        self.assertEqual(missing_attempt_summary["proposal_scope"], "bootstrap")
 
         self.assertEqual(
             self._count_rows("quote_price_rows", "WHERE source_group_key IN (?, ?)", ("wechat:room-repair-parse", "wechat:room-repair-missing-template")),
@@ -2107,7 +2147,15 @@ class RuntimeRepairCaseTests(PostgresTestCase):
             int(validation_run["id"]),
         )
         self.assertEqual(str(repair_case["current_failure_reason"]), "validator_no_publish")
-        self.assertEqual(str(repair_case["lifecycle_state"]), "packaged")
+        self.assertEqual(str(repair_case["lifecycle_state"]), "ready_for_attempt")
+        self.assertIsNotNone(repair_case["baseline_attempt_id"])
+        summary = self.db.get_quote_repair_case_summary(
+            repair_case_id=int(repair_case["id"])
+        )
+        self.assertIsNotNone(summary)
+        assert summary is not None
+        self.assertEqual(summary["attempt_count"], 1)
+        self.assertEqual(summary["last_attempt_outcome"], "pending")
 
         self.assertEqual(
             self._count_rows(
@@ -2119,13 +2167,6 @@ class RuntimeRepairCaseTests(PostgresTestCase):
         )
 
     def test_begin_quote_repair_remediation_attempt_is_fact_neutral(self) -> None:
-        from bookkeeping_core.remediation import begin_quote_repair_remediation_attempt
-        from bookkeeping_core.repair_cases import (
-            REPAIR_CASE_STATE_READY_FOR_ATTEMPT,
-            advance_quote_repair_case_state,
-            create_baseline_repair_attempt,
-            package_quote_repair_case,
-        )
 
         self.db.set_group(
             platform="wechat",
@@ -2169,25 +2210,17 @@ class RuntimeRepairCaseTests(PostgresTestCase):
         ).fetchone()
         self.assertIsNotNone(exception_row)
         assert exception_row is not None
-        repair_case = package_quote_repair_case(
-            db=self.db,
-            exception_id=int(exception_row["id"]),
+        repair_case = self.db.get_quote_repair_case_by_origin_exception(
+            origin_exception_id=int(exception_row["id"])
         )
-        create_baseline_repair_attempt(db=self.db, repair_case_id=int(repair_case["id"]))
-        advance_quote_repair_case_state(
-            db=self.db,
-            repair_case_id=int(repair_case["id"]),
-            next_state=REPAIR_CASE_STATE_READY_FOR_ATTEMPT,
-        )
-
-        attempt = begin_quote_repair_remediation_attempt(
-            db=self.db,
-            repair_case_id=int(repair_case["id"]),
-            trigger="subagent_retry",
-            proposal_scope="group_profile",
-            proposal_kind="template_patch",
-        )
-
+        self.assertIsNotNone(repair_case)
+        assert repair_case is not None
+        attempts = self.db.list_quote_repair_case_attempts(repair_case_id=int(repair_case["id"]))
+        remediation_attempts = [
+            item for item in attempts if str(item.get("attempt_kind") or "") == "remediation"
+        ]
+        self.assertEqual(len(remediation_attempts), 1)
+        attempt = remediation_attempts[0]
         self.assertEqual(int(attempt["attempt_number"]), 1)
         self.assertEqual(str(attempt["outcome_state"]), "pending")
         stored_case = self.db.get_quote_repair_case(repair_case_id=int(repair_case["id"]))
@@ -2210,12 +2243,6 @@ class RuntimeRepairCaseTests(PostgresTestCase):
 
     def test_begin_quote_repair_remediation_attempt_blocks_parallel_pending_retries(self) -> None:
         from bookkeeping_core.remediation import begin_quote_repair_remediation_attempt
-        from bookkeeping_core.repair_cases import (
-            REPAIR_CASE_STATE_READY_FOR_ATTEMPT,
-            advance_quote_repair_case_state,
-            create_baseline_repair_attempt,
-            package_quote_repair_case,
-        )
 
         self.db.set_group(
             platform="wechat",
@@ -2258,23 +2285,11 @@ class RuntimeRepairCaseTests(PostgresTestCase):
         ).fetchone()
         self.assertIsNotNone(exception_row)
         assert exception_row is not None
-        repair_case = package_quote_repair_case(
-            db=self.db,
-            exception_id=int(exception_row["id"]),
+        repair_case = self.db.get_quote_repair_case_by_origin_exception(
+            origin_exception_id=int(exception_row["id"])
         )
-        create_baseline_repair_attempt(db=self.db, repair_case_id=int(repair_case["id"]))
-        advance_quote_repair_case_state(
-            db=self.db,
-            repair_case_id=int(repair_case["id"]),
-            next_state=REPAIR_CASE_STATE_READY_FOR_ATTEMPT,
-        )
-        begin_quote_repair_remediation_attempt(
-            db=self.db,
-            repair_case_id=int(repair_case["id"]),
-            trigger="subagent_retry",
-            proposal_scope="group_profile",
-            proposal_kind="template_patch",
-        )
+        self.assertIsNotNone(repair_case)
+        assert repair_case is not None
         with self.assertRaisesRegex(ValueError, "pending"):
             begin_quote_repair_remediation_attempt(
                 db=self.db,
