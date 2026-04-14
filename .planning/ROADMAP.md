@@ -139,7 +139,7 @@ Plans:
   2. The operator can see why rows were published, rejected, or left untouched
   3. The workbench improves debugging accuracy without granting a bypass around validator or publisher safeguards
   4. Repeated repair-case failures are indexed into a searchable failure dictionary that new agents can query before proposing fixes
-**Plans**: TBD
+**Plans**: 07-01, 07-02, 07-03
 
 Plans:
 - [ ] 07-01: Design message-level verification payloads and APIs
@@ -175,5 +175,5 @@ Phases execute in strategic order: 1 → 2 → 2.1 → 5 → 6 → 3 → 4 → 7
 | 6. Constrained Auto-Remediation Loop | 3/3 | Completed | 2026-04-14 |
 | 3. Fact Protection Publisher | 3/3 | Completed | 2026-04-15 |
 | 4. Snapshot / Delta Semantics | 3/3 | Completed | 2026-04-15 |
-| 7. Operator Verification & Failure Dictionary | 0/3 | Ready for planning | - |
+| 7. Operator Verification & Failure Dictionary | 0/3 | Ready to execute | - |
 | 8. Shadow Validation Gate | 0/3 | Not started | - |
