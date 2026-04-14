@@ -123,12 +123,12 @@ Plans:
   1. Each message carries an explicit snapshot-type decision or unresolved state
   2. Unresolved messages behave as `delta_update` rather than destructive replacement
   3. Only confirmed `full_snapshot` messages may inactivate unseen prior SKUs
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 04-01: Define message-level snapshot classification model and safe default behavior
-- [ ] 04-02: Wire classification into publisher inactivation rules
-- [ ] 04-03: Add v1 human confirmation flow for disputed snapshot classification
+- [ ] 04-01-PLAN.md — Define a durable snapshot decision model and deterministic message-level hypothesis scaffolding
+- [ ] 04-02-PLAN.md — Wire delta-safe default behavior and confirmed-full inactivation into the guarded publisher
+- [ ] 04-03-PLAN.md — Add a narrow v1 human confirmation flow that records snapshot decisions without publishing
 
 ### Phase 7: Operator Verification & Failure Dictionary
 **Goal**: Give the operator a message-level debugging view into candidate rows, rejected rows, held rows, and final publish decisions, while turning repair-case history into a searchable failure dictionary for future agents.

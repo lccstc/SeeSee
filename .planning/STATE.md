@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: ready
-stopped_at: Phase 04 ready for planning
-last_updated: "2026-04-15T03:21:00+07:00"
-last_activity: 2026-04-15 -- Phase 03 completed after guarded-publisher custody fixes and PostgreSQL verification reruns
+stopped_at: Phase 04 ready to execute
+last_updated: "2026-04-15T03:40:00+07:00"
+last_activity: 2026-04-15 -- Phase 04 planning completed; snapshot/delta semantics are ready to execute
 progress:
   total_phases: 9
   completed_phases: 6
-  total_plans: 18
+  total_plans: 21
   completed_plans: 18
   percent: 67
 ---
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-04-13)
 
 ## Current Position
 
-Phase: 04 (snapshot-delta-semantics) — READY FOR PLANNING
-Plan: None
-Status: Phase 03 is complete; the next gate is planning snapshot/delta semantics on top of guarded publisher custody
-Last activity: 2026-04-15 -- Phase 03 completed after reviewer custody fixes and an 88-test PostgreSQL/runtime/web rerun
+Phase: 04 (snapshot-delta-semantics) — READY TO EXECUTE
+Plan: 04-01-PLAN.md
+Status: Phase 04 planning is complete; the next gate is executing snapshot/delta semantics on top of guarded publisher custody
+Last activity: 2026-04-15 -- Phase 04 context, research, validation, and 3 executable plans were added after Phase 03 closed
 
 Progress: [███████░░░] 67% of milestone phases completed
 
@@ -50,10 +50,11 @@ Progress: [███████░░░] 67% of milestone phases completed
 | 05 | 3 | 69min | 23min |
 | 06 | 3 | - | - |
 | 03 | 3 | - | - |
+| 04 | 0 | - | - |
 
 **Recent Trend:**
 
-- Last 5 plans: Phase 03 completed; the next gate is Phase 04 planning for snapshot/delta semantics
+- Last 5 plans: Phase 04 planning completed; the next gate is executing snapshot/delta semantics
 - Trend: Stable
 
 | Phase 02-validation-engine P01 | 14min | 2 tasks | 4 files |
@@ -107,6 +108,7 @@ Recent decisions affecting current work:
 - Phase 06 verified: PostgreSQL-backed reruns passed after a small repair-case rollup refresh fix, so the remediation workflow is now fully gated by replay/validator/regression checks
 - Phase 03 planned: guarded publisher work is now split into publisher custody, atomic no-op/rollback behavior, and bypass-removal waves
 - Phase 03 completed: active quote mutation now flows only through the guarded publisher, which reloads validator-owned rows internally and is structurally guarded against helper or raw-SQL bypasses
+- Phase 04 planned: snapshot semantics now have a durable decision surface, guarded delta/full publisher integration, and a narrow v1 human confirmation gate scoped into three waves
 - Phase 07 scope expanded: operator verification now also needs a searchable failure dictionary / repair lexicon so future agents do not depend on this long-session context
 
 ### Pending Todos
@@ -121,6 +123,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-15T03:21:00+07:00
-Stopped at: Phase 04 ready for planning
+Last session: 2026-04-15T03:40:00+07:00
+Stopped at: Phase 04 ready to execute
 Resume file: None
