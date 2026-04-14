@@ -128,17 +128,23 @@ class QuoteFactPublisher:
                 attempted_row_count=0,
             )
         if publish_mode != self.REPLACE_GROUP_ACTIVE_ROWS_MODE:
-            return QuoteFactPublishResult.failed(
+            return QuoteFactPublishResult.no_op(
                 quote_document_id=quote_document_id,
                 validation_run_id=validation_run_id,
                 source_group_key=source_group_key,
                 publish_mode=publish_mode,
                 attempted_row_count=attempted_row_count,
-                reason=f"unsupported_publish_mode:{publish_mode}",
+                reason=f"publish_mode_not_allowed:{publish_mode}",
             )
 
         try:
             with self.db.conn.transaction():
+                self.db.acquire_quote_publish_lock(
+                    source_group_key=source_group_key,
+                )
+                self.db.lock_active_quote_rows_for_group(
+                    source_group_key=source_group_key,
+                )
                 self.db.deactivate_old_quotes_for_group(
                     source_group_key=source_group_key,
                     commit=False,

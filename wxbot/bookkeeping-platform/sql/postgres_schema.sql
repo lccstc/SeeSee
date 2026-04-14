@@ -345,6 +345,17 @@ CREATE INDEX IF NOT EXISTS idx_quote_price_rows_active
 CREATE INDEX IF NOT EXISTS idx_quote_price_rows_source_lookup
   ON quote_price_rows(source_group_key, card_type, country_or_currency, amount_range, form_factor, effective_at DESC);
 
+CREATE UNIQUE INDEX IF NOT EXISTS quote_price_rows_one_live_row
+  ON quote_price_rows(
+    source_group_key,
+    card_type,
+    country_or_currency,
+    amount_range,
+    form_factor,
+    COALESCE(multiplier, '')
+  )
+  WHERE quote_status = 'active' AND expires_at IS NULL;
+
 CREATE INDEX IF NOT EXISTS idx_quote_validation_runs_document_created
   ON quote_validation_runs(quote_document_id, created_at DESC);
 

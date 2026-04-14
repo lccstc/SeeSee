@@ -1635,6 +1635,40 @@ class _BookkeepingStoreBase:
             (selected_validation_run_id, quote_document_id),
         ).fetchall()
 
+    @staticmethod
+    def _quote_publish_lock_key(source_group_key: str) -> int:
+        normalized_group_key = str(source_group_key or "").strip()
+        if not normalized_group_key:
+            raise ValueError("source_group_key is required for quote publish locking")
+        digest = hashlib.blake2b(
+            normalized_group_key.encode("utf-8"),
+            digest_size=8,
+        ).digest()
+        return int.from_bytes(digest, byteorder="big", signed=True)
+
+    def acquire_quote_publish_lock(self, *, source_group_key: str) -> int:
+        lock_key = self._quote_publish_lock_key(source_group_key)
+        self.conn.execute(
+            "SELECT pg_advisory_xact_lock(?)",
+            (lock_key,),
+        )
+        return lock_key
+
+    def lock_active_quote_rows_for_group(self, *, source_group_key: str) -> list[int]:
+        rows = self.conn.execute(
+            """
+            SELECT id
+            FROM quote_price_rows
+            WHERE source_group_key = ?
+              AND quote_status = 'active'
+              AND expires_at IS NULL
+            ORDER BY id ASC
+            FOR UPDATE
+            """,
+            (source_group_key,),
+        ).fetchall()
+        return [int(row["id"]) for row in rows]
+
     def deactivate_old_quotes_for_group(
         self,
         *,
@@ -1644,7 +1678,8 @@ class _BookkeepingStoreBase:
         """同一群发新消息时，将旧的 active 报价标记为 inactive。"""
         self.conn.execute(
             "UPDATE quote_price_rows SET quote_status = 'inactive' "
-            "WHERE source_group_key = ? AND quote_status = 'active'",
+            "WHERE source_group_key = ? AND quote_status = 'active' "
+            "AND expires_at IS NULL",
             (source_group_key,),
         )
         if commit:
@@ -1690,6 +1725,7 @@ class _BookkeepingStoreBase:
               AND amount_range = ?
               AND form_factor = ?
               AND COALESCE(multiplier, '') = COALESCE(?, '')
+              AND quote_status = 'active'
               AND expires_at IS NULL
             ORDER BY effective_at DESC, id DESC
             """,
@@ -4719,6 +4755,9 @@ class BookkeepingDB(_BookkeepingStoreBase):
                 "updated_at",
             },
         }
+        required_indexes = {
+            "quote_price_rows": {"quote_price_rows_one_live_row"},
+        }
         mismatches: list[str] = []
         for table_name, expected_columns in required_columns.items():
             rows = self.conn.execute(
@@ -4738,6 +4777,22 @@ class BookkeepingDB(_BookkeepingStoreBase):
             if missing_columns:
                 mismatches.append(
                     f"missing columns in {table_name}: {', '.join(missing_columns)}"
+                )
+        for table_name, expected_indexes in required_indexes.items():
+            rows = self.conn.execute(
+                """
+                SELECT indexname
+                FROM pg_indexes
+                WHERE schemaname = current_schema()
+                  AND tablename = ?
+                """,
+                (table_name,),
+            ).fetchall()
+            actual_indexes = {str(row["indexname"]) for row in rows}
+            missing_indexes = sorted(expected_indexes - actual_indexes)
+            if missing_indexes:
+                mismatches.append(
+                    f"missing indexes on {table_name}: {', '.join(missing_indexes)}"
                 )
         if mismatches:
             raise RuntimeError(

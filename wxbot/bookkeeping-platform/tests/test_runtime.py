@@ -1660,6 +1660,111 @@ class UnifiedRuntimeTests(PostgresTestCase):
         )
         self.assertEqual(quote_price_row_count, 0)
 
+    def test_runtime_quote_capture_returns_explicit_noop_publish_result(self) -> None:
+        from bookkeeping_core.quote_candidates import (
+            QuoteCandidateMessage,
+            QuoteCandidateRow,
+        )
+
+        self.db.set_group(
+            platform="wechat",
+            group_key="wechat:room-runtime-noop",
+            chat_id="room-runtime-noop",
+            chat_name="报价群-noop",
+            group_num=5,
+        )
+        self.db.upsert_quote_group_profile(
+            platform="wechat",
+            chat_id="room-runtime-noop",
+            chat_name="报价群-noop",
+            default_card_type="Apple",
+            default_country_or_currency="USD",
+            default_form_factor="横白卡",
+            parser_template="group-parser",
+            template_config=json.dumps(
+                {"version": "group-parser-v1", "defaults": {}, "sections": []},
+                ensure_ascii=False,
+            ),
+        )
+
+        candidate = QuoteCandidateMessage(
+            platform="wechat",
+            source_group_key="wechat:room-runtime-noop",
+            chat_id="room-runtime-noop",
+            chat_name="报价群-noop",
+            message_id="msg-runtime-noop-1",
+            source_name="报价员",
+            sender_id="seller-runtime-noop",
+            sender_display="报价员",
+            raw_message="patched runtime no-op candidate",
+            message_time="2026-04-15 12:00:00",
+            parser_kind="group-parser",
+            parser_template="group-parser",
+            parser_version="group-parser-v1",
+            confidence=0.99,
+            parse_status="parsed",
+            message_fingerprint="runtime-noop-fingerprint",
+            snapshot_hypothesis="unresolved",
+            snapshot_hypothesis_reason="phase1-default",
+            rows=[
+                QuoteCandidateRow(
+                    row_ordinal=1,
+                    source_line="US=5.10",
+                    source_line_index=0,
+                    line_confidence=0.98,
+                    normalized_sku_key="Apple|USD|100|横白卡",
+                    normalization_status="normalized",
+                    row_publishable=False,
+                    publishability_basis="parser_prevalidation",
+                    restriction_parse_status="parsed",
+                    card_type="Apple",
+                    country_or_currency="USD",
+                    amount_range="100",
+                    multiplier=None,
+                    form_factor="横白卡",
+                    price=5.10,
+                    quote_status="active",
+                    restriction_text="",
+                )
+            ],
+        )
+
+        with patch(
+            "bookkeeping_core.quotes.should_attempt_template_quote_capture",
+            return_value=True,
+        ), patch(
+            "bookkeeping_core.quotes._parse_quote_message_to_candidate_details",
+            return_value=(candidate, [], []),
+        ):
+            result = self.runtime.quote_capture.capture_from_message(
+                self._message(
+                    platform="wechat",
+                    message_id="msg-runtime-noop-1",
+                    chat_id="room-runtime-noop",
+                    chat_name="报价群-noop",
+                    text="patched runtime no-op candidate",
+                )
+            )
+
+        self.assertTrue(result["captured"])
+        self.assertEqual(result["rows"], 1)
+        self.assertEqual(result["exceptions"], 0)
+        self.assertEqual(result["publish_result"]["status"], "no_op")
+        self.assertEqual(
+            result["publish_result"]["publish_mode"],
+            "validation_only",
+        )
+        self.assertEqual(result["publish_result"]["reason"], "runtime_validation_only")
+        self.assertEqual(result["publish_result"]["attempted_row_count"], 1)
+        self.assertEqual(result["publish_result"]["applied_row_count"], 0)
+
+        quote_price_row_count = self._count_rows(
+            "quote_price_rows",
+            "WHERE message_id = ?",
+            ("msg-runtime-noop-1",),
+        )
+        self.assertEqual(quote_price_row_count, 0)
+
     def test_runtime_quote_capture_records_missing_template_candidate_header(self) -> None:
         self.db.set_group(
             platform="wechat",

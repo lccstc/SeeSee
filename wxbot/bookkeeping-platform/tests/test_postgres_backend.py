@@ -216,6 +216,23 @@ class PostgresBackendTests(PostgresTestCase):
         with self.assertRaisesRegex(RuntimeError, "PostgreSQL schema mismatch"):
             BookkeepingDB(broken_dsn)
 
+    def test_bookkeeping_db_fails_fast_when_quote_live_row_index_is_missing(
+        self,
+    ) -> None:
+        import psycopg
+
+        schema_name = self._schema_name("quote-live-row-index-missing")
+        self._create_schema(schema_name)
+        self._apply_schema(schema_name)
+        broken_dsn = self._dsn_with_search_path(schema_name)
+
+        with psycopg.connect(broken_dsn, autocommit=True) as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("DROP INDEX quote_price_rows_one_live_row")
+
+        with self.assertRaisesRegex(RuntimeError, "PostgreSQL schema mismatch"):
+            BookkeepingDB(broken_dsn)
+
     def test_bookkeeping_db_close_method_is_available(self) -> None:
         db = self.make_db("backend-close")
         db.set_group(
@@ -774,6 +791,421 @@ class PostgresBackendTests(PostgresTestCase):
             self.assertEqual(str(rows[0]["quote_status"]), "active")
             self.assertIsNone(rows[0]["expires_at"])
             self.assertEqual(float(rows[0]["price"]), 95.5)
+        finally:
+            db.close()
+
+    def test_quote_fact_publisher_noops_without_publishable_rows_before_mutation(
+        self,
+    ) -> None:
+        db = self.make_db("backend-quote-publisher-noop-empty")
+        try:
+            db.upsert_quote_price_row_with_history(
+                quote_document_id=505,
+                message_id="seed-msg-noop-empty",
+                platform="wechat",
+                source_group_key="wechat:publisher-room",
+                chat_id="publisher-room",
+                chat_name="Publisher Room",
+                source_name="Seed Source",
+                sender_id="seed-user",
+                card_type="Apple",
+                country_or_currency="USD",
+                amount_range="100",
+                multiplier=None,
+                form_factor="physical",
+                price=95.5,
+                quote_status="active",
+                restriction_text="",
+                source_line="US 100 95.5",
+                raw_text="US 100 95.5",
+                message_time="2026-04-15 10:00:00",
+                effective_at="2026-04-15 10:00:00",
+                expires_at=None,
+                parser_template="seed-template",
+                parser_version="seed-v1",
+                confidence=0.98,
+            )
+            db.conn.commit()
+
+            publisher = QuoteFactPublisher(db)
+            with patch.object(
+                db,
+                "deactivate_old_quotes_for_group",
+                wraps=db.deactivate_old_quotes_for_group,
+            ) as deactivate_mock, patch.object(
+                db,
+                "upsert_quote_price_row_with_history",
+                wraps=db.upsert_quote_price_row_with_history,
+            ) as upsert_mock:
+                result = publisher.publish_quote_document(
+                    quote_document_id=606,
+                    validation_run_id=707,
+                    source_group_key="wechat:publisher-room",
+                    platform="wechat",
+                    chat_id="publisher-room",
+                    chat_name="Publisher Room",
+                    message_id="msg-noop-empty",
+                    source_name="Publisher Source",
+                    sender_id="publisher-user",
+                    raw_text="US 100 96.0",
+                    message_time="2026-04-15 11:00:00",
+                    parser_template="publisher-template",
+                    parser_version="publisher-v1",
+                    publishable_rows=[],
+                    publish_mode="replace_group_active_rows",
+                )
+
+            self.assertEqual(result.status, "no_op")
+            self.assertEqual(result.reason, "no_publishable_rows")
+            self.assertEqual(result.attempted_row_count, 0)
+            self.assertEqual(result.applied_row_count, 0)
+            deactivate_mock.assert_not_called()
+            upsert_mock.assert_not_called()
+
+            rows = db.conn.execute(
+                """
+                SELECT message_id, quote_status, expires_at, price
+                FROM quote_price_rows
+                WHERE source_group_key = ?
+                ORDER BY id ASC
+                """,
+                ("wechat:publisher-room",),
+            ).fetchall()
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(str(rows[0]["message_id"]), "seed-msg-noop-empty")
+            self.assertEqual(str(rows[0]["quote_status"]), "active")
+            self.assertIsNone(rows[0]["expires_at"])
+            self.assertEqual(float(rows[0]["price"]), 95.5)
+        finally:
+            db.close()
+
+    def test_quote_fact_publisher_treats_disqualified_publish_mode_as_noop(
+        self,
+    ) -> None:
+        db = self.make_db("backend-quote-publisher-noop-mode")
+        try:
+            db.upsert_quote_price_row_with_history(
+                quote_document_id=808,
+                message_id="seed-msg-noop-mode",
+                platform="wechat",
+                source_group_key="wechat:publisher-room",
+                chat_id="publisher-room",
+                chat_name="Publisher Room",
+                source_name="Seed Source",
+                sender_id="seed-user",
+                card_type="Apple",
+                country_or_currency="USD",
+                amount_range="100",
+                multiplier=None,
+                form_factor="physical",
+                price=95.5,
+                quote_status="active",
+                restriction_text="",
+                source_line="US 100 95.5",
+                raw_text="US 100 95.5",
+                message_time="2026-04-15 10:00:00",
+                effective_at="2026-04-15 10:00:00",
+                expires_at=None,
+                parser_template="seed-template",
+                parser_version="seed-v1",
+                confidence=0.98,
+            )
+            db.conn.commit()
+
+            publisher = QuoteFactPublisher(db)
+            with patch.object(
+                db,
+                "deactivate_old_quotes_for_group",
+                wraps=db.deactivate_old_quotes_for_group,
+            ) as deactivate_mock, patch.object(
+                db,
+                "upsert_quote_price_row_with_history",
+                wraps=db.upsert_quote_price_row_with_history,
+            ) as upsert_mock:
+                result = publisher.publish_quote_document(
+                    quote_document_id=909,
+                    validation_run_id=1001,
+                    source_group_key="wechat:publisher-room",
+                    platform="wechat",
+                    chat_id="publisher-room",
+                    chat_name="Publisher Room",
+                    message_id="msg-noop-mode",
+                    source_name="Publisher Source",
+                    sender_id="publisher-user",
+                    raw_text="US 100 96.0",
+                    message_time="2026-04-15 11:00:00",
+                    parser_template="publisher-template",
+                    parser_version="publisher-v1",
+                    publishable_rows=[
+                        {
+                            "card_type": "Apple",
+                            "country_or_currency": "USD",
+                            "amount_range": "100",
+                            "multiplier": None,
+                            "form_factor": "physical",
+                            "price": 96.0,
+                            "quote_status": "active",
+                            "restriction_text": "",
+                            "source_line": "US 100 96.0",
+                        }
+                    ],
+                    publish_mode="unresolved",
+                )
+
+            self.assertEqual(result.status, "no_op")
+            self.assertEqual(result.reason, "publish_mode_not_allowed:unresolved")
+            self.assertEqual(result.attempted_row_count, 1)
+            self.assertEqual(result.applied_row_count, 0)
+            deactivate_mock.assert_not_called()
+            upsert_mock.assert_not_called()
+
+            rows = db.conn.execute(
+                """
+                SELECT message_id, quote_status, expires_at, price
+                FROM quote_price_rows
+                WHERE source_group_key = ?
+                ORDER BY id ASC
+                """,
+                ("wechat:publisher-room",),
+            ).fetchall()
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(str(rows[0]["message_id"]), "seed-msg-noop-mode")
+            self.assertEqual(str(rows[0]["quote_status"]), "active")
+            self.assertIsNone(rows[0]["expires_at"])
+            self.assertEqual(float(rows[0]["price"]), 95.5)
+        finally:
+            db.close()
+
+    def test_quote_publish_lock_serializes_per_group_attempts(self) -> None:
+        import psycopg
+
+        dsn = self.make_dsn("backend-quote-publish-lock")
+        db = BookkeepingDB(dsn)
+        try:
+            with db.conn.transaction():
+                lock_key = db.acquire_quote_publish_lock(
+                    source_group_key="wechat:publisher-room"
+                )
+                with psycopg.connect(dsn) as competing_conn:
+                    with competing_conn.transaction():
+                        row = competing_conn.execute(
+                            "SELECT pg_try_advisory_xact_lock(%s)",
+                            (lock_key,),
+                        ).fetchone()
+                        self.assertFalse(bool(row[0]))
+
+            with psycopg.connect(dsn) as competing_conn:
+                with competing_conn.transaction():
+                    row = competing_conn.execute(
+                        "SELECT pg_try_advisory_xact_lock(%s)",
+                        (lock_key,),
+                    ).fetchone()
+                    self.assertTrue(bool(row[0]))
+        finally:
+            db.close()
+
+    def test_quote_fact_publisher_rolls_back_after_partial_apply_failure(self) -> None:
+        db = self.make_db("backend-quote-publisher-partial-rollback")
+        try:
+            db.upsert_quote_price_row_with_history(
+                quote_document_id=1101,
+                message_id="seed-msg-partial",
+                platform="wechat",
+                source_group_key="wechat:publisher-room",
+                chat_id="publisher-room",
+                chat_name="Publisher Room",
+                source_name="Seed Source",
+                sender_id="seed-user",
+                card_type="Apple",
+                country_or_currency="USD",
+                amount_range="100",
+                multiplier=None,
+                form_factor="physical",
+                price=95.5,
+                quote_status="active",
+                restriction_text="",
+                source_line="US 100 95.5",
+                raw_text="US 100 95.5",
+                message_time="2026-04-15 10:00:00",
+                effective_at="2026-04-15 10:00:00",
+                expires_at=None,
+                parser_template="seed-template",
+                parser_version="seed-v1",
+                confidence=0.98,
+            )
+            db.conn.commit()
+
+            publisher = QuoteFactPublisher(db)
+            original_upsert = db.upsert_quote_price_row_with_history
+            call_count = {"value": 0}
+
+            def partial_failure_upsert(**kwargs):
+                call_count["value"] += 1
+                if call_count["value"] == 2:
+                    raise RuntimeError("forced publish failure after first applied row")
+                return original_upsert(**kwargs)
+
+            with patch.object(
+                db,
+                "upsert_quote_price_row_with_history",
+                side_effect=partial_failure_upsert,
+            ):
+                result = publisher.publish_quote_document(
+                    quote_document_id=1202,
+                    validation_run_id=1303,
+                    source_group_key="wechat:publisher-room",
+                    platform="wechat",
+                    chat_id="publisher-room",
+                    chat_name="Publisher Room",
+                    message_id="msg-partial-failure",
+                    source_name="Publisher Source",
+                    sender_id="publisher-user",
+                    raw_text="US 200 96.0\nJP 10 9.1",
+                    message_time="2026-04-15 11:00:00",
+                    parser_template="publisher-template",
+                    parser_version="publisher-v1",
+                    publishable_rows=[
+                        {
+                            "card_type": "Apple",
+                            "country_or_currency": "USD",
+                            "amount_range": "200",
+                            "multiplier": None,
+                            "form_factor": "physical",
+                            "price": 96.0,
+                            "quote_status": "active",
+                            "restriction_text": "",
+                            "source_line": "US 200 96.0",
+                        },
+                        {
+                            "card_type": "Apple",
+                            "country_or_currency": "JPY",
+                            "amount_range": "10",
+                            "multiplier": None,
+                            "form_factor": "physical",
+                            "price": 9.1,
+                            "quote_status": "active",
+                            "restriction_text": "",
+                            "source_line": "JP 10 9.1",
+                        },
+                    ],
+                    publish_mode="replace_group_active_rows",
+                )
+
+            self.assertEqual(result.status, "failed")
+            self.assertEqual(result.applied_row_count, 0)
+            self.assertEqual(result.attempted_row_count, 2)
+            self.assertIn(
+                "forced publish failure after first applied row",
+                result.reason,
+            )
+
+            rows = db.conn.execute(
+                """
+                SELECT message_id, quote_status, expires_at, price, amount_range
+                FROM quote_price_rows
+                WHERE source_group_key = ?
+                ORDER BY id ASC
+                """,
+                ("wechat:publisher-room",),
+            ).fetchall()
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(str(rows[0]["message_id"]), "seed-msg-partial")
+            self.assertEqual(str(rows[0]["quote_status"]), "active")
+            self.assertIsNone(rows[0]["expires_at"])
+            self.assertEqual(str(rows[0]["amount_range"]), "100")
+            self.assertEqual(float(rows[0]["price"]), 95.5)
+        finally:
+            db.close()
+
+    def test_quote_price_rows_live_row_index_rejects_duplicate_active_identity(
+        self,
+    ) -> None:
+        db = self.make_db("backend-quote-live-row-index")
+        try:
+            db.conn.execute(
+                """
+                INSERT INTO quote_price_rows (
+                  quote_document_id, platform, source_group_key, chat_id, chat_name,
+                  message_id, source_name, sender_id, card_type, country_or_currency,
+                  amount_range, multiplier, form_factor, price, quote_status,
+                  restriction_text, source_line, raw_text, message_time,
+                  effective_at, expires_at, parser_template, parser_version,
+                  confidence
+                ) VALUES (
+                  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                )
+                """,
+                (
+                    1404,
+                    "wechat",
+                    "wechat:publisher-room",
+                    "publisher-room",
+                    "Publisher Room",
+                    "msg-live-row-1",
+                    "Publisher Source",
+                    "publisher-user",
+                    "Apple",
+                    "USD",
+                    "100",
+                    None,
+                    "physical",
+                    95.5,
+                    "active",
+                    "",
+                    "US 100 95.5",
+                    "US 100 95.5",
+                    "2026-04-15 10:00:00",
+                    "2026-04-15 10:00:00",
+                    None,
+                    "publisher-template",
+                    "publisher-v1",
+                    0.98,
+                ),
+            )
+            db.conn.commit()
+
+            with self.assertRaisesRegex(Exception, "quote_price_rows_one_live_row"):
+                db.conn.execute(
+                    """
+                    INSERT INTO quote_price_rows (
+                      quote_document_id, platform, source_group_key, chat_id, chat_name,
+                      message_id, source_name, sender_id, card_type, country_or_currency,
+                      amount_range, multiplier, form_factor, price, quote_status,
+                      restriction_text, source_line, raw_text, message_time,
+                      effective_at, expires_at, parser_template, parser_version,
+                      confidence
+                    ) VALUES (
+                      ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                    )
+                    """,
+                    (
+                        1505,
+                        "wechat",
+                        "wechat:publisher-room",
+                        "publisher-room",
+                        "Publisher Room",
+                        "msg-live-row-2",
+                        "Publisher Source",
+                        "publisher-user",
+                        "Apple",
+                        "USD",
+                        "100",
+                        None,
+                        "physical",
+                        96.0,
+                        "active",
+                        "",
+                        "US 100 96.0",
+                        "US 100 96.0",
+                        "2026-04-15 11:00:00",
+                        "2026-04-15 11:00:00",
+                        None,
+                        "publisher-template",
+                        "publisher-v1",
+                        0.99,
+                    ),
+                )
+                db.conn.commit()
         finally:
             db.close()
 
