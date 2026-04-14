@@ -1405,6 +1405,262 @@ class PostgresBackendTests(PostgresTestCase):
         finally:
             db.close()
 
+    def test_quote_document_verification_evidence_explains_delta_untouched_rows(
+        self,
+    ) -> None:
+        db = self.make_db("backend-quote-evidence-delta")
+        try:
+            for card_type, amount_range, price in (
+                ("CVS", "50-500", 5.7),
+                ("DG", "100-500", 5.8),
+            ):
+                db.upsert_quote_price_row_with_history(
+                    quote_document_id=700,
+                    message_id=f"seed-{card_type}",
+                    platform="wechat",
+                    source_group_key="wechat:evidence-room",
+                    chat_id="evidence-room",
+                    chat_name="Evidence Room",
+                    source_name="Seed Source",
+                    sender_id="seed-user",
+                    card_type=card_type,
+                    country_or_currency="USD",
+                    amount_range=amount_range,
+                    multiplier=None,
+                    form_factor="physical",
+                    price=price,
+                    quote_status="active",
+                    restriction_text="",
+                    source_line=f"{card_type} {amount_range} {price}",
+                    raw_text=f"{card_type} {amount_range} {price}",
+                    message_time="2026-04-15 08:00:00",
+                    effective_at="2026-04-15 08:00:00",
+                    expires_at=None,
+                    parser_template="seed-template",
+                    parser_version="seed-v1",
+                    confidence=0.99,
+                )
+            db.conn.commit()
+
+            quote_document_id, _ = self._record_validation_backed_publish_fixture(
+                db=db,
+                message_id="evidence-delta-1",
+                source_group_key="wechat:evidence-room",
+                chat_id="evidence-room",
+                chat_name="Evidence Room",
+                raw_message="cvs 50-500 5.7\ndg 100-500 0",
+                rows=[
+                    QuoteCandidateRow(
+                        row_ordinal=1,
+                        source_line="cvs 50-500 5.7",
+                        source_line_index=0,
+                        line_confidence=0.99,
+                        normalized_sku_key="CVS|USD|50-500||physical",
+                        normalization_status="normalized",
+                        row_publishable=True,
+                        publishability_basis="validator_pending",
+                        restriction_parse_status="clear",
+                        card_type="CVS",
+                        country_or_currency="USD",
+                        amount_range="50-500",
+                        multiplier=None,
+                        form_factor="physical",
+                        price=5.7,
+                        quote_status="active",
+                        restriction_text="",
+                    ),
+                    QuoteCandidateRow(
+                        row_ordinal=2,
+                        source_line="dg 100-500 0",
+                        source_line_index=1,
+                        line_confidence=0.97,
+                        normalized_sku_key="DG|USD|100-500||physical",
+                        normalization_status="normalized",
+                        row_publishable=False,
+                        publishability_basis="validator_pending",
+                        restriction_parse_status="clear",
+                        card_type="DG",
+                        country_or_currency="USD",
+                        amount_range="100-500",
+                        multiplier=None,
+                        form_factor="physical",
+                        price=0.0,
+                        quote_status="candidate",
+                        restriction_text="",
+                    ),
+                ],
+                snapshot_hypothesis=SNAPSHOT_UNRESOLVED,
+                resolved_snapshot_decision=SNAPSHOT_DELTA_UPDATE,
+            )
+            evidence = db.get_quote_document_verification_evidence(
+                quote_document_id=quote_document_id
+            )
+            assert evidence is not None
+            self.assertEqual(
+                evidence["publish_reasoning"]["status"], "delta_safe_upsert_only"
+            )
+            self.assertEqual(
+                len(evidence["validation"]["grouped_rows"]["publishable"]), 1
+            )
+            self.assertEqual(len(evidence["validation"]["grouped_rows"]["rejected"]), 1)
+            self.assertEqual(
+                len(evidence["publish_reasoning"]["untouched_active_rows"]), 1
+            )
+            self.assertEqual(
+                evidence["publish_reasoning"]["untouched_active_rows"][0]["card_type"],
+                "DG",
+            )
+            self.assertIn(
+                "不会清理未出现旧 SKU",
+                evidence["publish_reasoning"]["summary_text"],
+            )
+        finally:
+            db.close()
+
+    def test_quote_document_verification_evidence_explains_confirmed_full_snapshot_inactivation(
+        self,
+    ) -> None:
+        db = self.make_db("backend-quote-evidence-full")
+        try:
+            for card_type, amount_range, price in (
+                ("CVS", "50-500", 5.7),
+                ("DG", "100-500", 5.8),
+            ):
+                db.upsert_quote_price_row_with_history(
+                    quote_document_id=701,
+                    message_id=f"seed-full-{card_type}",
+                    platform="wechat",
+                    source_group_key="wechat:evidence-full-room",
+                    chat_id="evidence-full-room",
+                    chat_name="Evidence Full Room",
+                    source_name="Seed Source",
+                    sender_id="seed-user",
+                    card_type=card_type,
+                    country_or_currency="USD",
+                    amount_range=amount_range,
+                    multiplier=None,
+                    form_factor="physical",
+                    price=price,
+                    quote_status="active",
+                    restriction_text="",
+                    source_line=f"{card_type} {amount_range} {price}",
+                    raw_text=f"{card_type} {amount_range} {price}",
+                    message_time="2026-04-15 08:30:00",
+                    effective_at="2026-04-15 08:30:00",
+                    expires_at=None,
+                    parser_template="seed-template",
+                    parser_version="seed-v1",
+                    confidence=0.99,
+                )
+            db.conn.commit()
+
+            quote_document_id, _ = self._record_validation_backed_publish_fixture(
+                db=db,
+                message_id="evidence-full-1",
+                source_group_key="wechat:evidence-full-room",
+                chat_id="evidence-full-room",
+                chat_name="Evidence Full Room",
+                raw_message="整版\ncvs 50-500 5.7",
+                rows=[
+                    QuoteCandidateRow(
+                        row_ordinal=1,
+                        source_line="cvs 50-500 5.7",
+                        source_line_index=0,
+                        line_confidence=0.99,
+                        normalized_sku_key="CVS|USD|50-500||physical",
+                        normalization_status="normalized",
+                        row_publishable=True,
+                        publishability_basis="validator_pending",
+                        restriction_parse_status="clear",
+                        card_type="CVS",
+                        country_or_currency="USD",
+                        amount_range="50-500",
+                        multiplier=None,
+                        form_factor="physical",
+                        price=5.7,
+                        quote_status="active",
+                        restriction_text="",
+                    )
+                ],
+                snapshot_hypothesis=SNAPSHOT_FULL_SNAPSHOT,
+                resolved_snapshot_decision=SNAPSHOT_FULL_SNAPSHOT,
+            )
+            evidence = db.get_quote_document_verification_evidence(
+                quote_document_id=quote_document_id
+            )
+            assert evidence is not None
+            self.assertEqual(
+                evidence["publish_reasoning"]["status"],
+                "confirmed_full_snapshot_apply",
+            )
+            self.assertEqual(
+                len(evidence["publish_reasoning"]["would_inactivate_active_rows"]), 1
+            )
+            self.assertEqual(
+                evidence["publish_reasoning"]["would_inactivate_active_rows"][0]["card_type"],
+                "DG",
+            )
+            self.assertIn(
+                "允许上墙 publishable_rows 并失活未出现旧 SKU",
+                evidence["publish_reasoning"]["summary_text"],
+            )
+        finally:
+            db.close()
+
+    def test_failure_dictionary_aggregates_repair_history_into_searchable_entry(
+        self,
+    ) -> None:
+        from bookkeeping_core.repair_cases import package_quote_repair_case
+
+        db = self.make_db("backend-failure-dictionary-entry")
+        try:
+            quote_document_id = db.record_quote_candidate_bundle(
+                candidate=_make_validation_candidate(message_id="failure-dict-1")
+            )
+            db.record_quote_validation_run(
+                validation_run=QuoteValidationRun(
+                    quote_document_id=quote_document_id,
+                    validator_version=VALIDATOR_VERSION_V1,
+                    run_kind="runtime",
+                    message_decision="no_publish",
+                    validation_status="completed",
+                    summary={"message_reasons": [{"code": "strict_match_failed"}]},
+                    row_results=[],
+                )
+            )
+            exception_id = db.record_quote_exception(
+                quote_document_id=quote_document_id,
+                platform="wechat",
+                source_group_key="wechat:failure-dict-room",
+                chat_id="failure-dict-room",
+                chat_name="Failure Dict Room",
+                source_name="Validator",
+                sender_id="wxid-validator",
+                reason="strict_match_failed",
+                source_line="[Apple]",
+                raw_text="[Apple]",
+                message_time="2026-04-15 12:00:00",
+                parser_template="validator_template_v1",
+                parser_version="candidate-v1",
+                confidence=0.0,
+            )
+            repair_case = package_quote_repair_case(db=db, exception_id=exception_id)
+
+            entries = db.list_quote_failure_dictionary_entries(
+                repair_case_id=int(repair_case["id"]),
+                limit=5,
+            )
+            self.assertTrue(entries)
+            self.assertEqual(entries[0]["failure_code"], "strict_match_failed")
+            self.assertIn(
+                "wechat:failure-dict-room",
+                entries[0]["related_groups_json"],
+            )
+            self.assertIn(int(repair_case["id"]), entries[0]["source_case_refs_json"])
+            self.assertGreaterEqual(int(entries[0]["frequency"]), 1)
+        finally:
+            db.close()
+
     def test_quote_publish_lock_serializes_per_group_attempts(self) -> None:
         import psycopg
 

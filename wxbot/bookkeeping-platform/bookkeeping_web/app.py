@@ -151,6 +151,14 @@ def create_app(
             return _with_db(
                 db_file, start_response, _handle_quotes_exceptions, environ
             )
+        if path == "/api/quotes/evidence" and method == "GET":
+            return _with_db(
+                db_file, start_response, _handle_quotes_evidence, environ
+            )
+        if path == "/api/quotes/failure-dictionary" and method == "GET":
+            return _with_db(
+                db_file, start_response, _handle_quotes_failure_dictionary, environ
+            )
         if path == "/api/quotes/snapshot-decision/confirm" and method == "POST":
             return _with_db(
                 db_file, start_response, _handle_quotes_snapshot_decision_confirm, environ
@@ -704,6 +712,94 @@ def _annotate_quote_exception_repair_status_text(*, db: BookkeepingDB, rows: lis
             attempt_count=int(summary.get("attempt_count") or 0),
             escalation_state=str(summary.get("escalation_state") or "not_ready"),
         )
+
+
+def _handle_quotes_evidence(db: BookkeepingDB, start_response, environ):
+    from bookkeeping_core.remediation import build_quote_repair_status_text
+
+    try:
+        query = parse_qs(environ.get("QUERY_STRING", ""), keep_blank_values=False)
+        quote_document_values = query.get("quote_document_id") or []
+        exception_values = query.get("exception_id") or []
+        quote_document_id: int | None = None
+        if quote_document_values:
+            quote_document_id = int(str(quote_document_values[0]).strip())
+        elif exception_values:
+            exception_id = int(str(exception_values[0]).strip())
+            exc_row = db.get_quote_exception(exception_id=exception_id)
+            if not exc_row:
+                return _respond_json(start_response, 404, {"error": "quote exception not found"})
+            if exc_row.get("quote_document_id") in (None, ""):
+                return _respond_json(
+                    start_response,
+                    400,
+                    {"error": "quote exception is not linked to a quote_document_id"},
+                )
+            quote_document_id = int(exc_row["quote_document_id"])
+        else:
+            return _respond_json(
+                start_response,
+                400,
+                {"error": "quote_document_id or exception_id is required"},
+            )
+    except ValueError as exc:
+        return _respond_json(start_response, 400, {"error": f"Bad query: {exc}"})
+
+    payload = _call_optional_db_method(
+        db,
+        "get_quote_document_verification_evidence",
+        default=None,
+        quote_document_id=quote_document_id,
+    )
+    if payload is None:
+        return _respond_json(start_response, 404, {"error": "quote document evidence not found"})
+    if payload.get("repair_case") and payload.get("repair_summary"):
+        payload["repair_case"]["status_text"] = build_quote_repair_status_text(
+            lifecycle_state=str(payload["repair_case"].get("lifecycle_state") or ""),
+            attempt_count=int(payload["repair_summary"].get("attempt_count") or 0),
+            escalation_state=str(payload["repair_summary"].get("escalation_state") or "not_ready"),
+        )
+    payload["read_only"] = True
+    return _respond_json(start_response, 200, payload)
+
+
+def _handle_quotes_failure_dictionary(db: BookkeepingDB, start_response, environ):
+    try:
+        query = parse_qs(environ.get("QUERY_STRING", ""), keep_blank_values=False)
+        search = str((query.get("search") or [""])[0] or "").strip()
+        failure_code = str((query.get("failure_code") or [""])[0] or "").strip()
+        repair_case_id_text = str((query.get("repair_case_id") or [""])[0] or "").strip()
+        exception_id_text = str((query.get("exception_id") or [""])[0] or "").strip()
+        limit_text = str((query.get("limit") or ["12"])[0] or "12").strip()
+        repair_case_id = int(repair_case_id_text) if repair_case_id_text else None
+        exception_id = int(exception_id_text) if exception_id_text else None
+        limit = max(1, min(50, int(limit_text)))
+    except ValueError as exc:
+        return _respond_json(start_response, 400, {"error": f"Bad query: {exc}"})
+
+    rows = _call_optional_db_method(
+        db,
+        "list_quote_failure_dictionary_entries",
+        default=[],
+        search=search,
+        failure_code=failure_code,
+        repair_case_id=repair_case_id,
+        exception_id=exception_id,
+        limit=limit,
+    )
+    return _respond_json(
+        start_response,
+        200,
+        {
+            "rows": rows,
+            "search": search,
+            "failure_code": failure_code,
+            "repair_case_id": repair_case_id,
+            "exception_id": exception_id,
+            "limit": limit,
+            "read_only": True,
+        },
+    )
 
 
 def _handle_quotes_snapshot_decision_confirm(db: BookkeepingDB, start_response, environ):

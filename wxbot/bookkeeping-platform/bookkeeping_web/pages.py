@@ -2123,6 +2123,23 @@ def render_quotes_page() -> str:
   <div class="muted" id="quote-exception-page-status">第 1 页</div>
   <div id="quote-exception-cards" style="display:flex;flex-direction:column;gap:12px;padding:4px 0;"></div>
 </section>
+<section class="panel stack panel-assist" id="quote-failure-dictionary-panel">
+  <div class="toolbar">
+    <div>
+      <div class="section-kicker">Repair Lexicon</div>
+      <h2>修复词典</h2>
+      <div class="muted" id="quote-failure-dictionary-status">先查词条，再修 case；这里只给修补建议，不给发布权。</div>
+    </div>
+  </div>
+  <form id="quote-failure-dictionary-form" class="quote-filter-grid">
+    <input name="search" id="quote-failure-dictionary-search" type="search" placeholder="搜 failure code / symptom / root cause / group key" autocomplete="off" />
+    <button type="submit">搜索词条</button>
+    <button type="button" id="quote-failure-dictionary-clear">清空</button>
+  </form>
+  <div id="quote-failure-dictionary-list" class="stack">
+    <div class="muted">修复词典加载中...</div>
+  </div>
+</section>
 <div class="quote-modal-backdrop" id="quote-ranking-modal" aria-hidden="true">
   <div class="quote-modal" role="dialog" aria-modal="true" aria-labelledby="quote-ranking-title">
     <div class="quote-modal-header">
@@ -2163,6 +2180,20 @@ def render_quotes_page() -> str:
         <button type="button" id="quote-harvest-cancel">取消</button>
         <button type="button" class="quote-modal-save" id="quote-harvest-save">保存模板</button>
       </div>
+    </div>
+  </div>
+</div>
+<div class="quote-modal-backdrop" id="quote-evidence-modal" aria-hidden="true">
+  <div class="quote-modal quote-modal-wide" role="dialog" aria-modal="true">
+    <div class="quote-modal-header">
+      <div class="quote-modal-header-copy">
+        <h2 id="quote-evidence-title">验证工作台</h2>
+        <div class="muted" id="quote-evidence-subtitle">查看候选、校验、快照、修复与发布理由；仅展示证据，未改动报价墙。</div>
+      </div>
+      <button class="quote-modal-close" type="button" id="quote-evidence-close">关闭</button>
+    </div>
+    <div id="quote-evidence-body" class="quote-modal-body">
+      <div class="muted">请选择一条异常查看验证详情。</div>
     </div>
   </div>
 </div>
@@ -2450,6 +2481,8 @@ function latestQuoteTime(rows) {
 
 let allQuoteRows = [];
 let allQuoteExceptions = [];
+let _quoteEvidenceState = null;
+let allQuoteFailureDictionaryEntries = [];
 let allQuoteProfiles = [];
 let allQuoteInquiries = [];
 let quoteExceptionState = {
@@ -3102,6 +3135,7 @@ function renderQuoteExceptions(payload) {
       : '';
     const snapshotActions = row.quote_document_id
       ? `
+          <button type="button" class="action-ghost" data-quote-evidence-open="${row.id}">验证详情</button>
           <button type="button" class="action-ghost" data-quote-snapshot-confirm="${row.id}" data-quote-snapshot-decision="full_snapshot">确认整版</button>
           <button type="button" class="action-ghost" data-quote-snapshot-confirm="${row.id}" data-quote-snapshot-decision="delta_update">确认局部</button>
         `
@@ -3174,6 +3208,13 @@ function bindQuoteExceptionButtons() {
       if (row) openQuoteHarvestModal(row);
     });
   });
+  document.querySelectorAll('[data-quote-evidence-open]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const row = allQuoteExceptions.find((item) => String(item.id) === String(button.dataset.quoteEvidenceOpen));
+      if (!row || !row.quote_document_id) return;
+      await openQuoteEvidenceModal(row);
+    });
+  });
   document.querySelectorAll('[data-quote-snapshot-confirm]').forEach((button) => {
     button.addEventListener('click', async () => {
       const row = allQuoteExceptions.find((item) => String(item.id) === String(button.dataset.quoteSnapshotConfirm));
@@ -3198,6 +3239,151 @@ function bindQuoteExceptionButtons() {
       await loadQuotesData();
     });
   });
+}
+
+function closeQuoteEvidenceModal() {
+  _quoteEvidenceState = null;
+  const modal = document.querySelector('#quote-evidence-modal');
+  modal.classList.remove('open');
+  modal.setAttribute('aria-hidden', 'true');
+  document.querySelector('#quote-evidence-body').innerHTML = '<div class="muted">请选择一条异常查看验证详情。</div>';
+}
+
+function quoteEvidenceRowsTable(rows, emptyText) {
+  const body = Array.isArray(rows) && rows.length
+    ? rows.map((item) => `
+      <tr>
+        <td>${textValue(item.card_type)}</td>
+        <td>${textValue(item.country_or_currency)}</td>
+        <td>${textValue(item.amount_range || item.amount_display)}</td>
+        <td>${quoteFormFactorText(item.form_factor)}</td>
+        <td>${textValue(item.price)}</td>
+        <td>${textValue(item.source_line)}</td>
+      </tr>
+    `).join('')
+    : `<tr><td colspan="6" class="muted">${escapeHtml(emptyText)}</td></tr>`;
+  return `
+    <div class="table-wrap">
+      <table class="quote-table">
+        <thead><tr><th>卡种</th><th>国家/币种</th><th>面额</th><th>形态</th><th>价格</th><th>来源行</th></tr></thead>
+        <tbody>${body}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+function quoteFailureDictionaryCards(entries, emptyText) {
+  if (!Array.isArray(entries) || !entries.length) {
+    return `<div class="muted">${escapeHtml(emptyText)}</div>`;
+  }
+  return entries.map((entry) => `
+    <article class="card">
+      <div class="label">${textValue(entry.failure_code, '未命名词条')}</div>
+      <div style="font-weight:700;font-size:16px;line-height:1.5;">${textValue(entry.symptom)}</div>
+      <div class="muted" style="margin-top:8px;">根因：${textValue(entry.root_cause)}</div>
+      <div class="muted" style="margin-top:8px;">优先范围：${textValue(entry.preferred_scope)} ｜ 频次：${textValue(entry.frequency, '0')}</div>
+      <div class="muted" style="margin-top:8px;">先做：${textValue(entry.do_first)}</div>
+      <div class="muted" style="margin-top:8px;">不要做：${textValue(entry.do_not_do)}</div>
+      <div class="muted" style="margin-top:8px;">已验证修法：${textValue(entry.known_good_fix)}</div>
+      <div class="muted" style="margin-top:8px;">Fixtures：${textValue((entry.replay_fixture_refs_json || []).join('，') || '—')}</div>
+      <div class="muted" style="margin-top:8px;">Tests：${textValue((entry.test_refs_json || []).join('，') || '—')}</div>
+    </article>
+  `).join('');
+}
+
+function renderQuoteFailureDictionary(rows, loadError = '') {
+  allQuoteFailureDictionaryEntries = Array.isArray(rows) ? rows : [];
+  const container = document.querySelector('#quote-failure-dictionary-list');
+  const status = document.querySelector('#quote-failure-dictionary-status');
+  if (loadError) {
+    status.textContent = `修复词典加载失败：${loadError}`;
+    container.innerHTML = `<div class="muted">修复词典加载失败：${escapeHtml(loadError)}</div>`;
+    return;
+  }
+  status.textContent = allQuoteFailureDictionaryEntries.length
+    ? `当前展示 ${allQuoteFailureDictionaryEntries.length} 条修复词条；它们只提供 repair 建议，不改变报价墙。`
+    : '还没有命中的修复词条。';
+  container.innerHTML = quoteFailureDictionaryCards(
+    allQuoteFailureDictionaryEntries,
+    '当前没有命中的修复词条。',
+  );
+}
+
+function renderQuoteEvidenceModal() {
+  const body = document.querySelector('#quote-evidence-body');
+  const payload = _quoteEvidenceState?.payload;
+  const row = _quoteEvidenceState?.row;
+  if (!payload || !row) {
+    body.innerHTML = '<div class="muted">暂无可展示的验证证据。</div>';
+    return;
+  }
+  const message = payload.message || {};
+  const validation = payload.validation || {};
+  const grouped = validation.grouped_rows || {};
+  const publishReasoning = payload.publish_reasoning || {};
+  const repairCase = payload.repair_case || {};
+  const repairSummary = payload.repair_summary || {};
+  const snapshot = payload.snapshot_decision || {};
+  const linkedException = payload.linked_exception || {};
+  const relatedDictionaryEntries = payload.related_dictionary_entries || [];
+  body.innerHTML = `
+    <div class="panel">
+      <strong>${textValue(message.chat_name || row.chat_name)}</strong>
+      <div class="muted" style="margin-top:6px;">消息ID：${textValue(message.message_id)} ｜ 发送人：${textValue(message.sender_id)} ｜ 时间：${formatQuoteTime(message.message_time)}</div>
+      <div class="muted" style="margin-top:6px;">异常原因：${textValue(linkedException.reason_label || row.reason_label)} ｜ 来源行：${textValue(linkedException.source_line || row.source_line)}</div>
+    </div>
+    <div class="panel">
+      <h3>快照与发布理由</h3>
+      <div class="muted">系统候选：${quoteSnapshotDecisionLabel(snapshot.system_hypothesis || 'unresolved')} ｜ 当前决策：${quoteSnapshotDecisionLabel(snapshot.resolved_decision || 'unresolved')} ｜ 来源：${textValue(snapshot.decision_source || 'system')}</div>
+      <div class="muted" style="margin-top:6px;">${textValue(publishReasoning.summary_text || '当前仅展示证据，未改动报价墙。')}</div>
+      <div class="muted" style="margin-top:6px;">模式：${textValue(publishReasoning.guarded_publish_mode)} ｜ publishable：${textValue(publishReasoning.publishable_row_count)} ｜ 当前 active：${textValue(publishReasoning.current_active_row_count)}</div>
+    </div>
+    <div class="panel">
+      <h3>校验结果</h3>
+      <div class="muted">消息决策：${textValue(validation.run?.message_decision)} ｜ 状态：${textValue(validation.run?.validation_status)}</div>
+      <div style="margin-top:10px;"><strong>Publishable</strong></div>
+      ${quoteEvidenceRowsTable(grouped.publishable || [], '无 publishable 行')}
+      <div style="margin-top:10px;"><strong>Held</strong></div>
+      ${quoteEvidenceRowsTable(grouped.held || [], '无 held 行')}
+      <div style="margin-top:10px;"><strong>Rejected</strong></div>
+      ${quoteEvidenceRowsTable(grouped.rejected || [], '无 rejected 行')}
+    </div>
+    <div class="panel">
+      <h3>未触碰 / 失活预期</h3>
+      <div style="margin-top:6px;"><strong>Untouched Active Rows</strong></div>
+      ${quoteEvidenceRowsTable(publishReasoning.untouched_active_rows || [], '当前没有因 delta/no-op 保留不动的旧 active')}
+      <div style="margin-top:10px;"><strong>Would Inactivate Active Rows</strong></div>
+      ${quoteEvidenceRowsTable(publishReasoning.would_inactivate_active_rows || [], '当前没有会被 confirmed full 失活的旧 active')}
+    </div>
+    <div class="panel">
+      <h3>修复状态</h3>
+      <div class="muted">状态：${textValue(repairCase.lifecycle_state || '无 repair case')} ｜ 次数：${textValue(repairSummary.attempt_count || 0)} ｜ 最近结果：${textValue(repairSummary.last_attempt_outcome || '—')}</div>
+      <div class="muted" style="margin-top:6px;">${textValue(repairCase.status_text || '当前仅展示证据，未改动报价墙。')}</div>
+    </div>
+    <div class="panel">
+      <h3>相关修复词条</h3>
+      <div class="muted" style="margin-bottom:10px;">先查词条再修 case；词条只提供修补建议，不提供发布权。</div>
+      ${quoteFailureDictionaryCards(relatedDictionaryEntries, '当前还没有关联词条，可先看 repair case 历史后再补词条。')}
+    </div>
+  `;
+}
+
+async function openQuoteEvidenceModal(row) {
+  const modal = document.querySelector('#quote-evidence-modal');
+  modal.classList.add('open');
+  modal.setAttribute('aria-hidden', 'false');
+  document.querySelector('#quote-evidence-body').innerHTML = '<div class="muted">加载验证证据中...</div>';
+  try {
+    const response = await fetch(`/api/quotes/evidence?exception_id=${Number(row.id)}`);
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error || '加载验证证据失败');
+    }
+    _quoteEvidenceState = { row, payload };
+    renderQuoteEvidenceModal();
+  } catch (error) {
+    document.querySelector('#quote-evidence-body').innerHTML = `<div class="muted">加载失败：${escapeHtml(error?.message || '未知错误')}</div>`;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -4190,6 +4376,16 @@ document.querySelector('#quote-harvest-modal').addEventListener('click', (event)
     closeQuoteHarvestModal();
   }
 });
+
+document.querySelector('#quote-evidence-close').addEventListener('click', () => {
+  closeQuoteEvidenceModal();
+});
+
+document.querySelector('#quote-evidence-modal').addEventListener('click', (event) => {
+  if (event.target.id === 'quote-evidence-modal') {
+    closeQuoteEvidenceModal();
+  }
+});
 document.querySelector('#quote-harvest-preview').addEventListener('click', async () => {
   if (!_quoteHarvestState) return;
   if (_quoteHarvestState.mode === 'harvest') {
@@ -4350,11 +4546,17 @@ async function loadQuotesData() {
       };
     }
   };
-  const [boardPayload, exceptionPayload, profilePayload, inquiryPayload] = await Promise.all([
+  const lexiconSearch = String(document.querySelector('#quote-failure-dictionary-search')?.value || '').trim();
+  const failureDictionaryParams = new URLSearchParams({ limit: '12' });
+  if (lexiconSearch) {
+    failureDictionaryParams.set('search', lexiconSearch);
+  }
+  const [boardPayload, exceptionPayload, profilePayload, inquiryPayload, failureDictionaryPayload] = await Promise.all([
     fetchQuotePayload('/api/quotes/board', { rows: [], total: 0 }, '报价主屏'),
     fetchQuotePayload(`/api/quotes/exceptions?${exceptionParams.toString()}`, { rows: [], total: 0 }, '异常风险池'),
     fetchQuotePayload('/api/quotes/group-profiles', { rows: [], total: 0 }, '群模板配置台'),
     fetchQuotePayload('/api/quotes/inquiries', { rows: [], total: 0 }, '短回复接力台'),
+    fetchQuotePayload(`/api/quotes/failure-dictionary?${failureDictionaryParams.toString()}`, { rows: [], total: 0 }, '修复词典'),
   ]);
   if (
     !exceptionPayload?._load_error
@@ -4375,6 +4577,10 @@ async function loadQuotesData() {
   renderQuoteExceptions(exceptionPayload);
   renderQuoteProfiles(Array.isArray(profilePayload.rows) ? profilePayload.rows : [], profilePayload._load_error || '');
   renderQuoteInquiries(Array.isArray(inquiryPayload.rows) ? inquiryPayload.rows : [], inquiryPayload._load_error || '');
+  renderQuoteFailureDictionary(
+    Array.isArray(failureDictionaryPayload.rows) ? failureDictionaryPayload.rows : [],
+    failureDictionaryPayload._load_error || '',
+  );
 }
 
 function syncQuoteUrl() {
@@ -4407,6 +4613,16 @@ document.querySelector('#quote-filter-clear').addEventListener('click', () => {
 });
 
 document.querySelector('#quote-refresh-btn').addEventListener('click', async () => {
+  await loadQuotesData();
+});
+
+document.querySelector('#quote-failure-dictionary-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  await loadQuotesData();
+});
+
+document.querySelector('#quote-failure-dictionary-clear').addEventListener('click', async () => {
+  document.querySelector('#quote-failure-dictionary-form').reset();
   await loadQuotesData();
 });
 

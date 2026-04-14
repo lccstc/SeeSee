@@ -11,7 +11,7 @@ from wsgiref.util import setup_testing_defaults
 
 from bookkeeping_core.database import BookkeepingDB
 from bookkeeping_core.periods import AccountingPeriodService
-from bookkeeping_core.quote_snapshot import SNAPSHOT_FULL_SNAPSHOT
+from bookkeeping_core.quote_snapshot import SNAPSHOT_DELTA_UPDATE, SNAPSHOT_FULL_SNAPSHOT
 from bookkeeping_web.app import create_app
 from tests.support.postgres_test_case import PostgresTestCase
 
@@ -367,13 +367,19 @@ class WebAppTests(PostgresTestCase):
         self.assertIn('id="quote-ranking-table"', body)
         self.assertIn('id="quote-exception-cards"', body)
         self.assertIn('id="quote-harvest-modal"', body)
+        self.assertIn('id="quote-evidence-modal"', body)
+        self.assertIn('id="quote-failure-dictionary-form"', body)
+        self.assertIn('id="quote-failure-dictionary-list"', body)
         self.assertIn('id="quote-profile-edit-modal"', body)
         self.assertIn("异常整理台", body)
+        self.assertIn("验证工作台", body)
+        self.assertIn("修复词典", body)
         self.assertIn("标准模板整理", body)
         self.assertIn("超市卡", body)
         self.assertIn("分段收割", body)
         self.assertIn("切换到分段收割", body)
         self.assertIn("保存这一段并继续", body)
+        self.assertIn("验证详情", body)
         self.assertIn("quote-harvest-side-header", body)
         self.assertIn("quote-harvest-workspace-scroll", body)
         self.assertIn("quote-harvest-rows-scroll", body)
@@ -391,6 +397,8 @@ class WebAppTests(PostgresTestCase):
         self.assertIn("继续补一段并生成候选重放", body)
         self.assertNotIn("继续补一段并上墙", body)
         self.assertNotIn("并已上墙", body)
+        self.assertIn("/api/quotes/evidence", body)
+        self.assertIn("/api/quotes/failure-dictionary", body)
 
     def test_quote_dictionary_page_and_api_require_admin_password_for_writes(self) -> None:
         status, body = self._request_text("GET", "/quote-dictionary")
@@ -5057,6 +5065,206 @@ class WebRepairCaseTests(PostgresTestCase):
                 os.environ.pop("QUOTE_ADMIN_PASSWORD", None)
             else:
                 os.environ["QUOTE_ADMIN_PASSWORD"] = old_password
+
+    def test_quote_evidence_endpoint_returns_read_only_message_level_payload(self) -> None:
+        from bookkeeping_core.quote_validation import validate_quote_candidate_document
+
+        self.db.upsert_quote_price_row_with_history(
+            quote_document_id=900,
+            message_id="seed-evidence-web-1",
+            platform="wechat",
+            source_group_key="wechat:g-web-repair",
+            chat_id="g-web-repair",
+            chat_name="Repair Replay 群",
+            source_name="Seed Source",
+            sender_id="seed-user",
+            card_type="CVS",
+            country_or_currency="USD",
+            amount_range="50-500",
+            multiplier=None,
+            form_factor="physical",
+            price=5.7,
+            quote_status="active",
+            restriction_text="",
+            source_line="cvs 50-500 5.7",
+            raw_text="cvs 50-500 5.7",
+            message_time="2026-04-15 09:00:00",
+            effective_at="2026-04-15 09:00:00",
+            expires_at=None,
+            parser_template="seed-template",
+            parser_version="seed-v1",
+            confidence=0.99,
+        )
+        self.db.upsert_quote_price_row_with_history(
+            quote_document_id=901,
+            message_id="seed-evidence-web-2",
+            platform="wechat",
+            source_group_key="wechat:g-web-repair",
+            chat_id="g-web-repair",
+            chat_name="Repair Replay 群",
+            source_name="Seed Source",
+            sender_id="seed-user",
+            card_type="DG",
+            country_or_currency="USD",
+            amount_range="100-500",
+            multiplier=None,
+            form_factor="physical",
+            price=5.8,
+            quote_status="active",
+            restriction_text="",
+            source_line="dg 100-500 5.8",
+            raw_text="dg 100-500 5.8",
+            message_time="2026-04-15 09:00:00",
+            effective_at="2026-04-15 09:00:00",
+            expires_at=None,
+            parser_template="seed-template",
+            parser_version="seed-v1",
+            confidence=0.99,
+        )
+        self.db.conn.commit()
+
+        origin_document_id = self.db.record_quote_candidate_bundle(
+            candidate=_make_repair_candidate(
+                message_id="web-evidence-origin",
+                raw_message="cvs 50-500 5.7\ndg 100-500 0",
+                row_specs=[
+                    {
+                        "source_line": "cvs 50-500 5.7",
+                        "card_type": "CVS",
+                        "country_or_currency": "USD",
+                        "amount_range": "50-500",
+                        "multiplier": "",
+                        "price": 5.7,
+                        "quote_status": "active",
+                    },
+                    {
+                        "source_line": "dg 100-500 0",
+                        "card_type": "DG",
+                        "country_or_currency": "USD",
+                        "amount_range": "100-500",
+                        "multiplier": "",
+                        "price": 0.0,
+                        "quote_status": "candidate",
+                    },
+                ],
+                run_kind="runtime",
+                replay_of_quote_document_id=None,
+            )
+        )
+        validation_run = validate_quote_candidate_document(
+            quote_document_id=origin_document_id,
+            run_kind="runtime",
+            candidate_document=self.db.get_quote_document(
+                quote_document_id=origin_document_id
+            ),
+            candidate_rows=self.db.list_quote_candidate_rows(
+                quote_document_id=origin_document_id
+            ),
+        )
+        self.db.record_quote_validation_run(validation_run=validation_run)
+        self.db.confirm_quote_snapshot_decision(
+            quote_document_id=origin_document_id,
+            resolved_decision=SNAPSHOT_DELTA_UPDATE,
+            confirmed_by="web-operator",
+        )
+
+        status, payload = self._request(
+            "GET",
+            "/api/quotes/evidence",
+            query_string=f"quote_document_id={origin_document_id}",
+        )
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["read_only"])
+        self.assertEqual(int(payload["quote_document_id"]), origin_document_id)
+        self.assertEqual(
+            payload["publish_reasoning"]["status"], "delta_safe_upsert_only"
+        )
+        self.assertEqual(
+            len(payload["validation"]["grouped_rows"]["publishable"]), 1
+        )
+        self.assertEqual(len(payload["validation"]["grouped_rows"]["rejected"]), 1)
+        self.assertEqual(
+            len(payload["publish_reasoning"]["untouched_active_rows"]), 1
+        )
+        self.assertIn("未改动报价墙", payload["publish_reasoning"]["summary_text"])
+
+    def test_quote_evidence_endpoint_accepts_exception_id_indirection(self) -> None:
+        from bookkeeping_core.quote_validation import QuoteValidationRun
+
+        origin_document_id = self.db.record_quote_candidate_bundle(
+            candidate=_make_repair_candidate(
+                message_id="web-evidence-exception",
+                raw_message="[Apple]\nUS 100 95.5",
+                row_specs=[{"source_line": "US 100 95.5", "price": 95.5}],
+                run_kind="runtime",
+                replay_of_quote_document_id=None,
+            )
+        )
+        self.db.record_quote_validation_run(
+            validation_run=QuoteValidationRun(
+                quote_document_id=origin_document_id,
+                validator_version="validator-v1",
+                run_kind="runtime",
+                message_decision="no_publish",
+                validation_status="completed",
+                summary={"message_reasons": [{"code": "strict_match_failed"}]},
+                row_results=[],
+            )
+        )
+        exception_id = self.db.record_quote_exception(
+            quote_document_id=origin_document_id,
+            platform="wechat",
+            source_group_key="wechat:g-web-repair",
+            chat_id="g-web-repair",
+            chat_name="Repair Replay 群",
+            source_name="报价员",
+            sender_id="seller-web-repair",
+            reason="strict_match_failed",
+            source_line="US 100 95.5",
+            raw_text="[Apple]\nUS 100 95.5",
+            message_time="2026-04-14 19:00:00",
+            parser_template="repair-template-v1",
+            parser_version="candidate-v1",
+            confidence=0.12,
+        )
+
+        status, payload = self._request(
+            "GET",
+            "/api/quotes/evidence",
+            query_string=f"exception_id={exception_id}",
+        )
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["read_only"])
+        self.assertEqual(int(payload["quote_document_id"]), origin_document_id)
+        self.assertEqual(int(payload["linked_exception"]["id"]), exception_id)
+        self.assertTrue(payload["related_dictionary_entries"])
+        self.assertEqual(
+            payload["related_dictionary_entries"][0]["failure_code"],
+            "strict_match_failed",
+        )
+
+    def test_quote_failure_dictionary_endpoint_returns_searchable_entries(self) -> None:
+        status, payload = self._request(
+            "GET",
+            "/api/quotes/failure-dictionary",
+            query_string="search=skeleton&limit=5",
+        )
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["read_only"])
+        self.assertLessEqual(len(payload["rows"]), 5)
+        self.assertTrue(
+            any(
+                row["failure_code"] == "auto_remediation_skeleton_expansion_blocked"
+                for row in payload["rows"]
+            )
+        )
+        entry = next(
+            row
+            for row in payload["rows"]
+            if row["failure_code"] == "auto_remediation_skeleton_expansion_blocked"
+        )
+        self.assertIn("不要在已有群 profile 下默认扩骨架", entry["do_not_do"])
+        self.assertIsInstance(entry["forbidden_fixes_json"], list)
 
     def test_quote_exception_resolve_endpoint_syncs_repair_case_ignore_reopen_and_resolve(
         self,

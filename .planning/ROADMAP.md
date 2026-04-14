@@ -19,7 +19,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 6: Constrained Auto-Remediation Loop** - Let subagents propose bounded repairs that must survive replay, validator, and regression gates before absorption
 - [x] **Phase 3: Fact Protection Publisher** - Make one guarded publisher the only path that can mutate active quote facts
 - [x] **Phase 4: Snapshot / Delta Semantics** - Distinguish `full_snapshot` from `delta_update` and default safely
-- [ ] **Phase 7: Operator Verification Workbench** - Expose message-level candidate, rejection, and publish decision evidence for debugging
+- [x] **Phase 7: Operator Verification Workbench** - Expose message-level candidate, rejection, and publish decision evidence for debugging
 - [ ] **Phase 8: Shadow Validation Gate** - Run the pipeline safely in validation mode without handing it default production authority
 
 ## Phase Details
@@ -142,9 +142,9 @@ Plans:
 **Plans**: 07-01, 07-02, 07-03
 
 Plans:
-- [ ] 07-01: Design message-level verification payloads and APIs
-- [ ] 07-02: Expose candidate / validator / publish decision evidence in the web workbench
-- [ ] 07-03: Build the failure dictionary / repair lexicon from repair cases, replay fixtures, and known-good fixes
+- [x] 07-01: Design message-level verification payloads and APIs
+- [x] 07-02: Expose candidate / validator / publish decision evidence in the web workbench
+- [x] 07-03: Build the failure dictionary / repair lexicon from repair cases, replay fixtures, and known-good fixes
 
 ### Phase 8: Shadow Validation Gate
 **Goal**: Run the full pipeline in validation mode against real samples without handing it default authority over production publication.
@@ -175,5 +175,5 @@ Phases execute in strategic order: 1 → 2 → 2.1 → 5 → 6 → 3 → 4 → 7
 | 6. Constrained Auto-Remediation Loop | 3/3 | Completed | 2026-04-14 |
 | 3. Fact Protection Publisher | 3/3 | Completed | 2026-04-15 |
 | 4. Snapshot / Delta Semantics | 3/3 | Completed | 2026-04-15 |
-| 7. Operator Verification & Failure Dictionary | 0/3 | Ready to execute | - |
+| 7. Operator Verification & Failure Dictionary | 3/3 | Completed | 2026-04-15 |
 | 8. Shadow Validation Gate | 0/3 | Not started | - |

@@ -8,7 +8,7 @@
 ### Evidence
 
 - [ ] **EVID-01**: User can trace every candidate or published quote row back to the exact raw message, source line, sender, group, and message time
-- [ ] **EVID-02**: User can inspect why a row was accepted, rejected, held, or left untouched during a publish attempt
+- [x] **EVID-02**: User can inspect why a row was accepted, rejected, held, or left untouched during a publish attempt
 
 ### Candidate Generation
 
@@ -50,11 +50,11 @@
 
 - [ ] **INDU-01**: System drives repair cases through a constrained remediation workflow with bounded attempts, cumulative failure logs, and escalation after repeated failure
 - [ ] **INDU-02**: User can promote repeated exception patterns into deterministic fixes such as group profiles, sections, bootstrap configs, shared rules, scripts, skills, or unit tests, prioritizing group-level fixes before global parser changes
-- [ ] **INDU-03**: System converts repair-case failure history into a structured failure dictionary / repair lexicon so fresh agents can retrieve symptoms, root causes, preferred scopes, forbidden fixes, replay fixtures, and known-good repairs without relying on prior chat context
+- [x] **INDU-03**: System converts repair-case failure history into a structured failure dictionary / repair lexicon so fresh agents can retrieve symptoms, root causes, preferred scopes, forbidden fixes, replay fixtures, and known-good repairs without relying on prior chat context
 
 ### Operator Verification
 
-- [ ] **OPS-01**: User can inspect candidate rows, rejected rows, held rows, and `publishable_rows` for an individual message
+- [x] **OPS-01**: User can inspect candidate rows, rejected rows, held rows, and `publishable_rows` for an individual message
 - [x] **OPS-02**: User can confirm `full_snapshot` versus `delta_update` during v1 debugging without granting automatic publish authority
 
 ### Governance
@@ -89,7 +89,7 @@
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | EVID-01 | Phase 1 | Pending |
-| EVID-02 | Phase 7 | Pending |
+| EVID-02 | Phase 7 | Complete |
 | CAND-01 | Phase 1 | Pending |
 | CAND-02 | Phase 1 | Pending |
 | VALI-01 | Phase 2 | Complete |
@@ -104,14 +104,14 @@
 | EXCP-03 | Phase 5 | Complete |
 | INDU-01 | Phase 6 | Pending |
 | INDU-02 | Phase 6 | Pending |
-| INDU-03 | Phase 7 | Pending |
+| INDU-03 | Phase 7 | Complete |
 | FACT-01 | Phase 3 | Complete |
 | FACT-02 | Phase 3 | Complete |
 | FACT-03 | Phase 3 | Complete |
 | SNAP-01 | Phase 4 | Complete |
 | SNAP-02 | Phase 4 | Complete |
 | SNAP-03 | Phase 4 | Complete |
-| OPS-01 | Phase 7 | Pending |
+| OPS-01 | Phase 7 | Complete |
 | OPS-02 | Phase 4 | Complete |
 | GOV-01 | Phase 8 | Pending |
 
@@ -122,4 +122,4 @@
 
 ---
 *Requirements defined: 2026-04-13*
-*Last updated: 2026-04-15 after Phase 04 snapshot/delta semantics verification*
+*Last updated: 2026-04-15 after Phase 07 operator verification and failure dictionary verification*

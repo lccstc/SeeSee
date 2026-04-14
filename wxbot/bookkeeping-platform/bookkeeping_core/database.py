@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 from datetime import datetime
+from decimal import Decimal
 import hashlib
 import json
 import re
@@ -10,6 +11,14 @@ from typing import Any
 
 from .models import ReminderPayload
 from .quote_candidates import QuoteCandidateMessage
+from .quote_snapshot import (
+    PUBLISH_MODE_CONFIRMED_FULL_SNAPSHOT,
+    PUBLISH_MODE_DELTA_SAFE_UPSERT_ONLY,
+    PUBLISH_MODE_VALIDATION_ONLY,
+    get_guarded_publish_mode,
+    get_effective_snapshot_decision,
+    snapshot_decision_label,
+)
 from .quote_validation import QuoteValidationRun
 from .quotes import (
     normalize_quote_amount_range,
@@ -32,6 +41,108 @@ _QUOTE_EXCEPTION_SUPPRESSION_TRANSLATION = str.maketrans(
         "\uff0d": "-",
         "\u3000": " ",
     }
+)
+_QUOTE_FAILURE_DICTIONARY_SEEDS: tuple[dict[str, Any], ...] = (
+    {
+        "entry_key": "failure:validator_mixed_outcome",
+        "failure_code": "validator_mixed_outcome",
+        "symptom": "同一条消息里有的行通过、有的行被 reject/hold，运营如果只看主屏会误以为整条成功。",
+        "trigger_pattern": "message_decision=mixed_outcome 或异常原因为 validator_mixed_outcome。",
+        "root_cause": "候选和校验已经拆分，但消息级解释面不足，导致部分成功被静默吞掉。",
+        "preferred_scope": "group_profile",
+        "do_first": "先看验证工作台里的 publishable / held / rejected 分组，再确认哪些行应该继续补 profile。",
+        "do_not_do": "不要把 mixed outcome 当整条成功；不要因为有 publishable_rows 就忽略失败行。",
+        "known_good_fix": "保留 publishable 行，失败行继续进 repair case 或异常池，并在 workbench 暴露 proof-only 理由。",
+        "forbidden_fixes_json": [
+            "不要绕过 validator 直接发布整条消息。",
+            "不要把 rejected 行手工拼进 publishable_rows。",
+        ],
+        "replay_fixture_refs_json": ["tests/fixtures/quote_exception_corpus/gold_top8.json"],
+        "test_refs_json": [
+            "tests.test_quote_validation",
+            "tests.test_runtime",
+        ],
+        "source_kind": "builtin",
+    },
+    {
+        "entry_key": "failure:auto_remediation_skeleton_expansion_blocked",
+        "failure_code": "auto_remediation_skeleton_expansion_blocked",
+        "symptom": "自动修补尝试想为已有群 profile 新增骨架，运行时护栏直接拒绝。",
+        "trigger_pattern": "failure_note 或 current_failure_reason 命中“新增骨架”/skeleton expansion blocked。",
+        "root_cause": "自动提案没有唯一命中已有 section，误把问题当成新增 profile skeleton。",
+        "preferred_scope": "group_section",
+        "do_first": "先检查该群现有 section 能否唯一命中，再改 section，而不是扩 profile 骨架。",
+        "do_not_do": "不要在已有群 profile 下默认扩骨架。",
+        "known_good_fix": "优先更新已有 section；只有首次建群 profile 或明确空模板时才允许建立新骨架。",
+        "forbidden_fixes_json": [
+            "不要把 auto-remediation 变成无限骨架追加器。",
+        ],
+        "replay_fixture_refs_json": ["tests/fixtures/quote_exception_corpus/approved_top8.json"],
+        "test_refs_json": [
+            "tests.test_runtime",
+            "tests.test_webapp",
+        ],
+        "source_kind": "builtin",
+    },
+    {
+        "entry_key": "failure:supermarket_country_pollution",
+        "failure_code": "supermarket_country_pollution",
+        "symptom": "supermarket-card 提案把“横白卡图 / 整卡卡密”之类 token 吸成 country_or_currency。",
+        "trigger_pattern": "candidate rows 出现脏国家字段，常见于混合超市卡多 section 报价。",
+        "root_cause": "宽模板吸收语义过宽，form_factor/备注 token 没被挡在语义护栏外。",
+        "preferred_scope": "group_profile",
+        "do_first": "先检查 form_factor 和 country_or_currency 的标准化映射，再看 supermarket 提案是否过宽。",
+        "do_not_do": "不要把说明性 token 当国家/币种写回 profile。",
+        "known_good_fix": "保留 supermarket-card 作为混合模板，但对 country_or_currency 启用语义清洗和 proof-only 验证。",
+        "forbidden_fixes_json": [
+            "不要为了吃下一条复杂消息放松 country_or_currency 语义标准。",
+        ],
+        "replay_fixture_refs_json": ["tests/fixtures/quote_exception_corpus/gold_top8.json"],
+        "test_refs_json": [
+            "tests.test_template_engine",
+            "tests.test_runtime",
+        ],
+        "source_kind": "builtin",
+    },
+    {
+        "entry_key": "failure:strict_match_failed",
+        "failure_code": "strict_match_failed",
+        "symptom": "原文像报价，但 strict 模板没有稳定命中，整条消息落进异常池。",
+        "trigger_pattern": "异常原因为 strict_match_failed 或 validation message_reasons 命中同名 code。",
+        "root_cause": "群级语法书还没覆盖该群当前稳定写法，或者 section/header 上下文缺失。",
+        "preferred_scope": "group_profile",
+        "do_first": "先看原文、source line、现有 profile defaults 和 section 命中情况。",
+        "do_not_do": "不要直接跳到共享全局规则；先补该群 profile。",
+        "known_good_fix": "在群级 profile 里补 defaults / header carry-forward / section 命中，再用 replay fixture 回归。",
+        "forbidden_fixes_json": [
+            "不要把 strict match 问题直接归因成 LLM 不够聪明。",
+        ],
+        "replay_fixture_refs_json": ["tests/fixtures/quote_exception_corpus/approved_top8.json"],
+        "test_refs_json": [
+            "tests.test_quote_exception_corpus",
+            "tests.test_runtime",
+        ],
+        "source_kind": "builtin",
+    },
+    {
+        "entry_key": "failure:missing_group_template",
+        "failure_code": "missing_group_template",
+        "symptom": "群里出现真实报价，但当前没有群级 profile/template，系统只能安全失败。",
+        "trigger_pattern": "异常原因为 missing_group_template。",
+        "root_cause": "这个群还没有被纳入一群一 profile 主线，或者 bootstrap 尚未完成。",
+        "preferred_scope": "group_profile",
+        "do_first": "先建立该群 profile，再决定是否需要 strict-section 或 supermarket-card。",
+        "do_not_do": "不要为了图快把所有群塞进全局万能模板。",
+        "known_good_fix": "从真实异常样本或 approved fixture bootstrap 一份群级 profile，再走 replay/validator。",
+        "forbidden_fixes_json": [
+            "不要默认用共享 regex 兜底所有新群。",
+        ],
+        "replay_fixture_refs_json": ["tests/fixtures/quote_exception_corpus/approved_top8.json"],
+        "test_refs_json": [
+            "tests.test_quote_exception_corpus",
+        ],
+        "source_kind": "builtin",
+    },
 )
 
 
@@ -1329,10 +1440,16 @@ class _BookkeepingStoreBase:
 
     @staticmethod
     def _serialize_candidate_json(value: Any, *, fallback: Any) -> str:
+        def _json_default(obj: Any):
+            if isinstance(obj, Decimal):
+                return float(obj)
+            raise TypeError(f"Object of type {obj.__class__.__name__} is not JSON serializable")
+
         return json.dumps(
             fallback if value is None else value,
             ensure_ascii=False,
             sort_keys=True,
+            default=_json_default,
         )
 
     def record_quote_candidate_bundle(
@@ -1777,6 +1894,211 @@ class _BookkeepingStoreBase:
             """,
             (selected_validation_run_id, quote_document_id),
         ).fetchall()
+
+    def list_active_quote_rows_for_group(
+        self,
+        *,
+        source_group_key: str,
+    ) -> list[DBRow]:
+        rows = self.conn.execute(
+            """
+            SELECT *
+            FROM quote_price_rows
+            WHERE source_group_key = ?
+              AND quote_status = 'active'
+              AND expires_at IS NULL
+            ORDER BY effective_at DESC, id DESC
+            """,
+            (source_group_key,),
+        ).fetchall()
+        return [self._serialize_quote_db_row(row) for row in rows]
+
+    @staticmethod
+    def _quote_row_identity_key(row: DBRow) -> tuple[str, str, str, str, str]:
+        return (
+            str(row.get("card_type") or ""),
+            str(row.get("country_or_currency") or ""),
+            str(row.get("amount_range") or ""),
+            str(row.get("multiplier") or ""),
+            str(row.get("form_factor") or ""),
+        )
+
+    def get_quote_document_verification_evidence(
+        self,
+        *,
+        quote_document_id: int,
+    ) -> DBRow | None:
+        document = self.get_quote_document(quote_document_id=quote_document_id)
+        if document is None:
+            return None
+
+        candidate_rows = [
+            self._serialize_quote_db_row(row)
+            for row in self.list_quote_candidate_rows(quote_document_id=quote_document_id)
+        ]
+        snapshot_decision = self.get_quote_snapshot_decision(
+            quote_document_id=quote_document_id
+        )
+        validation_run = self.get_latest_quote_validation_run(
+            quote_document_id=quote_document_id
+        )
+        validation_rows: list[DBRow] = []
+        grouped_rows: dict[str, list[DBRow]] = {
+            "publishable": [],
+            "held": [],
+            "rejected": [],
+        }
+        publishable_rows: list[DBRow] = []
+        if validation_run is not None:
+            raw_validation_rows = self.list_quote_validation_row_results(
+                validation_run_id=int(validation_run["id"])
+            )
+            candidate_by_id = {
+                int(row["id"]): row
+                for row in candidate_rows
+                if row.get("id") is not None
+            }
+            for raw_row in raw_validation_rows:
+                serialized_result = self._serialize_quote_db_row(raw_row)
+                candidate_row = candidate_by_id.get(
+                    int(serialized_result.get("quote_candidate_row_id") or 0)
+                )
+                merged_row = dict(candidate_row or {})
+                merged_row.update(
+                    {
+                        "validation_row_result_id": serialized_result.get("id"),
+                        "validation_run_id": serialized_result.get("validation_run_id"),
+                        "schema_status": serialized_result.get("schema_status"),
+                        "business_status": serialized_result.get("business_status"),
+                        "final_decision": serialized_result.get("final_decision"),
+                        "decision_basis": serialized_result.get("decision_basis"),
+                        "rejection_reasons_json": serialized_result.get(
+                            "rejection_reasons_json"
+                        ),
+                        "hold_reasons_json": serialized_result.get("hold_reasons_json"),
+                    }
+                )
+                validation_rows.append(merged_row)
+                final_decision = str(merged_row.get("final_decision") or "")
+                if final_decision == "publishable":
+                    grouped_rows["publishable"].append(merged_row)
+                    publishable_rows.append(merged_row)
+                elif final_decision == "held":
+                    grouped_rows["held"].append(merged_row)
+                elif final_decision == "rejected":
+                    grouped_rows["rejected"].append(merged_row)
+
+        source_group_key = str(document.get("source_group_key") or "")
+        active_rows = self.list_active_quote_rows_for_group(
+            source_group_key=source_group_key
+        )
+        publishable_keys = {
+            self._quote_row_identity_key(row) for row in publishable_rows
+        }
+        matched_active_rows: list[DBRow] = []
+        unmatched_active_rows: list[DBRow] = []
+        for active_row in active_rows:
+            if self._quote_row_identity_key(active_row) in publishable_keys:
+                matched_active_rows.append(active_row)
+            else:
+                unmatched_active_rows.append(active_row)
+
+        effective_snapshot_decision = get_effective_snapshot_decision(snapshot_decision)
+        guarded_publish_mode = get_guarded_publish_mode(snapshot_decision)
+        reasoning_status = "no_validation_run"
+        reasoning_code = "no_validation_run"
+        reasoning_summary = "当前消息还没有可用的验证结果，未改动报价墙。"
+        if validation_run is None:
+            pass
+        elif not publishable_rows:
+            reasoning_status = "no_publish"
+            reasoning_code = "no_publishable_rows"
+            reasoning_summary = "当前消息没有 publishable_rows，未改动报价墙。"
+        elif guarded_publish_mode == PUBLISH_MODE_CONFIRMED_FULL_SNAPSHOT:
+            reasoning_status = "confirmed_full_snapshot_apply"
+            reasoning_code = "confirmed_full_snapshot_authorized"
+            reasoning_summary = (
+                "当前仅展示证据，未改动报价墙；当前消息已确认整版快照，若触发 guarded publisher，允许上墙 publishable_rows 并失活未出现旧 SKU。"
+            )
+        elif guarded_publish_mode == PUBLISH_MODE_DELTA_SAFE_UPSERT_ONLY:
+            reasoning_status = "delta_safe_upsert_only"
+            reasoning_code = "delta_does_not_inactivate_absent_rows"
+            reasoning_summary = (
+                "当前仅展示证据，未改动报价墙；当前消息按局部更新处理，即使触发 guarded publisher，也只会上墙 publishable_rows，不会清理未出现旧 SKU。"
+            )
+        else:
+            reasoning_status = "validation_only"
+            reasoning_code = "validation_only_mode"
+            reasoning_summary = "当前仅保留验证证据，未改动报价墙。"
+
+        untouched_active_rows = (
+            unmatched_active_rows
+            if reasoning_status
+            in {"no_validation_run", "no_publish", "delta_safe_upsert_only", "validation_only"}
+            else []
+        )
+        would_inactivate_rows = (
+            unmatched_active_rows
+            if reasoning_status == "confirmed_full_snapshot_apply"
+            else []
+        )
+        linked_exception = self.get_latest_quote_exception_for_document(
+            quote_document_id=quote_document_id
+        )
+        linked_repair_case = None
+        linked_repair_summary = None
+        if linked_exception is not None:
+            linked_repair_case = self.get_quote_repair_case_by_origin_exception(
+                origin_exception_id=int(linked_exception["id"])
+            )
+            if linked_repair_case is not None:
+                linked_repair_summary = self.get_quote_repair_case_summary(
+                    repair_case_id=int(linked_repair_case["id"])
+                )
+        related_dictionary_entries = self.list_quote_failure_dictionary_entries(
+            failure_code=str(linked_exception.get("reason") or "") if linked_exception else "",
+            repair_case_id=(
+                int(linked_repair_case["id"])
+                if linked_repair_case is not None and linked_repair_case.get("id") is not None
+                else None
+            ),
+            limit=5,
+        )
+
+        return {
+            "quote_document_id": int(quote_document_id),
+            "message": document,
+            "linked_exception": linked_exception,
+            "snapshot_decision": snapshot_decision,
+            "candidate_rows": candidate_rows,
+            "validation": {
+                "run": self._serialize_quote_db_row(validation_run)
+                if validation_run is not None
+                else None,
+                "row_results": validation_rows,
+                "grouped_rows": grouped_rows,
+            },
+            "repair_case": linked_repair_case,
+            "repair_summary": linked_repair_summary,
+            "related_dictionary_entries": related_dictionary_entries,
+            "publish_reasoning": {
+                "status": reasoning_status,
+                "reason_code": reasoning_code,
+                "summary_text": reasoning_summary,
+                "effective_snapshot_decision": effective_snapshot_decision,
+                "effective_snapshot_label": snapshot_decision_label(
+                    effective_snapshot_decision
+                ),
+                "guarded_publish_mode": guarded_publish_mode,
+                "publishable_rows": publishable_rows,
+                "current_active_rows": active_rows,
+                "matched_active_rows": matched_active_rows,
+                "untouched_active_rows": untouched_active_rows,
+                "would_inactivate_active_rows": would_inactivate_rows,
+                "publishable_row_count": len(publishable_rows),
+                "current_active_row_count": len(active_rows),
+            },
+        }
 
     @staticmethod
     def _quote_publish_lock_key(source_group_key: str) -> int:
@@ -2325,6 +2647,29 @@ class _BookkeepingStoreBase:
             )
         return item
 
+    def get_latest_quote_exception_for_document(
+        self,
+        *,
+        quote_document_id: int,
+    ) -> DBRow | None:
+        row = self.conn.execute(
+            """
+            SELECT *
+            FROM quote_parse_exceptions
+            WHERE quote_document_id = ?
+            ORDER BY created_at DESC, id DESC
+            LIMIT 1
+            """,
+            (quote_document_id,),
+        ).fetchone()
+        if not row:
+            return None
+        item = self._serialize_quote_db_row(row)
+        item["snapshot_decision"] = self.get_quote_snapshot_decision(
+            quote_document_id=quote_document_id
+        )
+        return item
+
     def get_quote_repair_case_by_origin_exception(
         self,
         *,
@@ -2801,6 +3146,318 @@ class _BookkeepingStoreBase:
             }
         )
         return summary
+
+    @staticmethod
+    def _coerce_json_list(value: Any) -> list[Any]:
+        if isinstance(value, list):
+            return list(value)
+        if isinstance(value, tuple):
+            return list(value)
+        if isinstance(value, str):
+            text = value.strip()
+            if not text:
+                return []
+            try:
+                parsed = json.loads(text)
+            except json.JSONDecodeError:
+                return []
+            if isinstance(parsed, list):
+                return parsed
+        return []
+
+    def _serialize_failure_dictionary_entry(self, row: DBRow | None) -> DBRow | None:
+        if row is None:
+            return None
+        item = self._serialize_quote_db_row(row)
+        for key in (
+            "forbidden_fixes_json",
+            "replay_fixture_refs_json",
+            "test_refs_json",
+            "related_groups_json",
+            "source_case_refs_json",
+        ):
+            item[key] = self._coerce_json_list(item.get(key))
+        if item.get("frequency") is not None:
+            item["frequency"] = int(item["frequency"])
+        return item
+
+    def upsert_quote_failure_dictionary_entry(
+        self,
+        *,
+        entry_key: str,
+        failure_code: str,
+        symptom: str,
+        trigger_pattern: str,
+        root_cause: str,
+        preferred_scope: str,
+        do_first: str,
+        do_not_do: str,
+        known_good_fix: str,
+        forbidden_fixes_json: list[str] | None = None,
+        replay_fixture_refs_json: list[str] | None = None,
+        test_refs_json: list[str] | None = None,
+        related_groups_json: list[str] | None = None,
+        source_case_refs_json: list[int] | None = None,
+        frequency: int = 0,
+        first_seen_at: str | None = None,
+        last_seen_at: str | None = None,
+        source_kind: str = "builtin",
+    ) -> DBRow:
+        cur = self.conn.execute(
+            """
+            INSERT INTO quote_failure_dictionary_entries (
+              entry_key,
+              failure_code,
+              symptom,
+              trigger_pattern,
+              root_cause,
+              preferred_scope,
+              do_first,
+              do_not_do,
+              known_good_fix,
+              forbidden_fixes_json,
+              replay_fixture_refs_json,
+              test_refs_json,
+              related_groups_json,
+              source_case_refs_json,
+              frequency,
+              first_seen_at,
+              last_seen_at,
+              source_kind,
+              updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?::jsonb, ?::jsonb, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(entry_key) DO UPDATE
+            SET failure_code = EXCLUDED.failure_code,
+                symptom = EXCLUDED.symptom,
+                trigger_pattern = EXCLUDED.trigger_pattern,
+                root_cause = EXCLUDED.root_cause,
+                preferred_scope = EXCLUDED.preferred_scope,
+                do_first = EXCLUDED.do_first,
+                do_not_do = EXCLUDED.do_not_do,
+                known_good_fix = EXCLUDED.known_good_fix,
+                forbidden_fixes_json = EXCLUDED.forbidden_fixes_json,
+                replay_fixture_refs_json = EXCLUDED.replay_fixture_refs_json,
+                test_refs_json = EXCLUDED.test_refs_json,
+                related_groups_json = EXCLUDED.related_groups_json,
+                source_case_refs_json = EXCLUDED.source_case_refs_json,
+                frequency = EXCLUDED.frequency,
+                first_seen_at = EXCLUDED.first_seen_at,
+                last_seen_at = EXCLUDED.last_seen_at,
+                source_kind = EXCLUDED.source_kind,
+                updated_at = CURRENT_TIMESTAMP
+            RETURNING *
+            """,
+            (
+                entry_key,
+                failure_code,
+                symptom,
+                trigger_pattern,
+                root_cause,
+                preferred_scope,
+                do_first,
+                do_not_do,
+                known_good_fix,
+                json.dumps(forbidden_fixes_json or [], ensure_ascii=False),
+                json.dumps(replay_fixture_refs_json or [], ensure_ascii=False),
+                json.dumps(test_refs_json or [], ensure_ascii=False),
+                json.dumps(related_groups_json or [], ensure_ascii=False),
+                json.dumps(source_case_refs_json or [], ensure_ascii=False),
+                int(frequency or 0),
+                first_seen_at,
+                last_seen_at,
+                source_kind,
+            ),
+        )
+        self.conn.commit()
+        return self._serialize_failure_dictionary_entry(cur.fetchone()) or {}
+
+    def sync_quote_failure_dictionary_entries(self) -> None:
+        for seed in _QUOTE_FAILURE_DICTIONARY_SEEDS:
+            self.upsert_quote_failure_dictionary_entry(**seed)
+
+        cases = self.conn.execute(
+            """
+            SELECT
+              rc.id,
+              rc.source_group_key,
+              rc.chat_name,
+              rc.current_failure_reason,
+              rc.created_at,
+              rc.updated_at,
+              COALESCE(qpe.reason, '') AS origin_reason
+            FROM quote_repair_cases rc
+            LEFT JOIN quote_parse_exceptions qpe ON qpe.id = rc.origin_exception_id
+            ORDER BY rc.updated_at DESC, rc.id DESC
+            """
+        ).fetchall()
+        aggregates: dict[str, dict[str, Any]] = {}
+        for case in cases:
+            failure_code = str(
+                case.get("current_failure_reason") or case.get("origin_reason") or ""
+            ).strip()
+            if not failure_code:
+                continue
+            aggregate = aggregates.setdefault(
+                failure_code,
+                {
+                    "failure_code": failure_code,
+                    "frequency": 0,
+                    "first_seen_at": str(case.get("created_at") or "") or None,
+                    "last_seen_at": str(case.get("updated_at") or "") or None,
+                    "related_groups": set(),
+                    "source_case_refs": [],
+                    "preferred_scope": "",
+                },
+            )
+            aggregate["frequency"] += 1
+            if case.get("source_group_key"):
+                aggregate["related_groups"].add(str(case["source_group_key"]))
+            aggregate["source_case_refs"].append(int(case["id"]))
+            created_at = str(case.get("created_at") or "") or None
+            updated_at = str(case.get("updated_at") or "") or None
+            if created_at and (
+                aggregate["first_seen_at"] is None
+                or created_at < str(aggregate["first_seen_at"])
+            ):
+                aggregate["first_seen_at"] = created_at
+            if updated_at and (
+                aggregate["last_seen_at"] is None
+                or updated_at > str(aggregate["last_seen_at"])
+            ):
+                aggregate["last_seen_at"] = updated_at
+            attempts = self.list_quote_repair_case_attempts(repair_case_id=int(case["id"]))
+            for attempt in reversed(attempts):
+                summary = attempt.get("attempt_summary_json")
+                if isinstance(summary, str):
+                    try:
+                        summary = json.loads(summary)
+                    except json.JSONDecodeError:
+                        summary = {}
+                if not isinstance(summary, dict):
+                    summary = {}
+                proposal_scope = str(summary.get("proposal_scope") or "").strip()
+                if proposal_scope:
+                    aggregate["preferred_scope"] = proposal_scope
+                    break
+
+        for failure_code, aggregate in aggregates.items():
+            seed = next(
+                (
+                    item
+                    for item in _QUOTE_FAILURE_DICTIONARY_SEEDS
+                    if str(item.get("failure_code") or "") == failure_code
+                ),
+                None,
+            )
+            if seed is not None:
+                payload = dict(seed)
+                if aggregate["preferred_scope"]:
+                    payload["preferred_scope"] = aggregate["preferred_scope"]
+                payload["frequency"] = int(aggregate["frequency"])
+                payload["first_seen_at"] = aggregate["first_seen_at"]
+                payload["last_seen_at"] = aggregate["last_seen_at"]
+                payload["related_groups_json"] = sorted(aggregate["related_groups"])
+                payload["source_case_refs_json"] = aggregate["source_case_refs"]
+                self.upsert_quote_failure_dictionary_entry(**payload)
+                continue
+
+            preferred_scope = aggregate["preferred_scope"] or "group_profile"
+            self.upsert_quote_failure_dictionary_entry(
+                entry_key=f"failure:{failure_code}",
+                failure_code=failure_code,
+                symptom=f"重复 repair case 当前都落在 {failure_code}，说明这类错已经是稳定故障模式。",
+                trigger_pattern=f"repair_case.current_failure_reason={failure_code}",
+                root_cause="需要先结合 repair case failure log、现有群 profile 和 replay 结果定位根因。",
+                preferred_scope=preferred_scope,
+                do_first="先查验证工作台、repair case 历史和该群已批准 fixture，再决定修补范围。",
+                do_not_do="不要绕过 validator / publisher；不要在已有群 profile 下默认扩骨架。",
+                known_good_fix="用群级 profile / section 修补并通过 replay + validator，再把结论回写词条。",
+                forbidden_fixes_json=[
+                    "不要把 repair case 原文全文复制进词条。",
+                    "不要把一次失败直接升级成全局共享规则。",
+                ],
+                replay_fixture_refs_json=[],
+                test_refs_json=[],
+                related_groups_json=sorted(aggregate["related_groups"]),
+                source_case_refs_json=aggregate["source_case_refs"],
+                frequency=int(aggregate["frequency"]),
+                first_seen_at=aggregate["first_seen_at"],
+                last_seen_at=aggregate["last_seen_at"],
+                source_kind="derived",
+            )
+
+    def list_quote_failure_dictionary_entries(
+        self,
+        *,
+        search: str = "",
+        failure_code: str = "",
+        repair_case_id: int | None = None,
+        exception_id: int | None = None,
+        limit: int = 20,
+    ) -> list[DBRow]:
+        self.sync_quote_failure_dictionary_entries()
+        rows = self.conn.execute(
+            """
+            SELECT *
+            FROM quote_failure_dictionary_entries
+            ORDER BY frequency DESC, COALESCE(last_seen_at, created_at) DESC, id ASC
+            """
+        ).fetchall()
+        repair_case = (
+            self.get_quote_repair_case(repair_case_id=repair_case_id)
+            if repair_case_id is not None
+            else None
+        )
+        if repair_case is None and exception_id is not None:
+            repair_case = self.get_quote_repair_case_by_origin_exception(
+                origin_exception_id=exception_id
+            )
+        target_failure_code = str(
+            failure_code
+            or (str(repair_case.get("current_failure_reason") or "") if repair_case else "")
+        ).strip()
+        target_group = str(repair_case.get("source_group_key") or "") if repair_case else ""
+        search_text = str(search or "").strip().lower()
+
+        scored: list[tuple[int, DBRow]] = []
+        for raw_row in rows:
+            row = self._serialize_failure_dictionary_entry(raw_row) or {}
+            haystack = " ".join(
+                [
+                    str(row.get("failure_code") or ""),
+                    str(row.get("symptom") or ""),
+                    str(row.get("trigger_pattern") or ""),
+                    str(row.get("root_cause") or ""),
+                    str(row.get("preferred_scope") or ""),
+                    str(row.get("do_first") or ""),
+                    str(row.get("do_not_do") or ""),
+                    str(row.get("known_good_fix") or ""),
+                    " ".join(str(item) for item in row.get("related_groups_json") or []),
+                ]
+            ).lower()
+            if search_text and search_text not in haystack:
+                continue
+            score = 0
+            if target_failure_code and str(row.get("failure_code") or "") == target_failure_code:
+                score += 10
+            if target_group and target_group in {
+                str(item) for item in row.get("related_groups_json") or []
+            }:
+                score += 4
+            if repair_case is not None and int(repair_case["id"]) in {
+                int(item) for item in row.get("source_case_refs_json") or [] if str(item).strip()
+            }:
+                score += 6
+            scored.append((score, row))
+        scored.sort(
+            key=lambda item: (
+                -item[0],
+                -int(item[1].get("frequency") or 0),
+                str(item[1].get("entry_key") or ""),
+            )
+        )
+        return [row for _, row in scored[: max(1, int(limit or 20))]]
 
     def resolve_quote_exception(
         self,
@@ -3700,7 +4357,7 @@ class _BookkeepingStoreBase:
         ):
             if result.get(key) is not None:
                 result[key] = int(result[key])
-        for key in ("price", "confidence"):
+        for key in ("price", "confidence", "line_confidence"):
             if result.get(key) is not None:
                 result[key] = float(result[key])
         for key in (
@@ -4465,6 +5122,40 @@ class BookkeepingDB(_BookkeepingStoreBase):
         )
         self.conn.execute(
             """
+            CREATE TABLE IF NOT EXISTS quote_failure_dictionary_entries (
+              id BIGSERIAL PRIMARY KEY,
+              entry_key TEXT NOT NULL,
+              failure_code TEXT NOT NULL,
+              symptom TEXT NOT NULL,
+              trigger_pattern TEXT NOT NULL DEFAULT '',
+              root_cause TEXT NOT NULL DEFAULT '',
+              preferred_scope TEXT NOT NULL DEFAULT '',
+              do_first TEXT NOT NULL DEFAULT '',
+              do_not_do TEXT NOT NULL DEFAULT '',
+              known_good_fix TEXT NOT NULL DEFAULT '',
+              forbidden_fixes_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+              replay_fixture_refs_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+              test_refs_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+              related_groups_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+              source_case_refs_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+              frequency INTEGER NOT NULL DEFAULT 0,
+              first_seen_at TIMESTAMP,
+              last_seen_at TIMESTAMP,
+              source_kind TEXT NOT NULL DEFAULT 'builtin',
+              created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              UNIQUE(entry_key)
+            )
+            """
+        )
+        self.conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_quote_failure_dictionary_entries_code
+            ON quote_failure_dictionary_entries(failure_code, source_kind)
+            """
+        )
+        self.conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS quote_dictionary_aliases (
               id BIGSERIAL PRIMARY KEY,
               category TEXT NOT NULL,
@@ -4957,6 +5648,29 @@ class BookkeepingDB(_BookkeepingStoreBase):
                 "outcome_state",
                 "failure_note",
                 "created_at",
+            },
+            "quote_failure_dictionary_entries": {
+                "id",
+                "entry_key",
+                "failure_code",
+                "symptom",
+                "trigger_pattern",
+                "root_cause",
+                "preferred_scope",
+                "do_first",
+                "do_not_do",
+                "known_good_fix",
+                "forbidden_fixes_json",
+                "replay_fixture_refs_json",
+                "test_refs_json",
+                "related_groups_json",
+                "source_case_refs_json",
+                "frequency",
+                "first_seen_at",
+                "last_seen_at",
+                "source_kind",
+                "created_at",
+                "updated_at",
             },
             "quote_inquiry_contexts": {
                 "id",
