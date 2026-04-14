@@ -1020,11 +1020,58 @@ def _group_parser_section_signature(section: dict) -> str:
     return json.dumps(payload, ensure_ascii=False, sort_keys=True)
 
 
+def _normalize_group_parser_section_label(label: str) -> str:
+    return "".join(ch.lower() for ch in str(label or "").strip() if ch.isalnum())
+
+
+def _group_parser_section_defaults_key(section: dict) -> tuple[str, str, str]:
+    defaults = dict(section.get("defaults") or {})
+    return (
+        str(defaults.get("card_type") or "").strip().lower(),
+        str(defaults.get("country_or_currency") or "").strip().lower(),
+        str(defaults.get("form_factor") or "").strip().lower(),
+    )
+
+
+def _find_group_parser_section_merge_index(
+    existing_sections: list[dict],
+    *,
+    derived_section: dict,
+    signatures: dict[str, int],
+) -> int | None:
+    signature = _group_parser_section_signature(derived_section)
+    if signature in signatures:
+        return int(signatures[signature])
+
+    normalized_label = _normalize_group_parser_section_label(str(derived_section.get("label") or ""))
+    if normalized_label:
+        label_matches = [
+            index
+            for index, section in enumerate(existing_sections)
+            if _normalize_group_parser_section_label(str(section.get("label") or "")) == normalized_label
+        ]
+        if len(label_matches) == 1:
+            return int(label_matches[0])
+
+    defaults_key = _group_parser_section_defaults_key(derived_section)
+    if all(defaults_key):
+        defaults_matches = [
+            index
+            for index, section in enumerate(existing_sections)
+            if _group_parser_section_defaults_key(section) == defaults_key
+        ]
+        if len(defaults_matches) == 1:
+            return int(defaults_matches[0])
+
+    return None
+
+
 def _merge_group_parser_template_config(
     existing_raw: str,
     *,
     derived_sections: list[dict],
     max_sections: int | None = None,
+    allow_new_sections: bool = True,
 ) -> str:
     from bookkeeping_core.template_engine import TemplateConfig
     from bookkeeping_core.template_engine import _GROUP_PARSER_VERSION as GROUP_PARSER_VERSION
@@ -1041,14 +1088,19 @@ def _merge_group_parser_template_config(
         existing = TemplateConfig(version=GROUP_PARSER_VERSION)
 
     sections = list(existing.sections)
+    existing_sections = list(sections)
     signatures = {
         _group_parser_section_signature(section): index
-        for index, section in enumerate(sections)
+        for index, section in enumerate(existing_sections)
     }
     for derived_section in derived_sections:
-        signature = _group_parser_section_signature(derived_section)
-        if signature in signatures:
-            index = signatures[signature]
+        merge_index = _find_group_parser_section_merge_index(
+            existing_sections,
+            derived_section=derived_section,
+            signatures=signatures,
+        )
+        if merge_index is not None:
+            index = merge_index
             preserved_id = str(sections[index].get("id") or f"section-{index + 1}")
             sections[index] = {
                 **dict(derived_section),
@@ -1056,6 +1108,8 @@ def _merge_group_parser_template_config(
                 "enabled": True,
             }
             continue
+        if not allow_new_sections:
+            raise ValueError("自动修补只允许更新现有群骨架，不允许新增骨架。")
         if max_sections is not None and len(sections) >= max_sections:
             raise ValueError(f"当前群模板已达到 {max_sections} 套骨架上限，请先复盘，不再继续新增。")
         sections.append(
@@ -1065,7 +1119,6 @@ def _merge_group_parser_template_config(
                 "enabled": True,
             }
         )
-        signatures[signature] = len(sections) - 1
     for index, section in enumerate(sections, start=1):
         section["id"] = f"section-{index}"
         section["enabled"] = True

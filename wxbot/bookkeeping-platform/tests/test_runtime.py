@@ -2639,6 +2639,323 @@ class RuntimeRepairCaseTests(PostgresTestCase):
             0,
         )
 
+    def test_runtime_auto_remediation_updates_existing_unique_sections_at_capacity(self) -> None:
+        self.db.set_group(
+            platform="whatsapp",
+            group_key="whatsapp:room-auto-remediate-capacity",
+            chat_id="room-auto-remediate-capacity",
+            chat_name="自动修复骨架上限群",
+            group_num=5,
+        )
+        self.db.upsert_quote_group_profile(
+            platform="whatsapp",
+            chat_id="room-auto-remediate-capacity",
+            chat_name="自动修复骨架上限群",
+            default_card_type="Apple",
+            default_country_or_currency="USD",
+            default_form_factor="横白卡",
+            parser_template="group-parser",
+            template_config=json.dumps(
+                {
+                    "version": "group-parser-v1",
+                    "defaults": {},
+                    "sections": [
+                        {
+                            "id": "section-1",
+                            "enabled": True,
+                            "priority": 10,
+                            "label": "Steam",
+                            "defaults": {
+                                "card_type": "Steam",
+                                "country_or_currency": "USD",
+                                "form_factor": "不限",
+                            },
+                            "lines": [
+                                {
+                                    "kind": "quote",
+                                    "pattern": "USD {amount}={price}",
+                                    "outputs": {
+                                        "card_type": "Steam",
+                                        "country_or_currency": "USD",
+                                        "form_factor": "不限",
+                                        "amount_range": "10-200",
+                                    },
+                                }
+                            ],
+                        },
+                        {
+                            "id": "section-2",
+                            "enabled": True,
+                            "priority": 20,
+                            "label": "Apple",
+                            "defaults": {
+                                "card_type": "Apple",
+                                "country_or_currency": "USD",
+                                "form_factor": "横白卡",
+                            },
+                            "lines": [
+                                {
+                                    "kind": "quote",
+                                    "pattern": "US-{amount} 白卡 【{price}】",
+                                    "outputs": {
+                                        "card_type": "Apple",
+                                        "country_or_currency": "USD",
+                                        "form_factor": "横白卡",
+                                        "amount_range": "100-150",
+                                    },
+                                }
+                            ],
+                        },
+                        {
+                            "id": "section-3",
+                            "enabled": True,
+                            "priority": 30,
+                            "label": "Xbox",
+                            "defaults": {
+                                "card_type": "Xbox",
+                                "country_or_currency": "USD",
+                                "form_factor": "不限",
+                            },
+                            "lines": [
+                                {
+                                    "kind": "quote",
+                                    "pattern": "US：{amount}={price}",
+                                    "outputs": {
+                                        "card_type": "Xbox",
+                                        "country_or_currency": "USD",
+                                        "form_factor": "不限",
+                                        "amount_range": "10-250",
+                                    },
+                                }
+                            ],
+                        },
+                    ],
+                },
+                ensure_ascii=False,
+            ),
+        )
+
+        self.runtime.process_envelope(
+            self._message(
+                platform="whatsapp",
+                message_id="msg-auto-remediate-capacity-1",
+                chat_id="room-auto-remediate-capacity",
+                chat_name="自动修复骨架上限群",
+                text=(
+                    "报价更新\n"
+                    "【Steam蒸汽】\n"
+                    "USD-10-200【4.94】\n"
+                    "UK【6.66】\n"
+                    "【苹果-快加/快刷】\n"
+                    "US-300-500   白卡   【5.36】\n"
+                    "US-100/150   白卡   【5.36】\n"
+                    "【US-XBOX--Rate】\n"
+                    "US：10-250=5.06\n"
+                    "UK【6.15】\n"
+                ),
+            )
+        )
+
+        exception_row = self.db.conn.execute(
+            """
+            SELECT *
+            FROM quote_parse_exceptions
+            WHERE chat_id = ?
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            ("room-auto-remediate-capacity",),
+        ).fetchone()
+        self.assertIsNotNone(exception_row)
+        assert exception_row is not None
+        self.assertEqual(str(exception_row["resolution_status"]), "resolved")
+
+        repair_case = self.db.get_quote_repair_case_by_origin_exception(
+            origin_exception_id=int(exception_row["id"])
+        )
+        self.assertIsNotNone(repair_case)
+        assert repair_case is not None
+        self.assertEqual(str(repair_case["lifecycle_state"]), "closed_resolved")
+
+        summary = self.db.get_quote_repair_case_summary(
+            repair_case_id=int(repair_case["id"])
+        )
+        self.assertIsNotNone(summary)
+        assert summary is not None
+        self.assertEqual(summary["attempt_count"], 1)
+        self.assertEqual(summary["last_attempt_outcome"], "completed")
+
+        profile = self.db.get_quote_group_profile(
+            platform="whatsapp",
+            chat_id="room-auto-remediate-capacity",
+        )
+        self.assertIsNotNone(profile)
+        assert profile is not None
+        template = json.loads(str(profile["template_config"]))
+        self.assertEqual(len(list(template.get("sections") or [])), 3)
+        xbox_section = next(
+            section
+            for section in list(template.get("sections") or [])
+            if str((section.get("defaults") or {}).get("card_type") or "") == "Xbox"
+        )
+        self.assertTrue(
+            any(
+                str(((line.get("outputs") or {}).get("country_or_currency")) or "") == "GBP"
+                for line in list(xbox_section.get("lines") or [])
+            )
+        )
+        self.assertEqual(
+            self._count_rows(
+                "quote_price_rows",
+                "WHERE source_group_key = ?",
+                ("whatsapp:room-auto-remediate-capacity",),
+            ),
+            0,
+        )
+
+    def test_runtime_auto_remediation_blocks_new_skeleton_append_for_existing_profile(self) -> None:
+        self.db.set_group(
+            platform="wechat",
+            group_key="wechat:room-auto-remediate-guard",
+            chat_id="room-auto-remediate-guard",
+            chat_name="自动修补护栏群",
+            group_num=5,
+        )
+        self.db.upsert_quote_group_profile(
+            platform="wechat",
+            chat_id="room-auto-remediate-guard",
+            chat_name="自动修补护栏群",
+            default_card_type="Apple",
+            default_country_or_currency="USD",
+            default_form_factor="横白卡",
+            parser_template="group-parser",
+            template_config=json.dumps(
+                {
+                    "version": "group-parser-v1",
+                    "defaults": {},
+                    "sections": [
+                        {
+                            "id": "section-1",
+                            "enabled": True,
+                            "priority": 10,
+                            "label": "Apple",
+                            "defaults": {
+                                "card_type": "Apple",
+                                "country_or_currency": "USD",
+                                "form_factor": "横白卡",
+                            },
+                            "lines": [
+                                {
+                                    "kind": "quote",
+                                    "pattern": "{amount}={price}",
+                                    "outputs": {
+                                        "card_type": "Apple",
+                                        "country_or_currency": "USD",
+                                        "form_factor": "横白卡",
+                                        "amount_range": "100-150",
+                                    },
+                                }
+                            ],
+                        }
+                    ],
+                },
+                ensure_ascii=False,
+            ),
+        )
+
+        forced_preview = {
+            "can_save": True,
+            "strict_replay_ok": True,
+            "errors": [],
+            "strict_replay_errors": [],
+            "preview_rows": [
+                {
+                    "card_type": "Xbox",
+                    "country_or_currency": "USD",
+                    "amount": "10-250",
+                    "form_factor": "不限",
+                    "price": "5.06",
+                    "source_line": "US：10-250=5.06",
+                }
+            ],
+            "derived_sections": [
+                {
+                    "label": "Xbox",
+                    "priority": 10,
+                    "defaults": {
+                        "card_type": "Xbox",
+                        "country_or_currency": "USD",
+                        "form_factor": "不限",
+                    },
+                    "lines": [
+                        {
+                            "kind": "quote",
+                            "pattern": "US：{amount}={price}",
+                            "outputs": {
+                                "card_type": "Xbox",
+                                "country_or_currency": "USD",
+                                "form_factor": "不限",
+                                "amount_range": "10-250",
+                            },
+                        }
+                    ],
+                }
+            ],
+            "draft_structure": {"defaults": {}},
+        }
+        with patch(
+            "bookkeeping_web.app._build_quote_result_preview_payload",
+            return_value=forced_preview,
+        ):
+            self.runtime.process_envelope(
+                self._message(
+                    platform="wechat",
+                    message_id="msg-auto-remediate-guard-1",
+                    chat_id="room-auto-remediate-guard",
+                    chat_name="自动修补护栏群",
+                    text="[Xbox]\nUS：10-250=5.06",
+                )
+            )
+
+        exception_row = self.db.conn.execute(
+            """
+            SELECT *
+            FROM quote_parse_exceptions
+            WHERE chat_id = ?
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            ("room-auto-remediate-guard",),
+        ).fetchone()
+        self.assertIsNotNone(exception_row)
+        assert exception_row is not None
+        self.assertEqual(str(exception_row["resolution_status"]), "open")
+
+        repair_case = self.db.get_quote_repair_case_by_origin_exception(
+            origin_exception_id=int(exception_row["id"])
+        )
+        self.assertIsNotNone(repair_case)
+        assert repair_case is not None
+        self.assertEqual(str(repair_case["lifecycle_state"]), "escalated")
+        self.assertEqual(
+            str(repair_case["current_failure_reason"]),
+            "自动修补只允许更新现有群骨架，不允许新增骨架。",
+        )
+
+        summary = self.db.get_quote_repair_case_summary(
+            repair_case_id=int(repair_case["id"])
+        )
+        self.assertIsNotNone(summary)
+        assert summary is not None
+        self.assertEqual(summary["attempt_count"], 3)
+        self.assertEqual(summary["last_attempt_outcome"], "blocked")
+        self.assertTrue(
+            all(
+                str(item.get("failure_note") or "") == "自动修补只允许更新现有群骨架，不允许新增骨架。"
+                for item in list(summary.get("failure_log_json") or [])
+            )
+        )
+
     def test_runtime_auto_remediation_retries_three_times_then_escalates(self) -> None:
         self.db.set_group(
             platform="wechat",

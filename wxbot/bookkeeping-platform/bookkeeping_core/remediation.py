@@ -725,6 +725,7 @@ def _auto_apply_group_bound_proposal(
 ) -> dict[str, Any]:
     from bookkeeping_core.template_engine import (
         _GROUP_PARSER_MAX_SECTIONS as GROUP_PARSER_MAX_SECTIONS,
+        TemplateConfig,
         suggest_result_template_text,
     )
     from bookkeeping_web.app import (
@@ -831,15 +832,24 @@ def _auto_apply_group_bound_proposal(
         chat_id=str(exc_row.get("chat_id") or ""),
     )
     existing_profile_id = _maybe_int((existing_profile or {}).get("id"))
+    existing_template_config = str((existing_profile or {}).get("template_config") or "").strip()
+    existing_section_count = 0
+    if existing_template_config:
+        try:
+            existing_template = TemplateConfig.from_json(existing_template_config)
+            existing_section_count = len(list(existing_template.sections or []))
+        except ValueError:
+            existing_section_count = 0
     use_supermarket_mode = str((existing_profile or {}).get("parser_template") or "").strip() == "supermarket-card"
     preview_rows = list(preview.get("preview_rows") or [])
     first_row = preview_rows[0] if preview_rows else {}
     draft_defaults = dict((preview.get("draft_structure") or {}).get("defaults") or {})
     try:
         merged_config = _merge_group_parser_template_config(
-            str((existing_profile or {}).get("template_config") or ""),
+            existing_template_config,
             derived_sections=list(preview.get("derived_sections") or []),
             max_sections=None if use_supermarket_mode else GROUP_PARSER_MAX_SECTIONS,
+            allow_new_sections=existing_section_count == 0,
         )
 
         db.upsert_quote_group_profile(

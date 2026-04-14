@@ -2867,6 +2867,140 @@ class WebAppTests(PostgresTestCase):
             else:
                 os.environ["QUOTE_ADMIN_PASSWORD"] = old_password
 
+    def test_quote_exception_result_save_updates_unique_existing_group_section_at_limit(self) -> None:
+        from bookkeeping_web.app import _merge_group_parser_template_config
+
+        existing_raw = json.dumps(
+            {
+                "version": "group-parser-v1",
+                "defaults": {},
+                "sections": [
+                    {
+                        "id": "section-1",
+                        "enabled": True,
+                        "priority": 10,
+                        "label": "Steam",
+                        "defaults": {
+                            "card_type": "Steam",
+                            "country_or_currency": "USD",
+                            "form_factor": "不限",
+                        },
+                        "lines": [
+                            {
+                                "kind": "quote",
+                                "pattern": "USD {amount}={price}",
+                                "outputs": {
+                                    "card_type": "Steam",
+                                    "country_or_currency": "USD",
+                                    "form_factor": "不限",
+                                    "amount_range": "10-200",
+                                },
+                            }
+                        ],
+                    },
+                    {
+                        "id": "section-2",
+                        "enabled": True,
+                        "priority": 20,
+                        "label": "Apple",
+                        "defaults": {
+                            "card_type": "Apple",
+                            "country_or_currency": "USD",
+                            "form_factor": "横白卡",
+                        },
+                        "lines": [
+                            {
+                                "kind": "quote",
+                                "pattern": "{amount}={price}",
+                                "outputs": {
+                                    "card_type": "Apple",
+                                    "country_or_currency": "USD",
+                                    "form_factor": "横白卡",
+                                    "amount_range": "100-150",
+                                },
+                            }
+                        ],
+                    },
+                    {
+                        "id": "section-3",
+                        "enabled": True,
+                        "priority": 30,
+                        "label": "Xbox",
+                        "defaults": {
+                            "card_type": "Xbox",
+                            "country_or_currency": "USD",
+                            "form_factor": "不限",
+                        },
+                        "lines": [
+                            {
+                                "kind": "quote",
+                                "pattern": "US：{amount}={price}",
+                                "outputs": {
+                                    "card_type": "Xbox",
+                                    "country_or_currency": "USD",
+                                    "form_factor": "不限",
+                                    "amount_range": "10-250",
+                                },
+                            }
+                        ],
+                    },
+                ],
+            },
+            ensure_ascii=False,
+        )
+
+        merged = _merge_group_parser_template_config(
+            existing_raw,
+            derived_sections=[
+                {
+                    "label": "Xbox",
+                    "priority": 10,
+                    "defaults": {
+                        "card_type": "Xbox",
+                        "country_or_currency": "USD",
+                        "form_factor": "不限",
+                    },
+                    "lines": [
+                        {
+                            "kind": "quote",
+                            "pattern": "US：{amount}={price}",
+                            "outputs": {
+                                "card_type": "Xbox",
+                                "country_or_currency": "USD",
+                                "form_factor": "不限",
+                                "amount_range": "10-250",
+                            },
+                        },
+                        {
+                            "kind": "quote",
+                            "pattern": "UK【{price}】",
+                            "outputs": {
+                                "card_type": "Xbox",
+                                "country_or_currency": "GBP",
+                                "form_factor": "不限",
+                                "amount_range": "不限",
+                            },
+                        },
+                    ],
+                }
+            ],
+            max_sections=3,
+        )
+        template = json.loads(merged)
+        self.assertEqual(len(list(template.get("sections") or [])), 3)
+        xbox_section = next(
+            section
+            for section in list(template.get("sections") or [])
+            if str((section.get("defaults") or {}).get("card_type") or "") == "Xbox"
+        )
+        self.assertEqual(str(xbox_section.get("id") or ""), "section-3")
+        self.assertTrue(
+            any(
+                str(((line.get("outputs") or {}).get("country_or_currency")) or "") == "GBP"
+                for line in list(xbox_section.get("lines") or [])
+            )
+        )
+
     def test_quote_exception_result_save_supermarket_mode_allows_fourth_skeleton(self) -> None:
         old_password = os.environ.get("QUOTE_ADMIN_PASSWORD")
         os.environ["QUOTE_ADMIN_PASSWORD"] = "limit-secret"
