@@ -1592,6 +1592,114 @@ class UnifiedRuntimeTests(PostgresTestCase):
         self.assertEqual(str(parse_exceptions[0]["reason"]), "missing_group_template")
         self.assertEqual(str(parse_exceptions[0]["source_line"]), "【Apple】")
 
+    def test_runtime_sanitizes_polluted_supermarket_profile_countries(self) -> None:
+        self.db.set_group(
+            platform="whatsapp",
+            group_key="whatsapp:room-supermarket-sanitize",
+            chat_id="room-supermarket-sanitize",
+            chat_name="污染超市卡群",
+            group_num=5,
+        )
+        self.db.upsert_quote_group_profile(
+            platform="whatsapp",
+            chat_id="room-supermarket-sanitize",
+            chat_name="污染超市卡群",
+            default_card_type="Apple",
+            default_country_or_currency="USD",
+            default_form_factor="不限",
+            parser_template="supermarket-card",
+            template_config=json.dumps(
+                {
+                    "version": "group-parser-v1",
+                    "defaults": {},
+                    "sections": [
+                        {
+                            "id": "section-1",
+                            "enabled": True,
+                            "priority": 10,
+                            "label": "Apple",
+                            "defaults": {
+                                "card_type": "Apple",
+                                "country_or_currency": "横白卡图",
+                                "form_factor": "不限",
+                            },
+                            "lines": [
+                                {
+                                    "kind": "quote",
+                                    "pattern": "横白卡图:{amount}={price}(单张清晰)",
+                                    "outputs": {
+                                        "card_type": "Apple",
+                                        "country_or_currency": "横白卡图",
+                                        "form_factor": "不限",
+                                        "amount_range": "100-150",
+                                    },
+                                }
+                            ],
+                        },
+                        {
+                            "id": "section-2",
+                            "enabled": True,
+                            "priority": 20,
+                            "label": "Apple",
+                            "defaults": {
+                                "card_type": "Apple",
+                                "country_or_currency": "整卡卡密",
+                                "form_factor": "不限",
+                            },
+                            "lines": [
+                                {
+                                    "kind": "quote",
+                                    "pattern": "整卡卡密:{amount}={price}(50倍数)",
+                                    "outputs": {
+                                        "card_type": "Apple",
+                                        "country_or_currency": "整卡卡密",
+                                        "form_factor": "不限",
+                                        "amount_range": "100-500",
+                                    },
+                                }
+                            ],
+                        },
+                    ],
+                },
+                ensure_ascii=False,
+            ),
+        )
+
+        self.runtime.process_envelope(
+            self._message(
+                platform="whatsapp",
+                message_id="msg-runtime-supermarket-sanitize-1",
+                chat_id="room-supermarket-sanitize",
+                chat_name="污染超市卡群",
+                text=(
+                    "iTunes US 快刷\n"
+                    "横白卡图：100/150=5.38（单张清晰）\n"
+                    "整卡卡密：100-500=5.2（50倍数）\n"
+                ),
+            )
+        )
+
+        document = self._get_quote_document(
+            platform="whatsapp",
+            chat_id="room-supermarket-sanitize",
+            message_id="msg-runtime-supermarket-sanitize-1",
+        )
+        self.assertIsNotNone(document)
+        assert document is not None
+
+        candidate_rows = self.db.list_quote_candidate_rows(
+            quote_document_id=int(document["id"])
+        )
+        self.assertEqual(len(candidate_rows), 2)
+        self.assertEqual(
+            [str(row["country_or_currency"]) for row in candidate_rows],
+            ["USD", "USD"],
+        )
+        self.assertEqual(
+            [str(row["form_factor"]) for row in candidate_rows],
+            ["横白卡", "代码"],
+        )
+
     def test_whoami_command_returns_observed_and_canonical_identity_before_group_activation(self) -> None:
         self.db.bind_identity(
             platform="wechat",

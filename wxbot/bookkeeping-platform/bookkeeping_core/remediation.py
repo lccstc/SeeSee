@@ -731,6 +731,7 @@ def _auto_apply_group_bound_proposal(
     repair_case: dict[str, Any],
     attempt: dict[str, Any],
 ) -> dict[str, Any]:
+    from bookkeeping_core.quotes import sanitize_quote_group_template_config
     from bookkeeping_core.template_engine import (
         _GROUP_PARSER_MAX_SECTIONS as GROUP_PARSER_MAX_SECTIONS,
         TemplateConfig,
@@ -908,7 +909,22 @@ def _auto_apply_group_bound_proposal(
             parser_template="supermarket-card" if use_supermarket_mode else "group-parser",
             stale_after_minutes=int((existing_profile or {}).get("stale_after_minutes") or 30),
             note=str((existing_profile or {}).get("note") or ""),
-            template_config=merged_config,
+            template_config=sanitize_quote_group_template_config(
+                parser_template="supermarket-card" if use_supermarket_mode else "group-parser",
+                template_config_raw=str(merged_config or ""),
+                default_country_or_currency=str(
+                    (existing_profile or {}).get("default_country_or_currency")
+                    or draft_defaults.get("country_or_currency")
+                    or first_row.get("country_or_currency")
+                    or ""
+                ),
+                default_form_factor=str(
+                    draft_defaults.get("form_factor")
+                    or (existing_profile or {}).get("default_form_factor")
+                    or first_row.get("form_factor")
+                    or "不限"
+                ),
+            ),
         )
 
         replay_result = _replay_latest_quote_document_with_current_template(

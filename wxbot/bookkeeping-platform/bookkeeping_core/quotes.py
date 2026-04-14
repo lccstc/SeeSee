@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from datetime import datetime
 import hashlib
+import json
 import re
 from typing import Any
 
@@ -54,6 +55,18 @@ _NON_QUOTE_OPERATIONAL_KEYWORDS = (
     "bill amount",
 )
 
+_INVALID_TEMPLATE_COUNTRY_TOKENS = (
+    "卡图",
+    "卡密",
+    "白卡",
+    "横白",
+    "横卡",
+    "竖卡",
+    "快刷",
+    "快加",
+    "网单",
+)
+
 
 @dataclass(frozen=True, slots=True)
 class QuoteGroupProfile:
@@ -67,6 +80,110 @@ class QuoteGroupProfile:
     note: str = ""
     template_config: str = ""
     dictionary_aliases: dict[str, tuple[tuple[str, str], ...]] | None = None
+
+
+def sanitize_quote_group_template_config(
+    *,
+    parser_template: str | None,
+    template_config_raw: str,
+    default_country_or_currency: str | None = None,
+    default_form_factor: str | None = None,
+) -> str:
+    parser_template_text = str(parser_template or "").strip()
+    raw = str(template_config_raw or "").strip()
+    if not raw or parser_template_text != "supermarket-card":
+        return raw
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        return raw
+    if str(payload.get("version") or "") != "group-parser-v1":
+        return raw
+
+    fallback_country = normalize_quote_country_or_currency(
+        str(default_country_or_currency or "").strip()
+    )
+    fallback_form_factor = normalize_quote_form_factor(
+        str(default_form_factor or "不限").strip() or "不限"
+    )
+    sections = list(payload.get("sections") or [])
+    changed = False
+
+    for section in sections:
+        if not isinstance(section, dict):
+            continue
+        defaults = dict(section.get("defaults") or {})
+        section_label = str(section.get("label") or "").strip()
+        original_country = str(defaults.get("country_or_currency") or "").strip()
+        inferred_section_form = _sanitize_section_form_factor_hint(
+            original_country or section_label,
+            fallback=fallback_form_factor,
+        )
+        if _looks_invalid_template_country_token(original_country):
+            if fallback_country and original_country != fallback_country:
+                defaults["country_or_currency"] = fallback_country
+                changed = True
+            elif original_country:
+                defaults.pop("country_or_currency", None)
+                changed = True
+        default_form_factor = normalize_quote_form_factor(
+            str(defaults.get("form_factor") or "").strip() or "不限"
+        )
+        if (
+            inferred_section_form != "不限"
+            and default_form_factor == "不限"
+        ):
+            defaults["form_factor"] = inferred_section_form
+            changed = True
+        if defaults != dict(section.get("defaults") or {}):
+            section["defaults"] = defaults
+
+        lines = list(section.get("lines") or [])
+        for line in lines:
+            if not isinstance(line, dict):
+                continue
+            outputs = dict(line.get("outputs") or {})
+            output_country = str(outputs.get("country_or_currency") or "").strip()
+            inferred_output_form = _sanitize_section_form_factor_hint(
+                output_country or str(line.get("pattern") or "").strip() or section_label,
+                fallback=str(defaults.get("form_factor") or fallback_form_factor),
+            )
+            if _looks_invalid_template_country_token(output_country):
+                replacement_country = str(defaults.get("country_or_currency") or fallback_country or "").strip()
+                if replacement_country:
+                    outputs["country_or_currency"] = replacement_country
+                elif output_country:
+                    outputs.pop("country_or_currency", None)
+                changed = True
+            output_form_factor = normalize_quote_form_factor(
+                str(outputs.get("form_factor") or "").strip() or "不限"
+            )
+            if inferred_output_form != "不限" and output_form_factor == "不限":
+                outputs["form_factor"] = inferred_output_form
+                changed = True
+            if outputs != dict(line.get("outputs") or {}):
+                line["outputs"] = outputs
+        if lines != list(section.get("lines") or []):
+            section["lines"] = lines
+
+    if not changed:
+        return raw
+    payload["sections"] = sections
+    return json.dumps(payload, ensure_ascii=False)
+
+
+def _looks_invalid_template_country_token(value: str) -> bool:
+    normalized = _normalize_key(str(value or ""))
+    if not normalized:
+        return False
+    return any(_normalize_key(token) in normalized for token in _INVALID_TEMPLATE_COUNTRY_TOKENS)
+
+
+def _sanitize_section_form_factor_hint(value: str, *, fallback: str = "不限") -> str:
+    inferred = normalize_quote_form_factor(_infer_form_factor(str(value or "")) or "")
+    if inferred and inferred != "不限":
+        return inferred
+    return normalize_quote_form_factor(fallback or "不限")
 
 
 _QUOTE_GROUP_PROFILES: tuple[tuple[str, QuoteGroupProfile], ...] = (
@@ -1223,7 +1340,12 @@ class QuoteCaptureService:
                     parser_template=str(row.get("parser_template") or "") or None,
                     stale_after_minutes=int(row.get("stale_after_minutes") or DEFAULT_STALE_AFTER_MINUTES),
                     note=str(row.get("note") or ""),
-                    template_config=str(row.get("template_config") or ""),
+                    template_config=sanitize_quote_group_template_config(
+                        parser_template=str(row.get("parser_template") or "") or None,
+                        template_config_raw=str(row.get("template_config") or ""),
+                        default_country_or_currency=str(row.get("default_country_or_currency") or "") or None,
+                        default_form_factor=str(row.get("default_form_factor") or "") or None,
+                    ),
                     dictionary_aliases=dictionary_aliases,
                 )
         # 当前 chat_id 没有同名记录时，再回退到按 chat_name 取最新 profile。
@@ -1241,7 +1363,12 @@ class QuoteCaptureService:
                     parser_template=str(row.get("parser_template") or "") or None,
                     stale_after_minutes=int(row.get("stale_after_minutes") or DEFAULT_STALE_AFTER_MINUTES),
                     note=str(row.get("note") or ""),
-                    template_config=str(row.get("template_config") or ""),
+                    template_config=sanitize_quote_group_template_config(
+                        parser_template=str(row.get("parser_template") or "") or None,
+                        template_config_raw=str(row.get("template_config") or ""),
+                        default_country_or_currency=str(row.get("default_country_or_currency") or "") or None,
+                        default_form_factor=str(row.get("default_form_factor") or "") or None,
+                    ),
                     dictionary_aliases=dictionary_aliases,
                 )
         profile = resolve_quote_group_profile(
