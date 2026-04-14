@@ -815,6 +815,11 @@ class TestAutoDetect(unittest.TestCase):
         result = auto_detect_line_type("使用时间3-5分钟,只能使用")
         self.assertEqual(result["type"], "skip")
 
+    def test_looks_like_quote_line_skips_timing_note(self):
+        from bookkeeping_core.template_engine import looks_like_quote_line
+
+        self.assertFalse(looks_like_quote_line("使用时间:5-20分钟左右反馈 时间未到勿催"))
+
     def test_bracket_country_price(self):
         from bookkeeping_core.template_engine import auto_detect_line_type
 

@@ -300,6 +300,10 @@ _QUOTE_NOISE_KEYWORDS = (
     "当前账单金额",
     "账单金额",
     "current bill amount",
+    "使用时间",
+    "售后时间",
+    "时间未到",
+    "勿催",
 )
 _RESTRICTION_KEYWORDS = (
     "先问",

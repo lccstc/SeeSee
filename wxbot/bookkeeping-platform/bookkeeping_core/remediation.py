@@ -261,6 +261,123 @@ def bootstrap_quote_repair_workflow(
         proposal_scope=str(scope_payload["scope"]),
         proposal_kind=_initial_proposal_kind(str(scope_payload["scope"])),
     )
+    return auto_execute_quote_repair_case(db=db, repair_case_id=repair_case_id)
+
+
+def auto_execute_quote_repair_case(
+    *,
+    db,
+    repair_case_id: int,
+) -> dict[str, Any]:
+    while True:
+        repair_case = db.get_quote_repair_case(repair_case_id=repair_case_id)
+        if repair_case is None:
+            raise ValueError(f"quote repair case requires existing repair_case_id={repair_case_id}")
+
+        pending_attempt = _latest_pending_remediation_attempt(
+            db=db,
+            repair_case_id=repair_case_id,
+        )
+        if pending_attempt is None:
+            return repair_case
+
+        _execute_quote_repair_attempt(
+            db=db,
+            attempt_id=int(pending_attempt["id"]),
+        )
+        repair_case = db.get_quote_repair_case(repair_case_id=repair_case_id) or repair_case
+        lifecycle_state = str(repair_case.get("lifecycle_state") or "").strip()
+        if lifecycle_state in {
+            REPAIR_CASE_STATE_CLOSED_RESOLVED,
+            REPAIR_CASE_STATE_CLOSED_IGNORED,
+            REPAIR_CASE_STATE_ESCALATED,
+        }:
+            return repair_case
+        if lifecycle_state != REPAIR_CASE_STATE_ATTEMPT_FAILED:
+            continue
+
+        summary = db.get_quote_repair_case_summary(repair_case_id=repair_case_id) or {}
+        if int(summary.get("attempt_count") or 0) >= REMEDIATION_MAX_ATTEMPTS:
+            return db.get_quote_repair_case(repair_case_id=repair_case_id) or repair_case
+
+        pending_summary = _decode_json_field(
+            pending_attempt.get("attempt_summary_json"),
+            fallback={},
+        )
+        next_scope = _next_auto_scope(
+            current_scope=str(pending_summary.get("proposal_scope") or "").strip(),
+        )
+        if not next_scope:
+            advance_quote_repair_case_state(
+                db=db,
+                repair_case_id=repair_case_id,
+                next_state=REPAIR_CASE_STATE_ESCALATED,
+            )
+            return db.get_quote_repair_case(repair_case_id=repair_case_id) or repair_case
+        begin_quote_repair_remediation_attempt(
+            db=db,
+            repair_case_id=repair_case_id,
+            trigger="auto_retry",
+            proposal_scope=next_scope,
+            proposal_kind=_initial_proposal_kind(next_scope),
+            history_read=_declared_history_read(
+                summary=summary,
+            ),
+        )
+
+
+def _execute_quote_repair_attempt(
+    *,
+    db,
+    attempt_id: int,
+) -> dict[str, Any]:
+    attempt = db.get_quote_repair_case_attempt(attempt_id=attempt_id)
+    if attempt is None:
+        raise ValueError(f"quote repair case attempt not found: {attempt_id}")
+    if str(attempt.get("attempt_kind") or "") != REMEDIATION_ATTEMPT_KIND:
+        raise ValueError("quote repair case attempt is not a remediation attempt")
+    if str(attempt.get("outcome_state") or "") != REMEDIATION_OUTCOME_PENDING:
+        return attempt
+
+    repair_case = db.get_quote_repair_case(repair_case_id=int(attempt["repair_case_id"]))
+    if repair_case is None:
+        raise ValueError(
+            f"quote repair case requires existing repair_case_id={int(attempt['repair_case_id'])}"
+        )
+
+    admitted_attempt = admit_quote_repair_proposal(
+        db=db,
+        attempt_id=attempt_id,
+        proposal_files=[],
+    )
+    attempt_summary = _decode_json_field(
+        admitted_attempt.get("attempt_summary_json"),
+        fallback={},
+    )
+    proposal_scope = str(attempt_summary.get("proposal_scope") or "").strip()
+    if proposal_scope not in {
+        REMEDIATION_SCOPE_GROUP_PROFILE,
+        REMEDIATION_SCOPE_GROUP_SECTION,
+        REMEDIATION_SCOPE_BOOTSTRAP,
+    }:
+        replay_result = _build_auto_failure_replay_result(
+            repair_case=repair_case,
+            reason=f"unsupported_auto_scope:{proposal_scope or 'unknown'}",
+        )
+        return finalize_quote_repair_attempt(
+            db=db,
+            attempt_id=attempt_id,
+            replay_result=replay_result,
+            validator_passed=False,
+            regression_passed=False,
+            deterministic_artifacts=[],
+        )
+
+    return _auto_apply_group_bound_proposal(
+        db=db,
+        repair_case=repair_case,
+        attempt=admitted_attempt,
+    )
     return db.get_quote_repair_case(repair_case_id=repair_case_id) or repair_case
 
 
@@ -493,6 +610,10 @@ def build_quote_repair_status_text(
     escalation_state: str,
 ) -> str:
     normalized_state = str(lifecycle_state or "").strip()
+    if normalized_state == REPAIR_CASE_STATE_CLOSED_RESOLVED:
+        return "修复证据已吸收为确定性语法资产，未改动报价墙。"
+    if normalized_state == REPAIR_CASE_STATE_CLOSED_IGNORED:
+        return "当前异常已忽略，未改动报价墙。"
     if normalized_state == REPAIR_CASE_STATE_ATTEMPT_SUCCEEDED:
         return "修复证据已吸收为确定性语法资产，未改动报价墙。"
     if normalized_state == REPAIR_CASE_STATE_ESCALATED or str(escalation_state or "") == "ready":
@@ -535,6 +656,336 @@ def _initial_proposal_kind(scope: str) -> str:
     if normalized_scope == REMEDIATION_SCOPE_GLOBAL_CORE:
         return "global_core_patch"
     return "group_profile_patch"
+
+
+def _next_auto_scope(*, current_scope: str) -> str:
+    normalized_scope = str(current_scope or "").strip()
+    try:
+        index = REMEDIATION_SCOPE_ORDER.index(normalized_scope)
+    except ValueError:
+        return ""
+    if index + 1 >= len(REMEDIATION_SCOPE_ORDER):
+        return ""
+    return str(REMEDIATION_SCOPE_ORDER[index + 1])
+
+
+def _declared_history_read(*, summary: dict[str, Any]) -> dict[str, Any]:
+    failure_log = list(summary.get("failure_log_json") or [])
+    return {
+        "attempt_count": int(summary.get("attempt_count") or 0),
+        "failure_log_count": len(failure_log),
+        "history_fingerprint": build_quote_repair_history_fingerprint(
+            failure_log=failure_log,
+            last_attempt_number=_maybe_int(summary.get("last_attempt_number")),
+        ),
+        "failure_notes": [str(item.get("failure_note") or "") for item in failure_log],
+    }
+
+
+def _latest_pending_remediation_attempt(
+    *,
+    db,
+    repair_case_id: int,
+) -> dict[str, Any] | None:
+    attempts = _list_non_baseline_attempts(db=db, repair_case_id=repair_case_id)
+    for attempt in reversed(attempts):
+        if str(attempt.get("outcome_state") or "") == REMEDIATION_OUTCOME_PENDING:
+            return attempt
+    return None
+
+
+def _build_auto_failure_replay_result(
+    *,
+    repair_case: dict[str, Any],
+    reason: str,
+    remaining_lines: list[str] | None = None,
+) -> dict[str, Any]:
+    lines = list(remaining_lines or [])
+    if not lines:
+        lines = [
+            str(line).strip()
+            for line in str(repair_case.get("source_line_snapshot") or "").splitlines()
+            if str(line).strip()
+        ]
+    return {
+        "replayed": False,
+        "rows": 0,
+        "exceptions": 0,
+        "remaining_lines": lines,
+        "reason": str(reason or "").strip() or "auto_remediation_failed",
+        "mutated_active_facts": False,
+    }
+
+
+def _auto_apply_group_bound_proposal(
+    *,
+    db,
+    repair_case: dict[str, Any],
+    attempt: dict[str, Any],
+) -> dict[str, Any]:
+    from bookkeeping_core.template_engine import (
+        _GROUP_PARSER_MAX_SECTIONS as GROUP_PARSER_MAX_SECTIONS,
+        suggest_result_template_text,
+    )
+    from bookkeeping_web.app import (
+        _build_quote_result_preview_payload,
+        _load_bound_quote_group_profile,
+        _merge_group_parser_template_config,
+        _replay_latest_quote_document_with_current_template,
+    )
+
+    attempt_id = int(attempt["id"])
+    attempt_summary = _decode_json_field(
+        attempt.get("attempt_summary_json"),
+        fallback={},
+    )
+    proposal_scope = str(attempt_summary.get("proposal_scope") or "").strip()
+    exception_id = _maybe_int(repair_case.get("origin_exception_id"))
+    if exception_id is None:
+        replay_result = _build_auto_failure_replay_result(
+            repair_case=repair_case,
+            reason="repair_case_missing_origin_exception",
+        )
+        return finalize_quote_repair_attempt(
+            db=db,
+            attempt_id=attempt_id,
+            replay_result=replay_result,
+            validator_passed=False,
+            regression_passed=False,
+            deterministic_artifacts=[],
+        )
+    exc_row = db.get_quote_exception(exception_id=exception_id)
+    if exc_row is None:
+        replay_result = _build_auto_failure_replay_result(
+            repair_case=repair_case,
+            reason=f"missing_exception:{exception_id}",
+        )
+        return finalize_quote_repair_attempt(
+            db=db,
+            attempt_id=attempt_id,
+            replay_result=replay_result,
+            validator_passed=False,
+            regression_passed=False,
+            deterministic_artifacts=[],
+        )
+    quote_document = db.get_quote_document(
+        quote_document_id=int(exc_row.get("quote_document_id") or 0)
+    )
+    raw_text = str((quote_document or {}).get("raw_text") or exc_row.get("raw_text") or "")
+    chat_name = str((quote_document or {}).get("chat_name") or exc_row.get("chat_name") or "")
+    group_profile = _load_bound_quote_group_profile(
+        db,
+        platform=str(exc_row.get("platform") or ""),
+        chat_id=str(exc_row.get("chat_id") or ""),
+        chat_name=chat_name,
+    )
+    default_card_type = str((group_profile or {}).get("default_card_type") or "")
+    suggested_result_template_text = suggest_result_template_text(
+        raw_text,
+        chat_name=chat_name,
+        default_card_type=default_card_type,
+    )
+    preview = _build_quote_result_preview_payload(
+        db,
+        {
+            "exception_id": exception_id,
+            "result_template_text": suggested_result_template_text,
+        },
+    )
+    preview_errors = [str(item).strip() for item in list(preview.get("errors") or []) if str(item).strip()]
+    if not bool(preview.get("can_save")) or not bool(preview.get("strict_replay_ok")):
+        replay_result = _build_auto_failure_replay_result(
+            repair_case=repair_case,
+            reason="; ".join(preview_errors) or "auto_result_preview_not_saveable",
+            remaining_lines=[
+                str(line).strip()
+                for line in list(preview.get("strict_replay_errors") or [])
+                if str(line).strip()
+            ],
+        )
+        return finalize_quote_repair_attempt(
+            db=db,
+            attempt_id=attempt_id,
+            replay_result=replay_result,
+            validator_passed=False,
+            regression_passed=False,
+            deterministic_artifacts=[],
+        )
+
+    if proposal_scope == REMEDIATION_SCOPE_GROUP_SECTION and len(list(preview.get("derived_sections") or [])) != 1:
+        replay_result = _build_auto_failure_replay_result(
+            repair_case=repair_case,
+            reason="group_section_scope_requires_single_derived_section",
+        )
+        return finalize_quote_repair_attempt(
+            db=db,
+            attempt_id=attempt_id,
+            replay_result=replay_result,
+            validator_passed=False,
+            regression_passed=False,
+            deterministic_artifacts=[],
+        )
+
+    existing_profile = db.get_quote_group_profile(
+        platform=str(exc_row.get("platform") or ""),
+        chat_id=str(exc_row.get("chat_id") or ""),
+    )
+    existing_profile_id = _maybe_int((existing_profile or {}).get("id"))
+    use_supermarket_mode = str((existing_profile or {}).get("parser_template") or "").strip() == "supermarket-card"
+    preview_rows = list(preview.get("preview_rows") or [])
+    first_row = preview_rows[0] if preview_rows else {}
+    draft_defaults = dict((preview.get("draft_structure") or {}).get("defaults") or {})
+    try:
+        merged_config = _merge_group_parser_template_config(
+            str((existing_profile or {}).get("template_config") or ""),
+            derived_sections=list(preview.get("derived_sections") or []),
+            max_sections=None if use_supermarket_mode else GROUP_PARSER_MAX_SECTIONS,
+        )
+
+        db.upsert_quote_group_profile(
+            platform=str(exc_row.get("platform") or ""),
+            chat_id=str(exc_row.get("chat_id") or ""),
+            chat_name=str(exc_row.get("chat_name") or exc_row.get("chat_id") or ""),
+            default_card_type=str(
+                (existing_profile or {}).get("default_card_type")
+                or first_row.get("card_type")
+                or draft_defaults.get("card_type")
+                or ""
+            ),
+            default_country_or_currency=str(
+                (existing_profile or {}).get("default_country_or_currency")
+                or draft_defaults.get("country_or_currency")
+                or first_row.get("country_or_currency")
+                or ""
+            ),
+            default_form_factor=str(
+                draft_defaults.get("form_factor")
+                or (existing_profile or {}).get("default_form_factor")
+                or first_row.get("form_factor")
+                or "不限"
+            ),
+            default_multiplier=str((existing_profile or {}).get("default_multiplier") or ""),
+            parser_template="supermarket-card" if use_supermarket_mode else "group-parser",
+            stale_after_minutes=int((existing_profile or {}).get("stale_after_minutes") or 30),
+            note=str((existing_profile or {}).get("note") or ""),
+            template_config=merged_config,
+        )
+
+        replay_result = _replay_latest_quote_document_with_current_template(
+            db,
+            exc_row=exc_row,
+            record_exceptions=True,
+        )
+    except Exception as exc:
+        _restore_quote_group_profile_state(
+            db=db,
+            platform=str(exc_row.get("platform") or ""),
+            chat_id=str(exc_row.get("chat_id") or ""),
+            chat_name=str(exc_row.get("chat_name") or exc_row.get("chat_id") or ""),
+            existing_profile=existing_profile,
+            existing_profile_id=existing_profile_id,
+        )
+        replay_result = _build_auto_failure_replay_result(
+            repair_case=repair_case,
+            reason=str(exc),
+        )
+        return finalize_quote_repair_attempt(
+            db=db,
+            attempt_id=attempt_id,
+            replay_result=replay_result,
+            validator_passed=False,
+            regression_passed=False,
+            deterministic_artifacts=[],
+        )
+    validator_passed = bool(replay_result.get("replayed")) and int(replay_result.get("exceptions") or 0) == 0
+    regression_passed = bool(preview.get("strict_replay_ok"))
+    artifacts = [
+        {
+            "kind": f"{proposal_scope}_auto_profile_update",
+            "parser_template": "supermarket-card" if use_supermarket_mode else "group-parser",
+            "derived_sections": len(list(preview.get("derived_sections") or [])),
+            "result_template_text": suggested_result_template_text,
+        }
+    ]
+    finalized = finalize_quote_repair_attempt(
+        db=db,
+        attempt_id=attempt_id,
+        replay_result=replay_result,
+        validator_passed=validator_passed,
+        regression_passed=regression_passed,
+        deterministic_artifacts=artifacts,
+    )
+    finalized_summary = _decode_json_field(
+        finalized.get("attempt_summary_json"),
+        fallback={},
+    )
+    if str(finalized_summary.get("absorption_decision") or "") == "absorbed":
+        db.resolve_quote_exception(
+            exception_id=exception_id,
+            resolution_status="resolved",
+            resolution_note=(
+                f"auto_remediated scope={proposal_scope} "
+                f"sections={len(list(preview.get('derived_sections') or []))} "
+                f"rows={len(preview_rows)} strict_replay=true"
+            ),
+        )
+        advance_quote_repair_case_state(
+            db=db,
+            repair_case_id=int(repair_case["id"]),
+            next_state=REPAIR_CASE_STATE_CLOSED_RESOLVED,
+            current_failure_reason="",
+        )
+        return finalized
+
+    _restore_quote_group_profile_state(
+        db=db,
+        platform=str(exc_row.get("platform") or ""),
+        chat_id=str(exc_row.get("chat_id") or ""),
+        chat_name=str(exc_row.get("chat_name") or exc_row.get("chat_id") or ""),
+        existing_profile=existing_profile,
+        existing_profile_id=existing_profile_id,
+    )
+    db.update_quote_exception(
+        exception_id=exception_id,
+        resolution_status="open",
+        resolution_note=(
+            f"auto_remediation_failed scope={proposal_scope} "
+            f"reason={str(replay_result.get('reason') or '').strip() or 'validation_failed'}"
+        ),
+    )
+    return finalized
+
+
+def _restore_quote_group_profile_state(
+    *,
+    db,
+    platform: str,
+    chat_id: str,
+    chat_name: str,
+    existing_profile: dict[str, Any] | None,
+    existing_profile_id: int | None,
+) -> None:
+    if existing_profile is None:
+        latest = db.get_quote_group_profile(platform=platform, chat_id=chat_id)
+        latest_id = _maybe_int((latest or {}).get("id"))
+        if latest_id is not None:
+            db.delete_quote_group_profile(profile_id=latest_id)
+        return
+    db.upsert_quote_group_profile(
+        platform=platform,
+        chat_id=chat_id,
+        chat_name=str(existing_profile.get("chat_name") or chat_name or chat_id),
+        default_card_type=str(existing_profile.get("default_card_type") or ""),
+        default_country_or_currency=str(
+            existing_profile.get("default_country_or_currency") or ""
+        ),
+        default_form_factor=str(existing_profile.get("default_form_factor") or ""),
+        default_multiplier=str(existing_profile.get("default_multiplier") or ""),
+        parser_template=str(existing_profile.get("parser_template") or ""),
+        stale_after_minutes=int(existing_profile.get("stale_after_minutes") or 30),
+        note=str(existing_profile.get("note") or ""),
+        template_config=str(existing_profile.get("template_config") or ""),
+    )
 
 
 def _build_history_read_payload(
