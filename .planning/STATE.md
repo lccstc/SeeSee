@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: ready
-stopped_at: Phase 03 ready for planning
-last_updated: "2026-04-14T09:05:05+07:00"
-last_activity: 2026-04-14 -- Phase 06 verification passed after PostgreSQL-backed reruns; Phase 03 is ready for planning
+stopped_at: Phase 03 ready to execute
+last_updated: "2026-04-15T10:00:00+07:00"
+last_activity: 2026-04-15 -- Phase 03 planning completed; guarded publisher work is ready to execute
 progress:
   total_phases: 9
   completed_phases: 5
-  total_plans: 15
+  total_plans: 18
   completed_plans: 15
   percent: 56
 ---
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-04-13)
 
 ## Current Position
 
-Phase: 03 (fact-protection-publisher) — READY FOR PLANNING
-Plan: not started
-Status: Phase 06 is fully verified; next work returns to guarded publisher design
-Last activity: 2026-04-14 -- Phase 06 passed PostgreSQL-backed verification and the roadmap advanced back to Phase 03
+Phase: 03 (fact-protection-publisher) — READY TO EXECUTE
+Plan: 03-01-PLAN.md
+Status: Phase 03 planning is complete and the guarded publisher execution wave is next
+Last activity: 2026-04-15 -- Phase 03 context, validation, and 3 executable plans were added after Phase 06 closed
 
 Progress: [██████░░░░] 56% of milestone phases completed
 
@@ -53,7 +53,7 @@ Progress: [██████░░░░] 56% of milestone phases completed
 
 **Recent Trend:**
 
-- Last 5 plans: Phase 06 verification passed; the next gate is planning Phase 03 guarded publisher work
+- Last 5 plans: Phase 03 planning completed; the next gate is executing guarded publisher work
 - Trend: Stable
 
 | Phase 02-validation-engine P01 | 14min | 2 tasks | 4 files |
@@ -65,6 +65,9 @@ Progress: [██████░░░░] 56% of milestone phases completed
 | Phase 05 P01 | 20min | 2 tasks | 6 files |
 | Phase 05 P02 | 27min | 2 tasks | 6 files |
 | Phase 05 P03 | 22min | 2 tasks | 5 files |
+| Phase 03 P01 | - | 2 tasks | guarded publisher core |
+| Phase 03 P02 | - | 2 tasks | no-op + atomicity |
+| Phase 03 P03 | - | 2 tasks | bypass removal + architecture tests |
 
 ## Accumulated Context
 
@@ -102,6 +105,7 @@ Recent decisions affecting current work:
 - Phase 06 planned: bounded retries, exact scope-order routing, safe write envelopes, and absorption gates were executed as designed
 - Phase 06 implemented: remediation attempt protocol, scope router, write-envelope guardrails, finalize gate, and proof-only repair wording are in repo
 - Phase 06 verified: PostgreSQL-backed reruns passed after a small repair-case rollup refresh fix, so the remediation workflow is now fully gated by replay/validator/regression checks
+- Phase 03 planned: guarded publisher work is now split into publisher custody, atomic no-op/rollback behavior, and bypass-removal waves
 - Phase 07 scope expanded: operator verification now also needs a searchable failure dictionary / repair lexicon so future agents do not depend on this long-session context
 
 ### Pending Todos
@@ -117,5 +121,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-04-14T00:15:51.169Z
-Stopped at: Phase 03 ready for planning
+Stopped at: Phase 03 ready to execute
 Resume file: None

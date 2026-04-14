@@ -108,12 +108,12 @@ Plans:
   1. No parse, validation, or publish failure clears existing active quote facts
   2. Messages with zero `publishable_rows` result in no active-fact mutation
   3. UI actions, scripts, and agent-driven operations cannot bypass the guarded publish path
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 03-01: Centralize active-quote mutation behind one publisher service
-- [ ] 03-02: Add protective no-op behavior for failed or empty publish attempts
-- [ ] 03-03: Remove or block bypass paths that write active quotes directly
+- [ ] 03-01-PLAN.md — Centralize active-quote mutation behind one guarded publisher service
+- [ ] 03-02-PLAN.md — Add explicit no-op, transaction, and rollback protections for publish attempts
+- [ ] 03-03-PLAN.md — Remove or block web/script bypasses and add structural publisher-custody tests
 
 ### Phase 4: Snapshot / Delta Semantics
 **Goal**: Make `full_snapshot` and `delta_update` explicit message semantics with safe defaults and human confirmation in v1.
