@@ -322,7 +322,7 @@ def record_quote_repair_attempt(
     if classification != "better":
         next_state = (
             REPAIR_CASE_STATE_ESCALATED
-            if len(failure_log) >= 2
+            if len(failure_log) >= 3
             else REPAIR_CASE_STATE_ATTEMPT_FAILED
         )
     advance_quote_repair_case_state(

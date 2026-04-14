@@ -654,7 +654,29 @@ def _handle_quotes_exceptions(db: BookkeepingDB, start_response, environ):
     normalized.setdefault("handled_total", 0)
     normalized.setdefault("has_prev", offset > 0)
     normalized.setdefault("has_next", offset + len(normalized.get("rows") or []) < int(normalized.get("total") or 0))
+    _annotate_quote_exception_repair_status_text(db=db, rows=normalized.get("rows") or [])
     return _respond_json(start_response, 200, normalized)
+
+
+def _annotate_quote_exception_repair_status_text(*, db: BookkeepingDB, rows: list[dict[str, Any]]) -> None:
+    from bookkeeping_core.remediation import build_quote_repair_status_text
+
+    for row in rows:
+        repair_case = row.get("repair_case")
+        repair_case_id = row.get("repair_case_id")
+        if not repair_case or repair_case_id in (None, ""):
+            continue
+        summary = _call_optional_db_method(
+            db,
+            "get_quote_repair_case_summary",
+            default={},
+            repair_case_id=int(repair_case_id),
+        ) or {}
+        repair_case["status_text"] = build_quote_repair_status_text(
+            lifecycle_state=str(repair_case.get("lifecycle_state") or ""),
+            attempt_count=int(summary.get("attempt_count") or 0),
+            escalation_state=str(summary.get("escalation_state") or "not_ready"),
+        )
 
 
 def _handle_quotes_exception_resolve(db: BookkeepingDB, start_response, environ):

@@ -1236,7 +1236,7 @@ class RepairCaseTests(PostgresTestCase):
         finally:
             db.close()
 
-    def test_record_quote_repair_attempt_is_append_only_and_escalates_repeated_failures(
+    def test_record_quote_repair_attempt_is_append_only_and_escalates_after_third_failure(
         self,
     ) -> None:
         from bookkeeping_core.repair_cases import (
@@ -1353,6 +1353,24 @@ class RepairCaseTests(PostgresTestCase):
                     "comparison": {"classification": "worse"},
                 },
             )
+            third_attempt = record_quote_repair_attempt(
+                db=db,
+                repair_case_id=int(repair_case["id"]),
+                trigger="manual_retry",
+                replay_result={
+                    "replayed": True,
+                    "reason": "strict-match-third-failure",
+                    "rows": 0,
+                    "exceptions": 1,
+                    "remaining_lines": ["US 100 95.5", "UK 50 48.0", "JP 10 9.1"],
+                    "mutated_active_facts": False,
+                    "message_decision": "no_publish",
+                    "publishable_row_count": 0,
+                    "held_row_count": 0,
+                    "rejected_row_count": 0,
+                    "comparison": {"classification": "same"},
+                },
+            )
 
             refreshed_baseline = db.get_quote_repair_case_attempt(
                 attempt_id=int(baseline_attempt["id"])
@@ -1373,19 +1391,384 @@ class RepairCaseTests(PostgresTestCase):
             assert stored_case is not None
             self.assertEqual(str(stored_case["lifecycle_state"]), REPAIR_CASE_STATE_ESCALATED)
             summary = _normalize_json_field(stored_case["case_summary_json"])
-            self.assertEqual(summary["attempt_count"], 2)
+            self.assertEqual(summary["attempt_count"], 3)
             self.assertEqual(summary["last_attempt_outcome"], "completed")
             self.assertEqual(summary["escalation_state"], "ready")
             self.assertIsNone(summary["closed_at"])
-            self.assertEqual(len(summary["failure_log_json"]), 2)
+            self.assertEqual(len(summary["failure_log_json"]), 3)
             self.assertEqual(
                 [entry["attempt_number"] for entry in summary["failure_log_json"]],
-                [1, 2],
+                [1, 2, 3],
             )
             self.assertEqual(
                 [entry["failure_note"] for entry in summary["failure_log_json"]],
-                ["strict-match-still-failing", "strict-match-regressed"],
+                [
+                    "strict-match-still-failing",
+                    "strict-match-regressed",
+                    "strict-match-third-failure",
+                ],
             )
+            self.assertEqual(int(third_attempt["attempt_number"]), 3)
+        finally:
+            db.close()
+
+    def test_begin_quote_repair_remediation_attempt_persists_pending_metadata(self) -> None:
+        from bookkeeping_core.remediation import (
+            REMEDIATION_ATTEMPT_KIND,
+            REMEDIATION_OUTCOME_PENDING,
+            begin_quote_repair_remediation_attempt,
+        )
+        from bookkeeping_core.repair_cases import (
+            REPAIR_CASE_STATE_READY_FOR_ATTEMPT,
+            advance_quote_repair_case_state,
+            create_baseline_repair_attempt,
+            package_quote_repair_case,
+        )
+
+        db = self.make_db("repair-remediation-pending")
+        try:
+            db.upsert_quote_group_profile(
+                platform="wechat",
+                chat_id="repair-remediation-pending",
+                chat_name="修复补丁群",
+                default_card_type="Apple",
+                default_country_or_currency="USD",
+                default_form_factor="physical",
+                default_multiplier="1x",
+                parser_template="repair-template-remediation",
+                template_config=json.dumps(
+                    {"version": "repair-template-remediation", "sections": ["Apple"]},
+                    ensure_ascii=False,
+                ),
+            )
+            origin_document_id = db.record_quote_candidate_bundle(
+                candidate=_make_validation_candidate(message_id="repair-remediation-origin")
+            )
+            db.record_quote_validation_run(
+                validation_run=QuoteValidationRun(
+                    quote_document_id=origin_document_id,
+                    validator_version=VALIDATOR_VERSION_V1,
+                    run_kind="runtime",
+                    message_decision="no_publish",
+                    validation_status="completed",
+                    summary={"message_reasons": [build_validation_reason("strict_match_failed")]},
+                )
+            )
+            exception_id = db.record_quote_exception(
+                quote_document_id=origin_document_id,
+                platform="wechat",
+                source_group_key="wechat:repair-remediation-pending",
+                chat_id="repair-remediation-pending",
+                chat_name="修复补丁群",
+                source_name="Repair Source",
+                sender_id="wxid-remediation",
+                reason="strict_match_failed",
+                source_line="US 100 95.5",
+                raw_text="[Apple]\nUS 100 95.5",
+                message_time="2026-04-14 12:35:00",
+                parser_template="repair-template-remediation",
+                parser_version="candidate-v1",
+                confidence=0.4,
+            )
+            repair_case = package_quote_repair_case(db=db, exception_id=exception_id)
+            create_baseline_repair_attempt(
+                db=db,
+                repair_case_id=int(repair_case["id"]),
+                replay_result={
+                    "replayed": True,
+                    "reason": "",
+                    "rows": 1,
+                    "exceptions": 1,
+                    "remaining_lines": ["US 100 95.5"],
+                    "mutated_active_facts": False,
+                    "message_decision": "no_publish",
+                    "publishable_row_count": 0,
+                    "held_row_count": 0,
+                    "rejected_row_count": 1,
+                    "comparison": {"classification": "same"},
+                },
+            )
+            advance_quote_repair_case_state(
+                db=db,
+                repair_case_id=int(repair_case["id"]),
+                next_state=REPAIR_CASE_STATE_READY_FOR_ATTEMPT,
+            )
+
+            attempt = begin_quote_repair_remediation_attempt(
+                db=db,
+                repair_case_id=int(repair_case["id"]),
+                trigger="subagent_retry",
+                proposal_scope="group_profile",
+                proposal_kind="template_patch",
+            )
+
+            self.assertEqual(str(attempt["attempt_kind"]), REMEDIATION_ATTEMPT_KIND)
+            self.assertEqual(int(attempt["attempt_number"]), 1)
+            self.assertEqual(str(attempt["outcome_state"]), REMEDIATION_OUTCOME_PENDING)
+            summary = _normalize_json_field(attempt["attempt_summary_json"])
+            self.assertEqual(summary["protocol"], "quote_remediation_v1")
+            self.assertEqual(summary["proposal_scope"], "group_profile")
+            self.assertEqual(summary["proposal_kind"], "template_patch")
+            self.assertEqual(summary["comparison"]["classification"], "pending")
+            self.assertEqual(summary["history_read"]["required"], False)
+            self.assertEqual(summary["history_read"]["consumed"], True)
+            stored_case = db.get_quote_repair_case(repair_case_id=int(repair_case["id"]))
+            assert stored_case is not None
+            case_summary = _normalize_json_field(stored_case["case_summary_json"])
+            self.assertEqual(case_summary["attempt_count"], 1)
+            self.assertEqual(case_summary["remediation_attempt_limit"], 3)
+            self.assertEqual(case_summary["remediation_attempts_remaining"], 2)
+        finally:
+            db.close()
+
+    def test_begin_quote_repair_remediation_attempt_requires_history_fingerprint(self) -> None:
+        from bookkeeping_core.remediation import (
+            begin_quote_repair_remediation_attempt,
+            build_quote_repair_history_fingerprint,
+        )
+        from bookkeeping_core.repair_cases import (
+            REPAIR_CASE_STATE_READY_FOR_ATTEMPT,
+            advance_quote_repair_case_state,
+            create_baseline_repair_attempt,
+            package_quote_repair_case,
+            record_quote_repair_attempt,
+        )
+
+        db = self.make_db("repair-remediation-history")
+        try:
+            db.upsert_quote_group_profile(
+                platform="wechat",
+                chat_id="repair-remediation-history",
+                chat_name="修复历史群",
+                default_card_type="Apple",
+                default_country_or_currency="USD",
+                default_form_factor="physical",
+                default_multiplier="1x",
+                parser_template="repair-template-history",
+                template_config=json.dumps(
+                    {"version": "repair-template-history", "sections": ["Apple"]},
+                    ensure_ascii=False,
+                ),
+            )
+            origin_document_id = db.record_quote_candidate_bundle(
+                candidate=_make_validation_candidate(message_id="repair-remediation-history")
+            )
+            db.record_quote_validation_run(
+                validation_run=QuoteValidationRun(
+                    quote_document_id=origin_document_id,
+                    validator_version=VALIDATOR_VERSION_V1,
+                    run_kind="runtime",
+                    message_decision="no_publish",
+                    validation_status="completed",
+                    summary={"message_reasons": [build_validation_reason("strict_match_failed")]},
+                )
+            )
+            exception_id = db.record_quote_exception(
+                quote_document_id=origin_document_id,
+                platform="wechat",
+                source_group_key="wechat:repair-remediation-history",
+                chat_id="repair-remediation-history",
+                chat_name="修复历史群",
+                source_name="Repair Source",
+                sender_id="wxid-remediation",
+                reason="strict_match_failed",
+                source_line="US 100 95.5",
+                raw_text="[Apple]\nUS 100 95.5",
+                message_time="2026-04-14 12:36:00",
+                parser_template="repair-template-history",
+                parser_version="candidate-v1",
+                confidence=0.4,
+            )
+            repair_case = package_quote_repair_case(db=db, exception_id=exception_id)
+            create_baseline_repair_attempt(
+                db=db,
+                repair_case_id=int(repair_case["id"]),
+                replay_result={
+                    "replayed": True,
+                    "reason": "",
+                    "rows": 1,
+                    "exceptions": 1,
+                    "remaining_lines": ["US 100 95.5"],
+                    "mutated_active_facts": False,
+                    "message_decision": "no_publish",
+                    "publishable_row_count": 0,
+                    "held_row_count": 0,
+                    "rejected_row_count": 1,
+                    "comparison": {"classification": "same"},
+                },
+            )
+            advance_quote_repair_case_state(
+                db=db,
+                repair_case_id=int(repair_case["id"]),
+                next_state=REPAIR_CASE_STATE_READY_FOR_ATTEMPT,
+            )
+            record_quote_repair_attempt(
+                db=db,
+                repair_case_id=int(repair_case["id"]),
+                trigger="manual_retry",
+                replay_result={
+                    "replayed": True,
+                    "reason": "strict-match-still-failing",
+                    "rows": 1,
+                    "exceptions": 1,
+                    "remaining_lines": ["US 100 95.5"],
+                    "mutated_active_facts": False,
+                    "message_decision": "no_publish",
+                    "publishable_row_count": 0,
+                    "held_row_count": 0,
+                    "rejected_row_count": 1,
+                    "comparison": {"classification": "same"},
+                },
+            )
+
+            with self.assertRaisesRegex(ValueError, "prior history"):
+                begin_quote_repair_remediation_attempt(
+                    db=db,
+                    repair_case_id=int(repair_case["id"]),
+                    trigger="subagent_retry",
+                    proposal_scope="group_profile",
+                    proposal_kind="template_patch",
+                )
+
+            summary = db.get_quote_repair_case_summary(repair_case_id=int(repair_case["id"]))
+            assert summary is not None
+            attempt = begin_quote_repair_remediation_attempt(
+                db=db,
+                repair_case_id=int(repair_case["id"]),
+                trigger="subagent_retry",
+                proposal_scope="group_profile",
+                proposal_kind="template_patch",
+                history_read={
+                    "attempt_count": summary["attempt_count"],
+                    "failure_log_count": len(summary["failure_log_json"]),
+                    "history_fingerprint": build_quote_repair_history_fingerprint(
+                        failure_log=list(summary["failure_log_json"]),
+                        last_attempt_number=summary["last_attempt_number"],
+                    ),
+                    "failure_notes": [
+                        entry["failure_note"] for entry in summary["failure_log_json"]
+                    ],
+                },
+            )
+            self.assertEqual(int(attempt["attempt_number"]), 2)
+        finally:
+            db.close()
+
+    def test_begin_quote_repair_remediation_attempt_rejects_fourth_attempt(self) -> None:
+        from bookkeeping_core.remediation import begin_quote_repair_remediation_attempt
+        from bookkeeping_core.repair_cases import (
+            REPAIR_CASE_STATE_ESCALATED,
+            REPAIR_CASE_STATE_READY_FOR_ATTEMPT,
+            advance_quote_repair_case_state,
+            create_baseline_repair_attempt,
+            package_quote_repair_case,
+            record_quote_repair_attempt,
+        )
+
+        db = self.make_db("repair-remediation-max-attempts")
+        try:
+            db.upsert_quote_group_profile(
+                platform="wechat",
+                chat_id="repair-remediation-max-attempts",
+                chat_name="修复上限群",
+                default_card_type="Apple",
+                default_country_or_currency="USD",
+                default_form_factor="physical",
+                default_multiplier="1x",
+                parser_template="repair-template-max-attempts",
+                template_config=json.dumps(
+                    {"version": "repair-template-max-attempts", "sections": ["Apple"]},
+                    ensure_ascii=False,
+                ),
+            )
+            origin_document_id = db.record_quote_candidate_bundle(
+                candidate=_make_validation_candidate(message_id="repair-remediation-max")
+            )
+            db.record_quote_validation_run(
+                validation_run=QuoteValidationRun(
+                    quote_document_id=origin_document_id,
+                    validator_version=VALIDATOR_VERSION_V1,
+                    run_kind="runtime",
+                    message_decision="no_publish",
+                    validation_status="completed",
+                    summary={"message_reasons": [build_validation_reason("strict_match_failed")]},
+                )
+            )
+            exception_id = db.record_quote_exception(
+                quote_document_id=origin_document_id,
+                platform="wechat",
+                source_group_key="wechat:repair-remediation-max-attempts",
+                chat_id="repair-remediation-max-attempts",
+                chat_name="修复上限群",
+                source_name="Repair Source",
+                sender_id="wxid-remediation",
+                reason="strict_match_failed",
+                source_line="US 100 95.5",
+                raw_text="[Apple]\nUS 100 95.5",
+                message_time="2026-04-14 12:37:00",
+                parser_template="repair-template-max-attempts",
+                parser_version="candidate-v1",
+                confidence=0.4,
+            )
+            repair_case = package_quote_repair_case(db=db, exception_id=exception_id)
+            create_baseline_repair_attempt(
+                db=db,
+                repair_case_id=int(repair_case["id"]),
+                replay_result={
+                    "replayed": True,
+                    "reason": "",
+                    "rows": 1,
+                    "exceptions": 1,
+                    "remaining_lines": ["US 100 95.5"],
+                    "mutated_active_facts": False,
+                    "message_decision": "no_publish",
+                    "publishable_row_count": 0,
+                    "held_row_count": 0,
+                    "rejected_row_count": 1,
+                    "comparison": {"classification": "same"},
+                },
+            )
+            advance_quote_repair_case_state(
+                db=db,
+                repair_case_id=int(repair_case["id"]),
+                next_state=REPAIR_CASE_STATE_READY_FOR_ATTEMPT,
+            )
+            for failure_note in ("first", "second", "third"):
+                record_quote_repair_attempt(
+                    db=db,
+                    repair_case_id=int(repair_case["id"]),
+                    trigger="manual_retry",
+                    replay_result={
+                        "replayed": True,
+                        "reason": failure_note,
+                        "rows": 1,
+                        "exceptions": 1,
+                        "remaining_lines": ["US 100 95.5"],
+                        "mutated_active_facts": False,
+                        "message_decision": "no_publish",
+                        "publishable_row_count": 0,
+                        "held_row_count": 0,
+                        "rejected_row_count": 1,
+                        "comparison": {"classification": "same"},
+                    },
+                )
+            stored_case = db.get_quote_repair_case(repair_case_id=int(repair_case["id"]))
+            assert stored_case is not None
+            self.assertEqual(str(stored_case["lifecycle_state"]), REPAIR_CASE_STATE_ESCALATED)
+            with self.assertRaisesRegex(ValueError, "maximum remediation attempts exceeded"):
+                begin_quote_repair_remediation_attempt(
+                    db=db,
+                    repair_case_id=int(repair_case["id"]),
+                    trigger="subagent_retry",
+                    proposal_scope="group_profile",
+                    proposal_kind="template_patch",
+                    history_read={
+                        "attempt_count": 3,
+                        "failure_log_count": 3,
+                        "history_fingerprint": "stale",
+                        "failure_notes": ["first", "second", "third"],
+                    },
+                )
         finally:
             db.close()
 

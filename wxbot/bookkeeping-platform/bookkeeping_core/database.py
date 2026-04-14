@@ -2286,6 +2286,77 @@ class _BookkeepingStoreBase:
             raise RuntimeError("failed to persist quote repair case attempt")
         return self._serialize_quote_db_row(row)
 
+    def update_quote_repair_case_attempt(
+        self,
+        *,
+        attempt_id: int,
+        quote_document_id: int | None | object = ...,
+        validation_run_id: int | None | object = ...,
+        replayed_from_quote_document_id: int | None | object = ...,
+        group_profile_id: int | None | object = ...,
+        profile_snapshot: dict[str, Any] | None | object = ...,
+        remaining_lines: list[str] | None | object = ...,
+        attempt_summary: dict[str, Any] | None | object = ...,
+        outcome_state: str | object = ...,
+        failure_note: str | object = ...,
+    ) -> DBRow:
+        existing = self.get_quote_repair_case_attempt(attempt_id=attempt_id)
+        if existing is None:
+            raise ValueError(f"quote repair case attempt not found: {attempt_id}")
+
+        assignments: list[str] = []
+        params: list[Any] = []
+        for column_name, value in (
+            ("quote_document_id", quote_document_id),
+            ("validation_run_id", validation_run_id),
+            ("replayed_from_quote_document_id", replayed_from_quote_document_id),
+            ("group_profile_id", group_profile_id),
+        ):
+            if value is ...:
+                continue
+            assignments.append(f"{column_name} = ?")
+            params.append(value)
+        if profile_snapshot is not ...:
+            assignments.append("profile_snapshot_json = ?::jsonb")
+            params.append(self._serialize_candidate_json(profile_snapshot, fallback={}))
+        if remaining_lines is not ...:
+            assignments.append("remaining_lines_json = ?::jsonb")
+            params.append(self._serialize_candidate_json(remaining_lines, fallback=[]))
+        if attempt_summary is not ...:
+            assignments.append("attempt_summary_json = ?::jsonb")
+            params.append(self._serialize_candidate_json(attempt_summary, fallback={}))
+        if outcome_state is not ...:
+            assignments.append("outcome_state = ?")
+            params.append(outcome_state)
+        if failure_note is not ...:
+            assignments.append("failure_note = ?")
+            params.append(failure_note)
+        if not assignments:
+            return existing
+
+        params.append(attempt_id)
+        self.conn.execute(
+            f"""
+            UPDATE quote_repair_case_attempts
+            SET {", ".join(assignments)}
+            WHERE id = ?
+            """,
+            tuple(params),
+        )
+        self.conn.commit()
+        row = self.conn.execute(
+            """
+            SELECT *
+            FROM quote_repair_case_attempts
+            WHERE id = ?
+            LIMIT 1
+            """,
+            (attempt_id,),
+        ).fetchone()
+        if row is None:
+            raise RuntimeError("failed to update quote repair case attempt")
+        return self._serialize_quote_db_row(row)
+
     def link_quote_repair_case_baseline_attempt(
         self,
         *,
@@ -2416,6 +2487,9 @@ class _BookkeepingStoreBase:
             last_attempt_outcome = str(latest_attempt.get("outcome_state") or "")
             last_attempt_number = int(latest_attempt.get("attempt_number") or 0)
         for attempt in non_baseline_attempts:
+            outcome_state = str(attempt.get("outcome_state") or "").strip()
+            if outcome_state in {"pending", "started"}:
+                continue
             attempt_summary = attempt.get("attempt_summary_json")
             if isinstance(attempt_summary, str):
                 try:
@@ -2470,6 +2544,9 @@ class _BookkeepingStoreBase:
                 ),
                 "escalation_state": escalation_state,
                 "failure_log_json": failure_log,
+                "remediation_attempt_limit": 3,
+                "remediation_attempts_used": len(non_baseline_attempts),
+                "remediation_attempts_remaining": max(0, 3 - len(non_baseline_attempts)),
                 "closed_at": closed_at,
             }
         )

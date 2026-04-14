@@ -15,6 +15,31 @@ from bookkeeping_web.app import create_app
 from tests.support.postgres_test_case import PostgresTestCase
 
 
+class WebRepairStatusTextTests(unittest.TestCase):
+    def test_annotate_quote_exception_repair_status_text_stays_proof_only(self) -> None:
+        from bookkeeping_web.app import _annotate_quote_exception_repair_status_text
+
+        class _FakeDB:
+            def get_quote_repair_case_summary(self, *, repair_case_id: int):
+                return {
+                    "attempt_count": 3,
+                    "escalation_state": "ready",
+                }
+
+        rows = [
+            {
+                "id": 1,
+                "repair_case_id": 9,
+                "repair_case": {
+                    "lifecycle_state": "escalated",
+                },
+            }
+        ]
+        _annotate_quote_exception_repair_status_text(db=_FakeDB(), rows=rows)
+        self.assertIn("未改动报价墙", rows[0]["repair_case"]["status_text"])
+        self.assertIn("升级", rows[0]["repair_case"]["status_text"])
+
+
 def _make_repair_candidate(
     *,
     message_id: str,

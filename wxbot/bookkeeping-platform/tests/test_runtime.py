@@ -2118,6 +2118,172 @@ class RuntimeRepairCaseTests(PostgresTestCase):
             0,
         )
 
+    def test_begin_quote_repair_remediation_attempt_is_fact_neutral(self) -> None:
+        from bookkeeping_core.remediation import begin_quote_repair_remediation_attempt
+        from bookkeeping_core.repair_cases import (
+            REPAIR_CASE_STATE_READY_FOR_ATTEMPT,
+            advance_quote_repair_case_state,
+            create_baseline_repair_attempt,
+            package_quote_repair_case,
+        )
+
+        self.db.set_group(
+            platform="wechat",
+            group_key="wechat:room-repair-remediation",
+            chat_id="room-repair-remediation",
+            chat_name="修复尝试群",
+            group_num=5,
+        )
+        self.db.upsert_quote_group_profile(
+            platform="wechat",
+            chat_id="room-repair-remediation",
+            chat_name="修复尝试群",
+            default_card_type="Apple",
+            default_country_or_currency="USD",
+            default_form_factor="横白卡",
+            parser_template="group-parser",
+            template_config=json.dumps(
+                {"version": "group-parser-v1", "defaults": {}, "sections": []},
+                ensure_ascii=False,
+            ),
+        )
+
+        self.runtime.process_envelope(
+            self._message(
+                platform="wechat",
+                message_id="msg-repair-remediation-1",
+                chat_id="room-repair-remediation",
+                chat_name="修复尝试群",
+                text="[Apple]\nUS=5.10\nUK=6.20",
+            )
+        )
+        exception_row = self.db.conn.execute(
+            """
+            SELECT *
+            FROM quote_parse_exceptions
+            WHERE chat_id = ?
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            ("room-repair-remediation",),
+        ).fetchone()
+        self.assertIsNotNone(exception_row)
+        assert exception_row is not None
+        repair_case = package_quote_repair_case(
+            db=self.db,
+            exception_id=int(exception_row["id"]),
+        )
+        create_baseline_repair_attempt(db=self.db, repair_case_id=int(repair_case["id"]))
+        advance_quote_repair_case_state(
+            db=self.db,
+            repair_case_id=int(repair_case["id"]),
+            next_state=REPAIR_CASE_STATE_READY_FOR_ATTEMPT,
+        )
+
+        attempt = begin_quote_repair_remediation_attempt(
+            db=self.db,
+            repair_case_id=int(repair_case["id"]),
+            trigger="subagent_retry",
+            proposal_scope="group_profile",
+            proposal_kind="template_patch",
+        )
+
+        self.assertEqual(int(attempt["attempt_number"]), 1)
+        self.assertEqual(str(attempt["outcome_state"]), "pending")
+        stored_case = self.db.get_quote_repair_case(repair_case_id=int(repair_case["id"]))
+        self.assertIsNotNone(stored_case)
+        assert stored_case is not None
+        summary = stored_case["case_summary_json"]
+        if isinstance(summary, str):
+            summary = json.loads(summary)
+        self.assertEqual(summary["attempt_count"], 1)
+        self.assertEqual(summary["remediation_attempt_limit"], 3)
+        self.assertEqual(summary["remediation_attempts_remaining"], 2)
+        self.assertEqual(
+            self._count_rows(
+                "quote_price_rows",
+                "WHERE source_group_key = ?",
+                ("wechat:room-repair-remediation",),
+            ),
+            0,
+        )
+
+    def test_begin_quote_repair_remediation_attempt_blocks_parallel_pending_retries(self) -> None:
+        from bookkeeping_core.remediation import begin_quote_repair_remediation_attempt
+        from bookkeeping_core.repair_cases import (
+            REPAIR_CASE_STATE_READY_FOR_ATTEMPT,
+            advance_quote_repair_case_state,
+            create_baseline_repair_attempt,
+            package_quote_repair_case,
+        )
+
+        self.db.set_group(
+            platform="wechat",
+            group_key="wechat:room-repair-remediation-pending",
+            chat_id="room-repair-remediation-pending",
+            chat_name="修复挂起群",
+            group_num=5,
+        )
+        self.db.upsert_quote_group_profile(
+            platform="wechat",
+            chat_id="room-repair-remediation-pending",
+            chat_name="修复挂起群",
+            default_card_type="Apple",
+            default_country_or_currency="USD",
+            default_form_factor="横白卡",
+            parser_template="group-parser",
+            template_config=json.dumps(
+                {"version": "group-parser-v1", "defaults": {}, "sections": []},
+                ensure_ascii=False,
+            ),
+        )
+        self.runtime.process_envelope(
+            self._message(
+                platform="wechat",
+                message_id="msg-repair-remediation-pending-1",
+                chat_id="room-repair-remediation-pending",
+                chat_name="修复挂起群",
+                text="[Apple]\nUS=5.10\nUK=6.20",
+            )
+        )
+        exception_row = self.db.conn.execute(
+            """
+            SELECT *
+            FROM quote_parse_exceptions
+            WHERE chat_id = ?
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            ("room-repair-remediation-pending",),
+        ).fetchone()
+        self.assertIsNotNone(exception_row)
+        assert exception_row is not None
+        repair_case = package_quote_repair_case(
+            db=self.db,
+            exception_id=int(exception_row["id"]),
+        )
+        create_baseline_repair_attempt(db=self.db, repair_case_id=int(repair_case["id"]))
+        advance_quote_repair_case_state(
+            db=self.db,
+            repair_case_id=int(repair_case["id"]),
+            next_state=REPAIR_CASE_STATE_READY_FOR_ATTEMPT,
+        )
+        begin_quote_repair_remediation_attempt(
+            db=self.db,
+            repair_case_id=int(repair_case["id"]),
+            trigger="subagent_retry",
+            proposal_scope="group_profile",
+            proposal_kind="template_patch",
+        )
+        with self.assertRaisesRegex(ValueError, "pending"):
+            begin_quote_repair_remediation_attempt(
+                db=self.db,
+                repair_case_id=int(repair_case["id"]),
+                trigger="subagent_retry",
+                proposal_scope="group_profile",
+                proposal_kind="template_patch",
+            )
+
     @staticmethod
     def _message(
         *,

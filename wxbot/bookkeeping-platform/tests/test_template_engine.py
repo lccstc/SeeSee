@@ -258,6 +258,79 @@ class TestScopedNumericCorpusRegressions(unittest.TestCase):
         self.assertEqual(uk_row["candidate"]["country_or_currency"], "GBP")
         self.assertEqual(uk_row["candidate"]["form_factor"], "横白卡")
 
+
+class TestQuoteRemediationScopeRouter(unittest.TestCase):
+    def test_choose_quote_repair_scope_defaults_to_group_profile_first(self):
+        from bookkeeping_core.remediation import choose_quote_repair_scope
+
+        decision = choose_quote_repair_scope(
+            has_group_profile=True,
+            section_local_only=False,
+        )
+        self.assertEqual(decision["scope"], "group_profile")
+        self.assertEqual(decision["reason"], "default_group_profile_first")
+
+    def test_choose_quote_repair_scope_falls_to_group_section_only_with_local_evidence(self):
+        from bookkeeping_core.remediation import choose_quote_repair_scope
+
+        decision = choose_quote_repair_scope(
+            has_group_profile=True,
+            section_local_only=True,
+            section_identifier="apple-us",
+        )
+        self.assertEqual(decision["scope"], "group_section")
+        self.assertEqual(decision["reason"], "section_local_only")
+
+    def test_choose_quote_repair_scope_uses_bootstrap_when_group_profile_missing(self):
+        from bookkeeping_core.remediation import choose_quote_repair_scope
+
+        decision = choose_quote_repair_scope(
+            has_group_profile=False,
+            section_local_only=False,
+            bootstrap_candidate=True,
+        )
+        self.assertEqual(decision["scope"], "bootstrap")
+        self.assertEqual(decision["reason"], "no_group_profile_bootstrap_candidate")
+
+    def test_choose_quote_repair_scope_promotes_shared_rule_only_after_repeated_cross_group_evidence(self):
+        from bookkeeping_core.remediation import choose_quote_repair_scope
+
+        decision = choose_quote_repair_scope(
+            has_group_profile=True,
+            section_local_only=False,
+            cross_group_match_count=2,
+        )
+        self.assertEqual(decision["scope"], "shared_rule")
+        self.assertEqual(decision["reason"], "repeated_cross_group_shared_rule")
+
+    def test_validate_quote_repair_write_scope_blocks_web_and_database_surfaces(self):
+        from bookkeeping_core.remediation import validate_quote_repair_write_scope
+
+        with self.assertRaisesRegex(ValueError, "forbidden remediation surfaces"):
+            validate_quote_repair_write_scope(
+                proposal_scope="shared_rule",
+                touched_files=[
+                    "wxbot/bookkeeping-platform/bookkeeping_web/app.py",
+                    "wxbot/bookkeeping-platform/tests/test_template_engine.py",
+                ],
+            )
+
+    def test_validate_quote_repair_write_scope_accepts_shared_rule_template_and_tests(self):
+        from bookkeeping_core.remediation import validate_quote_repair_write_scope
+
+        envelope = validate_quote_repair_write_scope(
+            proposal_scope="shared_rule",
+            touched_files=[
+                "wxbot/bookkeeping-platform/bookkeeping_core/template_engine.py",
+                "wxbot/bookkeeping-platform/tests/test_template_engine.py",
+            ],
+        )
+        self.assertEqual(envelope["scope"], "shared_rule")
+        self.assertIn(
+            "wxbot/bookkeeping-platform/bookkeeping_core/template_engine.py",
+            envelope["touched_files"],
+        )
+
     def test_wannuo_xb_shorthand_scoped_numeric(self):
         from bookkeeping_core.template_engine import analyze_scoped_quote_lines
 
