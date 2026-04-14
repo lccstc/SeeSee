@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 from bookkeeping_core.contracts import NormalizedMessageEnvelope
 from bookkeeping_core.database import BookkeepingDB
 from bookkeeping_core.models import IncomingMessage
+from bookkeeping_core.quote_publisher import QuoteFactPublishResult
 from bookkeeping_core.runtime import UnifiedBookkeepingRuntime
 from tests.support.postgres_test_case import PostgresTestCase
 from wechat_adapter.config import CoreApiConfig, WeChatConfig
@@ -1507,6 +1508,157 @@ class UnifiedRuntimeTests(PostgresTestCase):
             int(repair_case["origin_validation_run_id"]),
             int(validation_run["id"]),
         )
+
+    def test_runtime_quote_capture_calls_guarded_publisher_with_validator_owned_rows(
+        self,
+    ) -> None:
+        from bookkeeping_core.quote_candidates import (
+            QuoteCandidateMessage,
+            QuoteCandidateRow,
+        )
+
+        self.db.set_group(
+            platform="wechat",
+            group_key="wechat:room-runtime-publisher",
+            chat_id="room-runtime-publisher",
+            chat_name="报价群-publisher",
+            group_num=5,
+        )
+        self.db.upsert_quote_group_profile(
+            platform="wechat",
+            chat_id="room-runtime-publisher",
+            chat_name="报价群-publisher",
+            default_card_type="Apple",
+            default_country_or_currency="USD",
+            default_form_factor="横白卡",
+            parser_template="group-parser",
+            template_config=json.dumps(
+                {"version": "group-parser-v1", "defaults": {}, "sections": []},
+                ensure_ascii=False,
+            ),
+        )
+
+        candidate = QuoteCandidateMessage(
+            platform="wechat",
+            source_group_key="wechat:room-runtime-publisher",
+            chat_id="room-runtime-publisher",
+            chat_name="报价群-publisher",
+            message_id="msg-runtime-publisher-1",
+            source_name="报价员",
+            sender_id="seller-runtime",
+            sender_display="报价员",
+            raw_message="patched mixed runtime candidate",
+            message_time="2026-04-15 10:00:00",
+            parser_kind="group-parser",
+            parser_template="group-parser",
+            parser_version="group-parser-v1",
+            confidence=0.99,
+            parse_status="parsed",
+            message_fingerprint="runtime-publisher-fingerprint",
+            snapshot_hypothesis="unresolved",
+            snapshot_hypothesis_reason="phase1-default",
+            rows=[
+                QuoteCandidateRow(
+                    row_ordinal=1,
+                    source_line="US=5.10",
+                    source_line_index=0,
+                    line_confidence=0.98,
+                    normalized_sku_key="Apple|USD|100|横白卡",
+                    normalization_status="normalized",
+                    row_publishable=False,
+                    publishability_basis="parser_prevalidation",
+                    restriction_parse_status="parsed",
+                    card_type="Apple",
+                    country_or_currency="USD",
+                    amount_range="100",
+                    multiplier=None,
+                    form_factor="横白卡",
+                    price=5.10,
+                    quote_status="active",
+                    restriction_text="",
+                ),
+                QuoteCandidateRow(
+                    row_ordinal=2,
+                    source_line="UK=6.20",
+                    source_line_index=1,
+                    line_confidence=0.62,
+                    normalized_sku_key="Apple|GBP|100|横白卡",
+                    normalization_status="normalized",
+                    row_publishable=True,
+                    publishability_basis="parser_prevalidation",
+                    restriction_parse_status="parsed",
+                    card_type="Apple",
+                    country_or_currency="GBP",
+                    amount_range="100",
+                    multiplier=None,
+                    form_factor="横白卡",
+                    price=6.20,
+                    quote_status="active",
+                    restriction_text="",
+                ),
+            ],
+        )
+
+        with patch(
+            "bookkeeping_core.quotes.should_attempt_template_quote_capture",
+            return_value=True,
+        ), patch(
+            "bookkeeping_core.quotes._parse_quote_message_to_candidate_details",
+            return_value=(candidate, [], []),
+        ), patch(
+            "bookkeeping_core.quote_publisher.QuoteFactPublisher.publish_quote_document",
+            autospec=True,
+            side_effect=lambda _publisher, **kwargs: QuoteFactPublishResult.no_op(
+                quote_document_id=int(kwargs["quote_document_id"]),
+                validation_run_id=int(kwargs["validation_run_id"]),
+                source_group_key=str(kwargs["source_group_key"]),
+                publish_mode=str(kwargs["publish_mode"]),
+                reason="runtime_validation_only",
+                attempted_row_count=len(kwargs["publishable_rows"]),
+            ),
+        ) as publish_mock:
+            self.runtime.process_envelope(
+                self._message(
+                    platform="wechat",
+                    message_id="msg-runtime-publisher-1",
+                    chat_id="room-runtime-publisher",
+                    chat_name="报价群-publisher",
+                    text="patched mixed runtime candidate",
+                )
+            )
+
+        document = self._get_quote_document(
+            platform="wechat",
+            chat_id="room-runtime-publisher",
+            message_id="msg-runtime-publisher-1",
+        )
+        self.assertIsNotNone(document)
+        assert document is not None
+        validation_run = self.db.get_latest_quote_validation_run(
+            quote_document_id=int(document["id"])
+        )
+        self.assertIsNotNone(validation_run)
+        assert validation_run is not None
+
+        publish_mock.assert_called_once()
+        call_kwargs = publish_mock.call_args.kwargs
+        self.assertEqual(call_kwargs["publish_mode"], "validation_only")
+        self.assertEqual(call_kwargs["quote_document_id"], int(document["id"]))
+        self.assertEqual(call_kwargs["validation_run_id"], int(validation_run["id"]))
+        self.assertEqual(len(call_kwargs["publishable_rows"]), 1)
+        self.assertEqual(str(call_kwargs["publishable_rows"][0]["source_line"]), "US=5.10")
+        self.assertFalse(bool(call_kwargs["publishable_rows"][0]["row_publishable"]))
+        self.assertEqual(
+            str(call_kwargs["publishable_rows"][0]["final_decision"]),
+            "publishable",
+        )
+
+        quote_price_row_count = self._count_rows(
+            "quote_price_rows",
+            "WHERE message_id = ?",
+            ("msg-runtime-publisher-1",),
+        )
+        self.assertEqual(quote_price_row_count, 0)
 
     def test_runtime_quote_capture_records_missing_template_candidate_header(self) -> None:
         self.db.set_group(

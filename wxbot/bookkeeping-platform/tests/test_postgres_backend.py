@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import json
 import unittest
+from unittest.mock import patch
 
 from bookkeeping_core.database import BookkeepingDB
+from bookkeeping_core.quote_publisher import QuoteFactPublisher
 from bookkeeping_core.quote_candidates import QuoteCandidateMessage, QuoteCandidateRow
 from bookkeeping_core.quote_validation import (
     QuoteValidationRowResult,
@@ -631,6 +633,147 @@ class PostgresBackendTests(PostgresTestCase):
                 "SELECT COUNT(*) AS cnt FROM quote_price_rows"
             ).fetchone()
             self.assertEqual(int(count_row["cnt"]), 0)
+        finally:
+            db.close()
+
+    def test_quote_mutation_helpers_participate_in_outer_rollback(self) -> None:
+        db = self.make_db("backend-quote-helper-rollback")
+        try:
+            db.upsert_quote_price_row_with_history(
+                quote_document_id=101,
+                message_id="seed-msg-1",
+                platform="wechat",
+                source_group_key="wechat:publisher-room",
+                chat_id="publisher-room",
+                chat_name="Publisher Room",
+                source_name="Seed Source",
+                sender_id="seed-user",
+                card_type="Apple",
+                country_or_currency="USD",
+                amount_range="100",
+                multiplier=None,
+                form_factor="physical",
+                price=95.5,
+                quote_status="active",
+                restriction_text="",
+                source_line="US 100 95.5",
+                raw_text="US 100 95.5",
+                message_time="2026-04-15 10:00:00",
+                effective_at="2026-04-15 10:00:00",
+                expires_at=None,
+                parser_template="seed-template",
+                parser_version="seed-v1",
+                confidence=0.98,
+            )
+            db.conn.commit()
+
+            db.deactivate_old_quotes_for_group(
+                source_group_key="wechat:publisher-room",
+                commit=False,
+            )
+            db.conn.rollback()
+
+            rows = db.conn.execute(
+                """
+                SELECT quote_status, expires_at
+                FROM quote_price_rows
+                WHERE source_group_key = ?
+                ORDER BY id ASC
+                """,
+                ("wechat:publisher-room",),
+            ).fetchall()
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(str(rows[0]["quote_status"]), "active")
+            self.assertIsNone(rows[0]["expires_at"])
+        finally:
+            db.close()
+
+    def test_quote_fact_publisher_rolls_back_group_deactivate_on_failure(self) -> None:
+        db = self.make_db("backend-quote-publisher-rollback")
+        try:
+            db.upsert_quote_price_row_with_history(
+                quote_document_id=202,
+                message_id="seed-msg-2",
+                platform="wechat",
+                source_group_key="wechat:publisher-room",
+                chat_id="publisher-room",
+                chat_name="Publisher Room",
+                source_name="Seed Source",
+                sender_id="seed-user",
+                card_type="Apple",
+                country_or_currency="USD",
+                amount_range="100",
+                multiplier=None,
+                form_factor="physical",
+                price=95.5,
+                quote_status="active",
+                restriction_text="",
+                source_line="US 100 95.5",
+                raw_text="US 100 95.5",
+                message_time="2026-04-15 10:00:00",
+                effective_at="2026-04-15 10:00:00",
+                expires_at=None,
+                parser_template="seed-template",
+                parser_version="seed-v1",
+                confidence=0.98,
+            )
+            db.conn.commit()
+
+            publisher = QuoteFactPublisher(db)
+            publishable_row = {
+                "card_type": "Apple",
+                "country_or_currency": "USD",
+                "amount_range": "100",
+                "multiplier": None,
+                "form_factor": "physical",
+                "price": 96.0,
+                "quote_status": "active",
+                "restriction_text": "",
+                "source_line": "US 100 96.0",
+            }
+
+            with patch.object(
+                db,
+                "upsert_quote_price_row_with_history",
+                side_effect=RuntimeError("forced publish failure"),
+            ):
+                result = publisher.publish_quote_document(
+                    quote_document_id=303,
+                    validation_run_id=404,
+                    source_group_key="wechat:publisher-room",
+                    platform="wechat",
+                    chat_id="publisher-room",
+                    chat_name="Publisher Room",
+                    message_id="msg-publisher-1",
+                    source_name="Publisher Source",
+                    sender_id="publisher-user",
+                    raw_text="US 100 96.0",
+                    message_time="2026-04-15 11:00:00",
+                    parser_template="publisher-template",
+                    parser_version="publisher-v1",
+                    publishable_rows=[publishable_row],
+                    publish_mode="replace_group_active_rows",
+                )
+
+            self.assertEqual(result.status, "failed")
+            self.assertEqual(result.applied_row_count, 0)
+            self.assertEqual(result.attempted_row_count, 1)
+            self.assertIn("forced publish failure", result.reason)
+
+            rows = db.conn.execute(
+                """
+                SELECT message_id, quote_status, expires_at, price
+                FROM quote_price_rows
+                WHERE source_group_key = ?
+                ORDER BY id ASC
+                """,
+                ("wechat:publisher-room",),
+            ).fetchall()
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(str(rows[0]["message_id"]), "seed-msg-2")
+            self.assertEqual(str(rows[0]["quote_status"]), "active")
+            self.assertIsNone(rows[0]["expires_at"])
+            self.assertEqual(float(rows[0]["price"]), 95.5)
         finally:
             db.close()
 

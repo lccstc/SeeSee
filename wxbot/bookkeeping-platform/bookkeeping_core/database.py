@@ -1635,14 +1635,20 @@ class _BookkeepingStoreBase:
             (selected_validation_run_id, quote_document_id),
         ).fetchall()
 
-    def deactivate_old_quotes_for_group(self, *, source_group_key: str) -> None:
+    def deactivate_old_quotes_for_group(
+        self,
+        *,
+        source_group_key: str,
+        commit: bool = True,
+    ) -> None:
         """同一群发新消息时，将旧的 active 报价标记为 inactive。"""
         self.conn.execute(
             "UPDATE quote_price_rows SET quote_status = 'inactive' "
             "WHERE source_group_key = ? AND quote_status = 'active'",
             (source_group_key,),
         )
-        self.conn.commit()
+        if commit:
+            self.conn.commit()
 
     def upsert_quote_price_row_with_history(
         self,
@@ -1671,6 +1677,7 @@ class _BookkeepingStoreBase:
         parser_template: str,
         parser_version: str,
         confidence: float,
+        commit: bool = True,
     ) -> int:
         active_rows = self.conn.execute(
             """
@@ -1738,7 +1745,8 @@ class _BookkeepingStoreBase:
                 confidence,
             ),
         )
-        self.conn.commit()
+        if commit:
+            self.conn.commit()
         return self._last_insert_id(cur)
 
     def record_quote_exception(
@@ -3672,6 +3680,9 @@ class _PostgresConnectionCompat:
     def execute(self, sql: str, params=()):
         cursor = self._raw_connection.execute(self._translate(sql), tuple(params))
         return _PostgresCursorCompat(cursor)
+
+    def transaction(self):
+        return self._raw_connection.transaction()
 
     def commit(self) -> None:
         self._raw_connection.commit()

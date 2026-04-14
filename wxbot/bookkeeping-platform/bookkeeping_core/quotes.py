@@ -1138,6 +1138,9 @@ def _build_inquiry_reply_candidate(
 class QuoteCaptureService:
     def __init__(self, db) -> None:
         self.db = db
+        from .quote_publisher import QuoteFactPublisher
+
+        self.publisher = QuoteFactPublisher(db)
 
     def capture_from_message(
         self,
@@ -1182,6 +1185,11 @@ class QuoteCaptureService:
             document_id, validation_run_id = self._record_candidate_with_validation(
                 candidate
             )
+            publish_result = self._publish_validation_owned_rows(
+                candidate=candidate,
+                document_id=document_id,
+                validation_run_id=validation_run_id,
+            )
             recorded_exception_id = self._record_exception_with_repair_case(
                 quote_document_id=document_id,
                 platform=envelope.platform,
@@ -1204,6 +1212,7 @@ class QuoteCaptureService:
                 "captured": True,
                 "document_id": document_id,
                 "validation_run_id": validation_run_id,
+                "publish_result": publish_result,
                 "rows": len(candidate.rows),
                 "exceptions": 1,
                 "template": candidate.parser_template,
@@ -1256,6 +1265,11 @@ class QuoteCaptureService:
             return {"captured": False, "rows": 0, "exceptions": 0}
 
         document_id, validation_run_id = self._record_candidate_with_validation(candidate)
+        publish_result = self._publish_validation_owned_rows(
+            candidate=candidate,
+            document_id=document_id,
+            validation_run_id=validation_run_id,
+        )
         recorded_exceptions = 0
         for item in recordable_parsed_exceptions:
             if self._record_exception_with_repair_case(
@@ -1308,6 +1322,7 @@ class QuoteCaptureService:
             "captured": True,
             "document_id": document_id,
             "validation_run_id": validation_run_id,
+            "publish_result": publish_result,
             "rows": len(candidate.rows),
             "exceptions": recorded_exceptions,
             "template": candidate.parser_template,
@@ -1403,6 +1418,11 @@ class QuoteCaptureService:
             context=context,
         )
         document_id, validation_run_id = self._record_candidate_with_validation(candidate)
+        publish_result = self._publish_validation_owned_rows(
+            candidate=candidate,
+            document_id=document_id,
+            validation_run_id=validation_run_id,
+        )
         resolve_method = getattr(self.db, "resolve_quote_inquiry_context", None)
         if callable(resolve_method):
             resolve_method(
@@ -1413,6 +1433,7 @@ class QuoteCaptureService:
             "captured": True,
             "document_id": document_id,
             "validation_run_id": validation_run_id,
+            "publish_result": publish_result,
             "rows": len(candidate.rows),
             "exceptions": 0,
             "template": candidate.parser_template,
@@ -1435,6 +1456,44 @@ class QuoteCaptureService:
             validation_run=validation_run
         )
         return document_id, validation_run_id
+
+    def _publish_validation_owned_rows(
+        self,
+        *,
+        candidate: QuoteCandidateMessage,
+        document_id: int,
+        validation_run_id: int,
+    ) -> dict[str, Any]:
+        publish_result = self.publisher.publish_quote_document(
+            quote_document_id=document_id,
+            validation_run_id=validation_run_id,
+            source_group_key=candidate.source_group_key,
+            platform=candidate.platform,
+            chat_id=candidate.chat_id,
+            chat_name=candidate.chat_name,
+            message_id=candidate.message_id,
+            source_name=candidate.source_name,
+            sender_id=candidate.sender_id,
+            raw_text=candidate.raw_message,
+            message_time=candidate.message_time,
+            parser_template=candidate.parser_template,
+            parser_version=candidate.parser_version,
+            publishable_rows=self.db.list_publishable_quote_candidate_rows(
+                quote_document_id=document_id,
+                validation_run_id=validation_run_id,
+            ),
+            publish_mode=self.publisher.VALIDATION_ONLY_MODE,
+        )
+        return {
+            "status": publish_result.status,
+            "quote_document_id": publish_result.quote_document_id,
+            "validation_run_id": publish_result.validation_run_id,
+            "source_group_key": publish_result.source_group_key,
+            "publish_mode": publish_result.publish_mode,
+            "attempted_row_count": publish_result.attempted_row_count,
+            "applied_row_count": publish_result.applied_row_count,
+            "reason": publish_result.reason,
+        }
 
     def _record_exception_with_repair_case(
         self,
