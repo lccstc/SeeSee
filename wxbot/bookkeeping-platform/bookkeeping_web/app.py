@@ -1759,21 +1759,18 @@ def _handle_quotes_delete(db: BookkeepingDB, start_response, environ):
         quote_id = int(payload["id"])
     except (KeyError, TypeError, ValueError) as exc:
         return _respond_json(start_response, 400, {"error": f"需要报价 id: {exc}"})
-    conn = getattr(db, "conn", None)
-    if conn is None:
-        return _respond_json(start_response, 500, {"error": "数据库连接不可用"})
-    try:
-        conn.execute("DELETE FROM quote_price_rows WHERE id = ?", (quote_id,))
-        if hasattr(conn, "commit"):
-            conn.commit()
-    except Exception:
-        try:
-            conn.execute("DELETE FROM quote_price_rows WHERE id = %s", (quote_id,))
-            if hasattr(conn, "commit"):
-                conn.commit()
-        except Exception as exc:
-            return _respond_json(start_response, 500, {"error": str(exc)})
-    return _respond_json(start_response, 200, {"deleted": True, "id": quote_id})
+    return _respond_json(
+        start_response,
+        409,
+        {
+            "deleted": False,
+            "id": quote_id,
+            "error": (
+                "未改动报价墙：Phase 03 已禁用原始 delete 旁路。"
+                "active quote facts 只能通过 guarded publisher 变更。"
+            ),
+        },
+    )
 
 
 def _handle_reconciliation_ledger(db: BookkeepingDB, start_response, environ):

@@ -166,15 +166,15 @@ def main() -> int:
     parser.add_argument("--clear", action="store_true")
     args = parser.parse_args()
 
+    if args.clear:
+        print(
+            "--clear 已禁用：Phase 03 不再允许脚本直接删除 active quote facts。"
+            "请改用测试 schema 重建或手动重置候选/异常数据。"
+        )
+        return 1
+
     db = BookkeepingDB(args.db)
     try:
-        if args.clear:
-            db.conn.execute("DELETE FROM quote_parse_exceptions")
-            db.conn.execute("DELETE FROM quote_price_rows")
-            db.conn.execute("DELETE FROM quote_documents")
-            db.conn.execute("DELETE FROM quote_group_profiles")
-            db.conn.commit()
-
         db.upsert_quote_group_profile(
             platform="demo",
             chat_id="customer-1",

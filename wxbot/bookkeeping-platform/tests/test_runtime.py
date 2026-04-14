@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import ast
 import json
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -17,6 +19,45 @@ from wechat_adapter.config import CoreApiConfig, WeChatConfig
 class _FakeListenedChat:
     def __init__(self, who: str) -> None:
         self.who = who
+
+
+class QuoteFactCustodyArchitectureTests(unittest.TestCase):
+    _FORBIDDEN_HELPERS = {
+        "deactivate_old_quotes_for_group",
+        "upsert_quote_price_row_with_history",
+    }
+    _ALLOWLIST = {
+        Path("bookkeeping_core/quote_publisher.py"),
+        Path("tests/test_postgres_backend.py"),
+        Path("tests/test_webapp.py"),
+    }
+
+    def test_low_level_quote_fact_helpers_only_appear_in_allowlisted_files(self) -> None:
+        repo_root = Path(__file__).resolve().parents[1]
+        violations: list[str] = []
+
+        for path in repo_root.rglob("*.py"):
+            rel_path = path.relative_to(repo_root)
+            if rel_path in self._ALLOWLIST:
+                continue
+            tree = ast.parse(path.read_text(encoding="utf-8-sig"), filename=str(path))
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                helper_name = None
+                if isinstance(node.func, ast.Name):
+                    helper_name = node.func.id
+                elif isinstance(node.func, ast.Attribute):
+                    helper_name = node.func.attr
+                if helper_name in self._FORBIDDEN_HELPERS:
+                    violations.append(f"{rel_path}:{node.lineno}:{helper_name}")
+
+        self.assertEqual(
+            violations,
+            [],
+            "Direct low-level quote fact mutations are only allowed in the guarded "
+            f"publisher or tightly-scoped test setup: {violations}",
+        )
 
 
 class UnifiedRuntimeTests(PostgresTestCase):

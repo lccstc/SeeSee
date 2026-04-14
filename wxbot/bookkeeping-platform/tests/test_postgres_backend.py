@@ -118,6 +118,20 @@ def _make_validation_candidate(*, message_id: str) -> QuoteCandidateMessage:
 
 
 class PostgresBackendTests(PostgresTestCase):
+    def test_seed_quote_demo_clear_is_disabled_to_avoid_raw_fact_deletes(self) -> None:
+        from io import StringIO
+        from contextlib import redirect_stdout
+        from unittest.mock import patch
+
+        from scripts import seed_quote_demo
+
+        buffer = StringIO()
+        with patch("sys.argv", ["seed_quote_demo.py", "--clear"]), redirect_stdout(buffer):
+            exit_code = seed_quote_demo.main()
+
+        self.assertEqual(exit_code, 1)
+        self.assertIn("已禁用", buffer.getvalue())
+
     def test_bookkeeping_db_rejects_sqlite_runtime_path(self) -> None:
         with self.assertRaisesRegex(ValueError, "PostgreSQL DSN"):
             BookkeepingDB("/tmp/bookkeeping.db")

@@ -524,6 +524,59 @@ class WebAppTests(PostgresTestCase):
             else:
                 os.environ["QUOTE_ADMIN_PASSWORD"] = old_password
 
+    def test_quote_delete_endpoint_is_disabled_and_leaves_active_facts_untouched(self) -> None:
+        quote_document_id = self.db.record_quote_document(
+            platform="wechat",
+            source_group_key="wechat:g-100",
+            chat_id="g-100",
+            chat_name="客户群-Web",
+            message_id="msg-delete-disabled",
+            source_name="报价员",
+            sender_id="seller-delete-disabled",
+            raw_text="US 100 95.5",
+            message_time="2026-04-15 11:00:00",
+            parser_template="group-parser",
+            parser_version="group-parser-v1",
+            confidence=0.9,
+            parse_status="parsed",
+        )
+        quote_id = self.db.upsert_quote_price_row_with_history(
+            quote_document_id=quote_document_id,
+            message_id="msg-delete-disabled",
+            platform="wechat",
+            source_group_key="wechat:g-100",
+            chat_id="g-100",
+            chat_name="客户群-Web",
+            source_name="报价员",
+            sender_id="seller-delete-disabled",
+            card_type="Apple",
+            country_or_currency="USD",
+            amount_range="100",
+            multiplier=None,
+            form_factor="physical",
+            price=95.5,
+            quote_status="active",
+            restriction_text="",
+            source_line="US 100 95.5",
+            raw_text="US 100 95.5",
+            message_time="2026-04-15 11:00:00",
+            effective_at="2026-04-15 11:00:00",
+            expires_at=None,
+            parser_template="group-parser",
+            parser_version="group-parser-v1",
+            confidence=0.9,
+        )
+
+        status, payload = self._request("POST", "/api/quotes/delete", {"id": quote_id})
+
+        self.assertEqual(status, 409)
+        self.assertFalse(payload["deleted"])
+        self.assertIn("未改动报价墙", payload["error"])
+        self.assertEqual(
+            self._count_rows("quote_price_rows", "WHERE id = ?", (quote_id,)),
+            1,
+        )
+
     def test_quote_board_endpoint_returns_empty_payload_by_default(self) -> None:
         status, payload = self._request("GET", "/api/quotes/board")
         self.assertEqual(status, 200)
