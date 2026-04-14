@@ -16,8 +16,50 @@ REPAIR_CASE_STATE_CLOSED_RESOLVED = "closed_resolved"
 REPAIR_CASE_STATE_CLOSED_IGNORED = "closed_ignored"
 
 REPAIR_ATTEMPT_KIND_BASELINE = "baseline"
+REPAIR_ATTEMPT_KIND_REPAIR = "repair"
 REPAIR_ATTEMPT_OUTCOME_COMPLETED = "completed"
 REPAIR_ATTEMPT_OUTCOME_BLOCKED = "blocked"
+
+_REPAIR_CASE_ALLOWED_TRANSITIONS = {
+    REPAIR_CASE_STATE_DETECTED: {
+        REPAIR_CASE_STATE_PACKAGED,
+        REPAIR_CASE_STATE_CLOSED_IGNORED,
+    },
+    REPAIR_CASE_STATE_PACKAGED: {
+        REPAIR_CASE_STATE_BASELINE_READY,
+        REPAIR_CASE_STATE_READY_FOR_ATTEMPT,
+        REPAIR_CASE_STATE_CLOSED_IGNORED,
+    },
+    REPAIR_CASE_STATE_BASELINE_READY: {
+        REPAIR_CASE_STATE_READY_FOR_ATTEMPT,
+        REPAIR_CASE_STATE_ESCALATED,
+        REPAIR_CASE_STATE_CLOSED_RESOLVED,
+        REPAIR_CASE_STATE_CLOSED_IGNORED,
+    },
+    REPAIR_CASE_STATE_READY_FOR_ATTEMPT: {
+        REPAIR_CASE_STATE_ATTEMPT_FAILED,
+        REPAIR_CASE_STATE_ATTEMPT_SUCCEEDED,
+        REPAIR_CASE_STATE_ESCALATED,
+        REPAIR_CASE_STATE_CLOSED_IGNORED,
+        REPAIR_CASE_STATE_CLOSED_RESOLVED,
+    },
+    REPAIR_CASE_STATE_ATTEMPT_FAILED: {
+        REPAIR_CASE_STATE_READY_FOR_ATTEMPT,
+        REPAIR_CASE_STATE_ESCALATED,
+        REPAIR_CASE_STATE_CLOSED_IGNORED,
+        REPAIR_CASE_STATE_CLOSED_RESOLVED,
+    },
+    REPAIR_CASE_STATE_ATTEMPT_SUCCEEDED: {
+        REPAIR_CASE_STATE_CLOSED_RESOLVED,
+    },
+    REPAIR_CASE_STATE_ESCALATED: {
+        REPAIR_CASE_STATE_READY_FOR_ATTEMPT,
+        REPAIR_CASE_STATE_CLOSED_RESOLVED,
+        REPAIR_CASE_STATE_CLOSED_IGNORED,
+    },
+    REPAIR_CASE_STATE_CLOSED_RESOLVED: set(),
+    REPAIR_CASE_STATE_CLOSED_IGNORED: set(),
+}
 
 
 def package_quote_repair_case(*, db, exception_id: int) -> dict[str, Any]:
@@ -153,7 +195,145 @@ def create_baseline_repair_attempt(
         baseline_attempt_id=int(attempt["id"]),
         lifecycle_state=REPAIR_CASE_STATE_BASELINE_READY,
     )
+    _refresh_quote_repair_case_rollup(db=db, repair_case_id=repair_case_id)
     return db.get_quote_repair_case_attempt(attempt_id=int(attempt["id"])) or attempt
+
+
+def advance_quote_repair_case_state(
+    *,
+    db,
+    repair_case_id: int,
+    next_state: str,
+    current_failure_reason: str | None = None,
+) -> dict[str, Any]:
+    repair_case = db.get_quote_repair_case(repair_case_id=repair_case_id)
+    if repair_case is None:
+        raise ValueError(f"quote repair case requires existing repair_case_id={repair_case_id}")
+
+    normalized_next_state = str(next_state or "").strip()
+    if normalized_next_state not in _REPAIR_CASE_ALLOWED_TRANSITIONS:
+        raise ValueError(f"unsupported repair case state: {normalized_next_state}")
+
+    current_state = str(repair_case.get("lifecycle_state") or REPAIR_CASE_STATE_PACKAGED)
+    allowed_next_states = _REPAIR_CASE_ALLOWED_TRANSITIONS.get(current_state, set())
+    if (
+        normalized_next_state != current_state
+        and normalized_next_state not in allowed_next_states
+    ):
+        raise ValueError(
+            f"illegal repair case transition: {current_state} -> {normalized_next_state}"
+        )
+
+    updated_case = db.update_quote_repair_case(
+        repair_case_id=repair_case_id,
+        lifecycle_state=normalized_next_state,
+        current_failure_reason=current_failure_reason,
+    )
+    return _refresh_quote_repair_case_rollup(
+        db=db,
+        repair_case_id=int(updated_case["id"]),
+    )
+
+
+def record_quote_repair_attempt(
+    *,
+    db,
+    repair_case_id: int,
+    trigger: str,
+    replay_result: dict[str, Any],
+) -> dict[str, Any]:
+    repair_case = db.get_quote_repair_case(repair_case_id=repair_case_id)
+    if repair_case is None:
+        raise ValueError(f"quote repair case requires existing repair_case_id={repair_case_id}")
+
+    current_state = str(repair_case.get("lifecycle_state") or REPAIR_CASE_STATE_PACKAGED)
+    if current_state in {
+        REPAIR_CASE_STATE_PACKAGED,
+        REPAIR_CASE_STATE_BASELINE_READY,
+        REPAIR_CASE_STATE_ATTEMPT_FAILED,
+        REPAIR_CASE_STATE_ESCALATED,
+    }:
+        repair_case = advance_quote_repair_case_state(
+            db=db,
+            repair_case_id=repair_case_id,
+            next_state=REPAIR_CASE_STATE_READY_FOR_ATTEMPT,
+        )
+    elif current_state in {
+        REPAIR_CASE_STATE_CLOSED_RESOLVED,
+        REPAIR_CASE_STATE_CLOSED_IGNORED,
+    }:
+        raise ValueError(f"repair case is closed and cannot record attempts: {current_state}")
+
+    attempts = db.list_quote_repair_case_attempts(repair_case_id=repair_case_id)
+    next_attempt_number = (
+        max(int(item.get("attempt_number") or 0) for item in attempts) + 1
+        if attempts
+        else 1
+    )
+    attempt_summary = _build_repair_attempt_summary(
+        db=db,
+        repair_case=repair_case,
+        replay_result=replay_result,
+    )
+    attempt = db.create_quote_repair_case_attempt(
+        repair_case_id=repair_case_id,
+        attempt_kind=REPAIR_ATTEMPT_KIND_REPAIR,
+        attempt_number=next_attempt_number,
+        trigger=str(trigger or "").strip() or "repair_attempt",
+        quote_document_id=_maybe_int(replay_result.get("quote_document_id")),
+        validation_run_id=_maybe_int(replay_result.get("validation_run_id")),
+        replayed_from_quote_document_id=_maybe_int(
+            repair_case.get("origin_quote_document_id")
+        ),
+        group_profile_id=_maybe_int(repair_case.get("group_profile_id")),
+        profile_snapshot=_decode_json_field(
+            repair_case.get("profile_snapshot_json"),
+            fallback={},
+        ),
+        remaining_lines=_coerce_string_list(replay_result.get("remaining_lines")),
+        attempt_summary=attempt_summary,
+        outcome_state=_baseline_attempt_outcome_state(replay_result=replay_result),
+        failure_note=str(replay_result.get("reason") or ""),
+    )
+    refreshed_case = _refresh_quote_repair_case_rollup(
+        db=db,
+        repair_case_id=repair_case_id,
+    )
+    refreshed_summary = _decode_json_field(
+        refreshed_case.get("case_summary_json"),
+        fallback={},
+    )
+    failure_log = list(refreshed_summary.get("failure_log_json") or [])
+    classification = str(
+        ((attempt_summary.get("comparison") or {}).get("classification")) or ""
+    ).strip()
+    next_state = REPAIR_CASE_STATE_ATTEMPT_SUCCEEDED
+    if classification != "better":
+        next_state = (
+            REPAIR_CASE_STATE_ESCALATED
+            if len(failure_log) >= 2
+            else REPAIR_CASE_STATE_ATTEMPT_FAILED
+        )
+    advance_quote_repair_case_state(
+        db=db,
+        repair_case_id=repair_case_id,
+        next_state=next_state,
+        current_failure_reason=str(replay_result.get("reason") or ""),
+    )
+    return db.get_quote_repair_case_attempt(attempt_id=int(attempt["id"])) or attempt
+
+
+def ensure_quote_repair_case(
+    *,
+    db,
+    exception_id: int,
+) -> dict[str, Any]:
+    existing = db.get_quote_repair_case_by_origin_exception(
+        origin_exception_id=exception_id
+    )
+    if existing is not None:
+        return existing
+    return package_quote_repair_case(db=db, exception_id=exception_id)
 
 
 def build_quote_repair_case_fingerprint(
@@ -230,6 +410,50 @@ def _build_baseline_attempt_summary(
         "validation_run_id": _maybe_int(replay_result.get("validation_run_id")),
         "remaining_lines": _coerce_string_list(replay_result.get("remaining_lines")),
         "mutated_active_facts": bool(replay_result.get("mutated_active_facts")),
+        "origin_quote_document_id": _maybe_int(repair_case.get("origin_quote_document_id")),
+        "origin_validation_run_id": _maybe_int(repair_case.get("origin_validation_run_id")),
+        "blocked_reason": blocked_reason,
+        "comparison": comparison,
+    }
+
+
+def _build_repair_attempt_summary(
+    *,
+    db,
+    repair_case: dict[str, Any],
+    replay_result: dict[str, Any],
+) -> dict[str, Any]:
+    reference_metrics, reference_kind = _build_reference_metrics(
+        db=db,
+        repair_case=repair_case,
+    )
+    attempt_metrics = _build_attempt_metrics(db=db, replay_result=replay_result)
+    comparison = {
+        "classification": _classify_attempt_comparison(
+            replayed=bool(replay_result.get("replayed")),
+            origin_metrics=reference_metrics,
+            attempt_metrics=attempt_metrics,
+            explicit_classification=(replay_result.get("comparison") or {}).get(
+                "classification"
+            ),
+        ),
+        "reference_kind": reference_kind,
+        "reference": reference_metrics,
+        "attempt": attempt_metrics,
+    }
+    blocked_reason = ""
+    if comparison["classification"] == "blocked":
+        blocked_reason = str(replay_result.get("reason") or "")
+    return {
+        "replayed": bool(replay_result.get("replayed")),
+        "rows": int(replay_result.get("rows") or 0),
+        "exceptions": int(replay_result.get("exceptions") or 0),
+        "quote_document_id": _maybe_int(replay_result.get("quote_document_id")),
+        "validation_run_id": _maybe_int(replay_result.get("validation_run_id")),
+        "remaining_lines": _coerce_string_list(replay_result.get("remaining_lines")),
+        "mutated_active_facts": bool(replay_result.get("mutated_active_facts")),
+        "reference_kind": reference_kind,
+        "baseline_attempt_id": _maybe_int(repair_case.get("baseline_attempt_id")),
         "origin_quote_document_id": _maybe_int(repair_case.get("origin_quote_document_id")),
         "origin_validation_run_id": _maybe_int(repair_case.get("origin_validation_run_id")),
         "blocked_reason": blocked_reason,
@@ -342,6 +566,26 @@ def _build_attempt_metrics(*, db, replay_result: dict[str, Any]) -> dict[str, An
     }
 
 
+def _build_reference_metrics(
+    *,
+    db,
+    repair_case: dict[str, Any],
+) -> tuple[dict[str, Any], str]:
+    baseline_attempt_id = _maybe_int(repair_case.get("baseline_attempt_id"))
+    if baseline_attempt_id is not None:
+        baseline_attempt = db.get_quote_repair_case_attempt(attempt_id=baseline_attempt_id)
+        if baseline_attempt is not None:
+            baseline_summary = _decode_json_field(
+                baseline_attempt.get("attempt_summary_json"),
+                fallback={},
+            )
+            comparison = baseline_summary.get("comparison") or {}
+            attempt_metrics = comparison.get("attempt")
+            if isinstance(attempt_metrics, dict) and attempt_metrics:
+                return dict(attempt_metrics), "baseline"
+    return _build_origin_metrics(db=db, repair_case=repair_case), "origin"
+
+
 def _classify_attempt_comparison(
     *,
     replayed: bool,
@@ -440,3 +684,13 @@ def _decode_json_field(value: Any, *, fallback: Any) -> Any:
         return json.loads(value)
     except (TypeError, json.JSONDecodeError):
         return fallback
+
+
+def _refresh_quote_repair_case_rollup(*, db, repair_case_id: int) -> dict[str, Any]:
+    summary = db.get_quote_repair_case_summary(repair_case_id=repair_case_id)
+    if summary is None:
+        raise ValueError(f"quote repair case requires existing repair_case_id={repair_case_id}")
+    return db.update_quote_repair_case(
+        repair_case_id=repair_case_id,
+        case_summary=summary,
+    )

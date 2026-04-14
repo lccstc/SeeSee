@@ -2137,6 +2137,22 @@ class _BookkeepingStoreBase:
         ).fetchone()
         return self._serialize_quote_db_row(row) if row else None
 
+    def list_quote_repair_case_attempts(
+        self,
+        *,
+        repair_case_id: int,
+    ) -> list[DBRow]:
+        rows = self.conn.execute(
+            """
+            SELECT *
+            FROM quote_repair_case_attempts
+            WHERE repair_case_id = ?
+            ORDER BY attempt_number ASC, id ASC
+            """,
+            (repair_case_id,),
+        ).fetchall()
+        return [self._serialize_quote_db_row(row) for row in rows]
+
     def create_or_get_quote_repair_case(
         self,
         *,
@@ -2317,6 +2333,147 @@ class _BookkeepingStoreBase:
         if row is None:
             raise RuntimeError("failed to update quote repair case baseline linkage")
         return self._serialize_quote_db_row(row)
+
+    def update_quote_repair_case(
+        self,
+        *,
+        repair_case_id: int,
+        lifecycle_state: str | None = None,
+        current_failure_reason: str | None = None,
+        case_summary: dict[str, Any] | None = None,
+    ) -> DBRow:
+        existing = self.get_quote_repair_case(repair_case_id=repair_case_id)
+        if existing is None:
+            raise ValueError(f"quote repair case not found: {repair_case_id}")
+
+        assignments: list[str] = []
+        params: list[Any] = []
+        if lifecycle_state is not None:
+            assignments.append("lifecycle_state = ?")
+            params.append(lifecycle_state)
+        if current_failure_reason is not None:
+            assignments.append("current_failure_reason = ?")
+            params.append(current_failure_reason)
+        if case_summary is not None:
+            assignments.append("case_summary_json = ?::jsonb")
+            params.append(self._serialize_candidate_json(case_summary, fallback={}))
+        if not assignments:
+            return existing
+
+        params.append(repair_case_id)
+        self.conn.execute(
+            f"""
+            UPDATE quote_repair_cases
+            SET {", ".join(assignments)},
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            tuple(params),
+        )
+        self.conn.commit()
+        row = self.conn.execute(
+            """
+            SELECT *
+            FROM quote_repair_cases
+            WHERE id = ?
+            LIMIT 1
+            """,
+            (repair_case_id,),
+        ).fetchone()
+        if row is None:
+            raise RuntimeError("failed to update quote repair case")
+        return self._serialize_quote_db_row(row)
+
+    def get_quote_repair_case_summary(
+        self,
+        *,
+        repair_case_id: int,
+    ) -> dict[str, Any] | None:
+        repair_case = self.get_quote_repair_case(repair_case_id=repair_case_id)
+        if repair_case is None:
+            return None
+
+        case_summary = repair_case.get("case_summary_json")
+        if isinstance(case_summary, str):
+            try:
+                summary = json.loads(case_summary)
+            except json.JSONDecodeError:
+                summary = {}
+        elif isinstance(case_summary, dict):
+            summary = dict(case_summary)
+        else:
+            summary = {}
+
+        attempts = self.list_quote_repair_case_attempts(repair_case_id=repair_case_id)
+        non_baseline_attempts = [
+            item for item in attempts if int(item.get("attempt_number") or 0) > 0
+        ]
+        failure_log: list[dict[str, Any]] = []
+        last_attempt_outcome = ""
+        last_attempt_number: int | None = None
+        if attempts:
+            latest_attempt = attempts[-1]
+            last_attempt_outcome = str(latest_attempt.get("outcome_state") or "")
+            last_attempt_number = int(latest_attempt.get("attempt_number") or 0)
+        for attempt in non_baseline_attempts:
+            attempt_summary = attempt.get("attempt_summary_json")
+            if isinstance(attempt_summary, str):
+                try:
+                    attempt_summary_payload = json.loads(attempt_summary)
+                except json.JSONDecodeError:
+                    attempt_summary_payload = {}
+            elif isinstance(attempt_summary, dict):
+                attempt_summary_payload = dict(attempt_summary)
+            else:
+                attempt_summary_payload = {}
+            comparison = attempt_summary_payload.get("comparison") or {}
+            classification = str(comparison.get("classification") or "").strip() or "same"
+            if classification == "better":
+                continue
+            failure_log.append(
+                {
+                    "attempt_id": int(attempt["id"]),
+                    "attempt_number": int(attempt["attempt_number"]),
+                    "trigger": str(attempt.get("trigger") or ""),
+                    "outcome_state": str(attempt.get("outcome_state") or ""),
+                    "classification": classification,
+                    "failure_note": str(attempt.get("failure_note") or ""),
+                    "created_at": str(attempt.get("created_at") or ""),
+                }
+            )
+
+        lifecycle_state = str(repair_case.get("lifecycle_state") or "")
+        escalation_state = "not_ready"
+        if lifecycle_state == "escalated":
+            escalation_state = "ready"
+        elif lifecycle_state == "closed_resolved":
+            escalation_state = "resolved"
+        elif lifecycle_state == "closed_ignored":
+            escalation_state = "ignored"
+        elif failure_log:
+            escalation_state = "retryable"
+
+        closed_at = None
+        if lifecycle_state in {"closed_resolved", "closed_ignored"}:
+            closed_at = str(repair_case.get("updated_at") or "")
+
+        summary.update(
+            {
+                "attempt_count": len(non_baseline_attempts),
+                "attempt_history_count": len(attempts),
+                "last_attempt_outcome": last_attempt_outcome,
+                "last_attempt_number": last_attempt_number,
+                "baseline_attempt_id": (
+                    int(repair_case["baseline_attempt_id"])
+                    if repair_case.get("baseline_attempt_id") is not None
+                    else None
+                ),
+                "escalation_state": escalation_state,
+                "failure_log_json": failure_log,
+                "closed_at": closed_at,
+            }
+        )
+        return summary
 
     def resolve_quote_exception(
         self,
@@ -3159,6 +3316,29 @@ class _BookkeepingStoreBase:
             params,
         ).fetchall()
         serialized_rows = [self._serialize_quote_db_row(row) for row in rows]
+        for item in serialized_rows:
+            repair_case = self.get_quote_repair_case_by_origin_exception(
+                origin_exception_id=int(item["id"])
+            )
+            if repair_case is None:
+                item["repair_case_id"] = None
+                item["repair_case"] = None
+                continue
+            repair_case_id = int(repair_case["id"])
+            summary = self.get_quote_repair_case_summary(repair_case_id=repair_case_id) or {}
+            item["repair_case_id"] = repair_case_id
+            item["repair_case"] = {
+                "id": repair_case_id,
+                "lifecycle_state": str(repair_case.get("lifecycle_state") or ""),
+                "attempt_count": int(summary.get("attempt_count") or 0),
+                "last_attempt_outcome": str(summary.get("last_attempt_outcome") or ""),
+                "baseline_attempt_id": (
+                    int(repair_case["baseline_attempt_id"])
+                    if repair_case.get("baseline_attempt_id") is not None
+                    else None
+                ),
+                "escalation_state": str(summary.get("escalation_state") or "not_ready"),
+            }
         return {
             "rows": serialized_rows,
             "total": total,
