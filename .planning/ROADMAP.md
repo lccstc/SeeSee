@@ -171,7 +171,7 @@ Phases execute in strategic order: 1 → 2 → 2.1 → 5 → 6 → 3 → 4 → 7
 | 2. Validation Engine | 3/3 | Completed | 2026-04-14 |
 | 2.1. Real Exception Corpus & Candidate Coverage | 3/3 | Completed | 2026-04-14 |
 | 5. Exception Repair State Machine | 3/3 | Completed | 2026-04-14 |
-| 6. Constrained Auto-Remediation Loop | 0/3 | Planned | - |
+| 6. Constrained Auto-Remediation Loop | 3/3 | Verification blocked | - |
 | 3. Fact Protection Publisher | 0/3 | Not started | - |
 | 4. Snapshot / Delta Semantics | 0/3 | Not started | - |
 | 7. Operator Verification Workbench | 0/3 | Not started | - |

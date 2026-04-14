@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: ready_to_execute
-stopped_at: Phase 06 ready to execute
-last_updated: "2026-04-14T07:38:00+07:00"
-last_activity: 2026-04-14 -- Phase 05 human verification passed; Phase 06 planning finalized after checker revisions
+status: blocked
+stopped_at: Phase 06 awaiting PostgreSQL verification
+last_updated: "2026-04-14T08:15:00+07:00"
+last_activity: 2026-04-14 -- Phase 06 implementation completed; PostgreSQL-backed verification blocked by sandboxed DB access
 progress:
   total_phases: 9
   completed_phases: 5
   total_plans: 15
-  completed_plans: 12
-  percent: 56
+  completed_plans: 15
+  percent: 67
 ---
 
 # Project State
@@ -25,18 +25,18 @@ See: .planning/PROJECT.md (updated 2026-04-13)
 
 ## Current Position
 
-Phase: 06 (constrained-auto-remediation-loop) — READY TO EXECUTE
-Plan: 06-01 / 06-02 / 06-03 planned
-Status: Checker blockers resolved; Phase 05 dependency closed by live manual verification
-Last activity: 2026-04-14 -- finalized bounded remediation planning and cleared Phase 05 human gate
+Phase: 06 (constrained-auto-remediation-loop) — VERIFICATION BLOCKED
+Plan: implementation complete
+Status: Pure-unit validation passed; PostgreSQL/runtime verification blocked by sandboxed access to 127.0.0.1:5432
+Last activity: 2026-04-14 -- Phase 06 code, summaries, and blocked verification report were written
 
-Progress: [██████░░░░] 56% of milestone phases completed
+Progress: [███████░░░] 67% of milestone phases completed
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 12
+- Total plans completed: 15
 - Average duration: -
 - Total execution time: 45 min
 
@@ -48,12 +48,12 @@ Progress: [██████░░░░] 56% of milestone phases completed
 | 02 | 3 | 45min | 15min |
 | 02.1 | 3 | - | - |
 | 05 | 3 | 69min | 23min |
-| 06 | 0 | - | - |
+| 06 | 3 | - | - |
 | 03 | 0 | - | - |
 
 **Recent Trend:**
 
-- Last 5 plans: Phase 05 completed with live manual verification; Phase 06 planning passed after checker-driven remediation-order fixes
+- Last 5 plans: Phase 06 implementation completed; final DB-backed verification is the only remaining gate before moving to Phase 03
 - Trend: Stable
 
 | Phase 02-validation-engine P01 | 14min | 2 tasks | 4 files |
@@ -99,6 +99,8 @@ Recent decisions affecting current work:
 - Phase 05 implemented: repair cases, immutable baseline replay, append-only attempt history, and handler state sync are all in place
 - Phase 05 completed: live repair-case packaging and proof-only wording were both validated on the dev server
 - Phase 06 planned: bounded retries, exact scope-order routing, safe write envelopes, and absorption gates are ready for execution
+- Phase 06 implemented: remediation attempt protocol, scope router, write-envelope guardrails, finalize gate, and proof-only repair wording are in repo
+- Phase 06 verification blocked: PostgreSQL-backed tests could not run in this sandbox because local DB TCP access is denied
 
 ### Pending Todos
 
@@ -109,9 +111,10 @@ None yet.
 - Brownfield quote-wall logic already exists, so phase planning must verify where active quote facts are mutated today before changing behavior
 - Existing AGENTS.md contains project-specific operating rules and should not be blindly overwritten by generated workflow guidance
 - `graphify` rebuild is currently blocked by a missing local `graphify` module in the active Python environment
+- PostgreSQL-backed verification is blocked in this session because sandboxed Python cannot connect to `127.0.0.1:5432`
 
 ## Session Continuity
 
 Last session: 2026-04-14T00:15:51.169Z
-Stopped at: Phase 06 ready to execute
+Stopped at: Phase 06 awaiting PostgreSQL verification
 Resume file: None
