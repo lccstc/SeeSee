@@ -907,11 +907,18 @@ def _build_quote_result_preview_payload(db: BookkeepingDB, payload: dict) -> dic
     )
     raw_text = str((quote_document or {}).get("raw_text") or exc_row.get("raw_text") or "")
     chat_name = str((quote_document or {}).get("chat_name") or exc_row.get("chat_name") or "")
+    group_profile = _load_bound_quote_group_profile(
+        db,
+        platform=str(exc_row.get("platform") or ""),
+        chat_id=str(exc_row.get("chat_id") or ""),
+        chat_name=chat_name,
+    )
     result_template_text = str(payload.get("result_template_text") or "")
     preview = derive_result_template_preview(
         raw_text=raw_text,
         result_template_text=result_template_text,
         chat_name=chat_name,
+        default_card_type=str((group_profile or {}).get("default_card_type") or ""),
     )
     preview["exception_id"] = exception_id
     preview["source_group_key"] = str(exc_row.get("source_group_key") or "")

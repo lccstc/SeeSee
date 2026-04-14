@@ -1459,10 +1459,50 @@ class TestResultTemplateFlow(unittest.TestCase):
                 for row in preview["preview_rows"]
             )
         )
+
+    def test_derive_result_template_preview_prefers_group_default_card_type(self):
+        from bookkeeping_core.template_engine import derive_result_template_preview, suggest_result_template_text
+
+        raw_text = (
+            "#US秒刷更新\n"
+            "10-195=5.15（5倍数）\n"
+            "50=5.3\n"
+            "100/150=5.4\n"
+            "200-450=5.42（50倍）\n"
+        )
+        result_text = (
+            "[默认]\n"
+            "国家 / 币种=USD\n"
+            "形态=不限\n\n"
+            "[unknown]\n"
+            "10-195=5.15\n"
+            "50=5.3\n"
+            "100/150=5.4\n"
+            "200-450=5.42\n"
+        )
+
+        suggested = suggest_result_template_text(
+            raw_text,
+            chat_name="C-523【QH-IT-设备组-禁赎回",
+            default_card_type="Apple",
+        )
+        self.assertIn("[Apple]", suggested)
+        self.assertNotIn("[unknown]", suggested)
+
+        preview = derive_result_template_preview(
+            raw_text=raw_text,
+            result_template_text=result_text,
+            chat_name="C-523【QH-IT-设备组-禁赎回",
+            default_card_type="Apple",
+        )
+
+        self.assertTrue(preview["can_save"])
+        self.assertFalse(preview["errors"])
+        self.assertTrue(all(row["card_type"] == "Apple" for row in preview["preview_rows"]))
         self.assertTrue(
             any(
-                row["amount"] == "300-500"
-                and row["price"] == "5.45"
+                row["amount"] == "200-450"
+                and row["price"] == "5.42"
                 and row["country_or_currency"] == "USD"
                 for row in preview["preview_rows"]
             )

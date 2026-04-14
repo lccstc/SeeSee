@@ -2506,6 +2506,92 @@ class WebAppTests(PostgresTestCase):
             )
         )
 
+    def test_quote_exception_result_preview_prefers_group_profile_default_card_type(self) -> None:
+        self.db.set_group(
+            platform="wechat",
+            group_key="wechat:g-it-fallback",
+            chat_id="g-it-fallback",
+            chat_name="C-523【QH-IT-设备组-禁赎回",
+            group_num=5,
+        )
+        self.db.upsert_quote_group_profile(
+            platform="wechat",
+            chat_id="g-it-fallback",
+            chat_name="C-523【QH-IT-设备组-禁赎回",
+            default_card_type="Apple",
+            default_country_or_currency="USD",
+            default_form_factor="不限",
+            default_multiplier="",
+            parser_template="strict-section-v1",
+            stale_after_minutes=30,
+            note="",
+            template_config='{"version":"strict-section-v1","defaults":{},"sections":[]}',
+        )
+        quote_document_id = self.db.record_quote_document(
+            platform="wechat",
+            source_group_key="wechat:g-it-fallback",
+            chat_id="g-it-fallback",
+            chat_name="C-523【QH-IT-设备组-禁赎回",
+            message_id="msg-it-fallback",
+            source_name="报价员",
+            sender_id="u-it-fallback",
+            raw_text=(
+                "#US秒刷更新\n"
+                "10-195=5.15（5倍数）\n"
+                "50=5.3\n"
+                "100/150=5.4\n"
+                "200-450=5.42（50倍）\n"
+            ),
+            message_time="2026-04-14 00:57:36",
+            parser_template="strict-section",
+            parser_version="strict-section-v1",
+            confidence=0.0,
+            parse_status="empty",
+        )
+        exception_id = self.db.record_quote_exception(
+            quote_document_id=quote_document_id,
+            platform="wechat",
+            source_group_key="wechat:g-it-fallback",
+            chat_id="g-it-fallback",
+            chat_name="C-523【QH-IT-设备组-禁赎回",
+            source_name="报价员",
+            sender_id="u-it-fallback",
+            reason="strict_match_failed",
+            source_line="10-195=5.15\n50=5.3\n100/150=5.4\n200-450=5.42",
+            raw_text=(
+                "#US秒刷更新\n"
+                "10-195=5.15（5倍数）\n"
+                "50=5.3\n"
+                "100/150=5.4\n"
+                "200-450=5.42（50倍）\n"
+            ),
+            message_time="2026-04-14 00:57:36",
+            parser_template="strict-section",
+            parser_version="strict-section-v1",
+            confidence=0.0,
+        )
+
+        status, preview = self._request(
+            "POST",
+            "/api/quotes/exceptions/result-preview",
+            {
+                "exception_id": exception_id,
+                "result_template_text": (
+                    "[默认]\n"
+                    "国家 / 币种=USD\n"
+                    "形态=不限\n\n"
+                    "[unknown]\n"
+                    "10-195=5.15\n"
+                    "50=5.3\n"
+                    "100/150=5.4\n"
+                    "200-450=5.42\n"
+                ),
+            },
+        )
+        self.assertEqual(status, 200)
+        self.assertTrue(preview["can_save"])
+        self.assertTrue(all(row["card_type"] == "Apple" for row in preview["preview_rows"]))
+
     def test_quote_exception_result_preview_supports_second_defaults_block_for_same_card(self) -> None:
         self.db.set_group(
             platform="wechat",

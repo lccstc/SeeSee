@@ -1358,19 +1358,32 @@ def _normalize_result_amount_label(text: str) -> str:
     return normalize_quote_amount_range(cleaned)
 
 
-def _resolve_result_card_type(card_type: str, *, chat_name: str = "") -> str:
+def _resolve_result_card_type(
+    card_type: str,
+    *,
+    chat_name: str = "",
+    default_card_type: str = "",
+) -> str:
     from .quotes import _infer_card_type, normalize_quote_card_type
 
     normalized = normalize_quote_card_type(card_type)
     if normalized and normalized.lower() != "unknown":
         return normalized
+    profile_default = normalize_quote_card_type(default_card_type)
+    if profile_default and profile_default.lower() != "unknown":
+        return profile_default
     chat_card_type = normalize_quote_card_type(_infer_card_type(chat_name or "") or "")
     if chat_card_type and chat_card_type.lower() != "unknown":
         return chat_card_type
     return normalized
 
 
-def suggest_result_template_text(raw_text: str, *, chat_name: str = "") -> str:
+def suggest_result_template_text(
+    raw_text: str,
+    *,
+    chat_name: str = "",
+    default_card_type: str = "",
+) -> str:
     from .quotes import (
         _extract_price,
         _infer_card_type,
@@ -1442,7 +1455,11 @@ def suggest_result_template_text(raw_text: str, *, chat_name: str = "") -> str:
             if not label:
                 continue
             if current_card is None:
-                fallback_card = _resolve_result_card_type(inferred_card or "unknown", chat_name=chat_name)
+                fallback_card = _resolve_result_card_type(
+                    inferred_card or "unknown",
+                    chat_name=chat_name,
+                    default_card_type=default_card_type,
+                )
                 current_card = {
                     "card_type": fallback_card,
                     "defaults": dict(current_defaults),
@@ -1467,6 +1484,7 @@ def suggest_result_template_text(raw_text: str, *, chat_name: str = "") -> str:
                     fallback_card = _resolve_result_card_type(
                         inferred_card or str(current_card.get("card_type") or "") or "unknown",
                         chat_name=chat_name,
+                        default_card_type=default_card_type,
                     )
                     current_defaults = dict(target_defaults)
                     current_card = {
@@ -1664,11 +1682,16 @@ def derive_result_template_preview(
     raw_text: str,
     result_template_text: str,
     chat_name: str = "",
+    default_card_type: str = "",
 ) -> dict[str, Any]:
     from .quotes import _infer_card_type, normalize_quote_card_type, normalize_quote_form_factor
 
     normalized_lines = _normalized_virtual_lines(str(raw_text or ""), split_multi_quotes=True)
-    suggested_text = suggest_result_template_text(raw_text, chat_name=chat_name)
+    suggested_text = suggest_result_template_text(
+        raw_text,
+        chat_name=chat_name,
+        default_card_type=default_card_type,
+    )
     effective_text = str(result_template_text or "").strip() or suggested_text
     parsed = parse_result_template_text(effective_text)
     draft = dict(parsed.get("draft_structure") or {})
@@ -1705,6 +1728,7 @@ def derive_result_template_preview(
         target_card_type = _resolve_result_card_type(
             str(card.get("card_type") or "").strip(),
             chat_name=chat_name,
+            default_card_type=default_card_type,
         )
         card["card_type"] = target_card_type
         first_quote = next(iter(card.get("quotes") or []), None)
@@ -1736,7 +1760,11 @@ def derive_result_template_preview(
                     break
         if quote_start is not None and not matched_header:
             found_index = quote_start
-            if _resolve_result_card_type("", chat_name=chat_name) == target_card_type:
+            if _resolve_result_card_type(
+                "",
+                chat_name=chat_name,
+                default_card_type=default_card_type,
+            ) == target_card_type:
                 warnings.append(
                     f"原文里没找到 {target_card_type} 标题，已按群名“{chat_name or '当前群'}”回退成当前群专用卡种。"
                 )
@@ -1747,7 +1775,11 @@ def derive_result_template_preview(
         if found_index is None:
             if single_card and card_index == 0:
                 found_index = search_cursor
-                if _resolve_result_card_type("", chat_name=chat_name) == target_card_type:
+                if _resolve_result_card_type(
+                    "",
+                    chat_name=chat_name,
+                    default_card_type=default_card_type,
+                ) == target_card_type:
                     warnings.append(
                         f"原文里没找到 {target_card_type} 标题，已按群名“{chat_name or '当前群'}”回退成当前群专用卡种。"
                     )
