@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: blocked
-stopped_at: Phase 06 awaiting PostgreSQL verification
-last_updated: "2026-04-14T08:15:00+07:00"
-last_activity: 2026-04-14 -- Phase 06 implementation completed; PostgreSQL-backed verification blocked by sandboxed DB access
+status: ready
+stopped_at: Phase 03 ready for planning
+last_updated: "2026-04-14T09:05:05+07:00"
+last_activity: 2026-04-14 -- Phase 06 verification passed after PostgreSQL-backed reruns; Phase 03 is ready for planning
 progress:
   total_phases: 9
   completed_phases: 5
   total_plans: 15
   completed_plans: 15
-  percent: 67
+  percent: 56
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-13)
 
 **Core value:** 把供应商群原始消息转成“可追溯、可验证、不可误发布”的报价事实，宁可不上墙，也绝不把错价、错面额、错国家/币种上墙。
-**Current focus:** Phase 06 — constrained-auto-remediation-loop
+**Current focus:** Phase 03 — fact-protection-publisher
 
 ## Current Position
 
-Phase: 06 (constrained-auto-remediation-loop) — VERIFICATION BLOCKED
-Plan: implementation complete
-Status: Pure-unit validation passed; PostgreSQL/runtime verification blocked by sandboxed access to 127.0.0.1:5432
-Last activity: 2026-04-14 -- Phase 06 code, summaries, and blocked verification report were written
+Phase: 03 (fact-protection-publisher) — READY FOR PLANNING
+Plan: not started
+Status: Phase 06 is fully verified; next work returns to guarded publisher design
+Last activity: 2026-04-14 -- Phase 06 passed PostgreSQL-backed verification and the roadmap advanced back to Phase 03
 
-Progress: [███████░░░] 67% of milestone phases completed
+Progress: [██████░░░░] 56% of milestone phases completed
 
 ## Performance Metrics
 
@@ -53,7 +53,7 @@ Progress: [███████░░░] 67% of milestone phases completed
 
 **Recent Trend:**
 
-- Last 5 plans: Phase 06 implementation completed; final DB-backed verification is the only remaining gate before moving to Phase 03
+- Last 5 plans: Phase 06 verification passed; the next gate is planning Phase 03 guarded publisher work
 - Trend: Stable
 
 | Phase 02-validation-engine P01 | 14min | 2 tasks | 4 files |
@@ -98,9 +98,9 @@ Recent decisions affecting current work:
 - Phase 05-01 completed: additive repair-case packaging now exists for runtime parse failures and validator no-publish outcomes
 - Phase 05 implemented: repair cases, immutable baseline replay, append-only attempt history, and handler state sync are all in place
 - Phase 05 completed: live repair-case packaging and proof-only wording were both validated on the dev server
-- Phase 06 planned: bounded retries, exact scope-order routing, safe write envelopes, and absorption gates are ready for execution
+- Phase 06 planned: bounded retries, exact scope-order routing, safe write envelopes, and absorption gates were executed as designed
 - Phase 06 implemented: remediation attempt protocol, scope router, write-envelope guardrails, finalize gate, and proof-only repair wording are in repo
-- Phase 06 verification blocked: PostgreSQL-backed tests could not run in this sandbox because local DB TCP access is denied
+- Phase 06 verified: PostgreSQL-backed reruns passed after a small repair-case rollup refresh fix, so the remediation workflow is now fully gated by replay/validator/regression checks
 
 ### Pending Todos
 
@@ -111,10 +111,9 @@ None yet.
 - Brownfield quote-wall logic already exists, so phase planning must verify where active quote facts are mutated today before changing behavior
 - Existing AGENTS.md contains project-specific operating rules and should not be blindly overwritten by generated workflow guidance
 - `graphify` rebuild is currently blocked by a missing local `graphify` module in the active Python environment
-- PostgreSQL-backed verification is blocked in this session because sandboxed Python cannot connect to `127.0.0.1:5432`
 
 ## Session Continuity
 
 Last session: 2026-04-14T00:15:51.169Z
-Stopped at: Phase 06 awaiting PostgreSQL verification
+Stopped at: Phase 03 ready for planning
 Resume file: None

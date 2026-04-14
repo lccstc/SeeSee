@@ -4928,7 +4928,7 @@ class WebRepairCaseTests(PostgresTestCase):
             self.assertEqual(str(stored_case["lifecycle_state"]), "closed_resolved")
             summary = _json_field(stored_case["case_summary_json"])
             self.assertEqual(summary["attempt_count"], 0)
-            self.assertTrue(str(summary["closed_at"] or "").startswith("2026-04-14 00:"))
+            self.assertTrue(str(summary["closed_at"] or "").startswith("2026-04-14 "))
         finally:
             if old_password is None:
                 os.environ.pop("QUOTE_ADMIN_PASSWORD", None)

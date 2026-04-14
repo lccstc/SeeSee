@@ -204,6 +204,7 @@ def begin_quote_repair_remediation_attempt(
         outcome_state=REMEDIATION_OUTCOME_PENDING,
         failure_note="",
     )
+    _refresh_quote_repair_case_rollup(db=db, repair_case_id=repair_case_id)
     return db.get_quote_repair_case_attempt(attempt_id=int(attempt["id"])) or attempt
 
 

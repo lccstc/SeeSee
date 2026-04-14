@@ -1,16 +1,16 @@
 ---
 phase: 06-constrained-auto-remediation-loop
-verified: 2026-04-14T08:15:00+07:00
-status: blocked
-score: partial
+verified: 2026-04-14T09:05:05+07:00
+status: verified
+score: 4/4 truths verified
 overrides_applied: 0
 ---
 
 # Phase 06 Verification Report
 
 **Phase Goal:** Ensure recurring failures move through a bounded remediation workflow that prefers group-level fixes, proves safety by replay, and escalates after repeated failure.
-**Verified:** 2026-04-14T08:15:00+07:00
-**Status:** blocked
+**Verified:** 2026-04-14T09:05:05+07:00
+**Status:** verified
 
 ## Implemented Truths
 
@@ -28,15 +28,20 @@ overrides_applied: 0
 - `python3 -m py_compile bookkeeping_core/database.py bookkeeping_core/repair_cases.py bookkeeping_core/remediation.py bookkeeping_web/app.py tests/test_postgres_backend.py tests/test_runtime.py tests/test_template_engine.py tests/test_webapp.py`
 - `PYTHONPATH=. ./.venv/bin/python -m unittest tests.test_template_engine tests.test_webapp.WebRepairStatusTextTests -v`
   - `Ran 106 tests`, `OK`
+- `BOOKKEEPING_TEST_DSN=postgresql://bookkeeping:password@127.0.0.1:5432/bookkeeping_test PYTHONPATH=. ./.venv/bin/python -m unittest tests.test_postgres_backend -v`
+  - `Ran 22 tests`, `OK`
+- `BOOKKEEPING_TEST_DSN=postgresql://bookkeeping:password@127.0.0.1:5432/bookkeeping_test PYTHONPATH=. ./.venv/bin/python -m unittest tests.test_runtime -v`
+  - `Ran 47 tests`, `OK`
+- `BOOKKEEPING_TEST_DSN=postgresql://bookkeeping:password@127.0.0.1:5432/bookkeeping_test PYTHONPATH=. ./.venv/bin/python -m unittest tests.test_webapp -v`
+  - `Ran 75 tests`, `OK`
 
-### Blocked
+### Verification Fix During Rerun
 
-- `BOOKKEEPING_TEST_DSN=postgresql://bookkeeping:password@127.0.0.1:5432/bookkeeping_test ... tests.test_postgres_backend tests.test_runtime -v`
-- The current sandbox denies TCP access to `127.0.0.1:5432`, so PostgreSQL-backed integration verification cannot run in this session.
-
-## Remaining Gate
-
-Phase 06 should not be marked fully passed until the PostgreSQL-backed suites in [06-VALIDATION.md](/Users/newlcc/SeeSee/repo/.planning/phases/06-constrained-auto-remediation-loop/06-VALIDATION.md) are rerun in an environment that can actually reach the local test database.
+- The first PostgreSQL-backed rerun exposed one real regression: pending remediation attempts were not refreshing the repair-case rollup, so `case_summary_json.attempt_count` stayed `0`.
+- Fix applied in [`remediation.py`](/Users/newlcc/SeeSee/repo/wxbot/bookkeeping-platform/bookkeeping_core/remediation.py) by calling `_refresh_quote_repair_case_rollup(...)` immediately after `create_quote_repair_case_attempt(...)`.
+- Focused reruns then passed:
+  - `tests.test_postgres_backend.RepairCaseTests.test_begin_quote_repair_remediation_attempt_persists_pending_metadata`
+  - `tests.test_runtime.RuntimeRepairCaseTests.test_begin_quote_repair_remediation_attempt_is_fact_neutral`
 
 ## Boundary Check
 

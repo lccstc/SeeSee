@@ -15,8 +15,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 1: Candidate Contract Foundation** - Split parsing output from active fact publication and formalize candidate objects
 - [x] **Phase 2: Validation Engine** - Add fixed schema validation, business validation, and `publishable_rows`
 - [x] **Phase 2.1: Real Exception Corpus & Candidate Coverage (INSERTED)** - Build the real-sample corpus and harden candidate generation against live exception shapes
-- [ ] **Phase 5: Exception Repair State Machine** - Turn every failure into a durable repair case with replay baseline, attempt history, and escalation state
-- [ ] **Phase 6: Constrained Auto-Remediation Loop** - Let subagents propose bounded repairs that must survive replay, validator, and regression gates before absorption
+- [x] **Phase 5: Exception Repair State Machine** - Turn every failure into a durable repair case with replay baseline, attempt history, and escalation state
+- [x] **Phase 6: Constrained Auto-Remediation Loop** - Let subagents propose bounded repairs that must survive replay, validator, and regression gates before absorption
 - [ ] **Phase 3: Fact Protection Publisher** - Make one guarded publisher the only path that can mutate active quote facts
 - [ ] **Phase 4: Snapshot / Delta Semantics** - Distinguish `full_snapshot` from `delta_update` and default safely
 - [ ] **Phase 7: Operator Verification Workbench** - Expose message-level candidate, rejection, and publish decision evidence for debugging
@@ -93,12 +93,12 @@ Plans:
   1. Subagents can only propose bounded repairs against repair cases and must read prior failure logs before each retry
   2. The workflow prefers fixes in the owning group profile / section / bootstrap before promoting shared parser rules
   3. Every absorbed fix survives replay, validator, and regression gates; repeated failure escalates instead of looping forever
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 06-01: Implement bounded subagent remediation attempts with cumulative failure logging and max-attempt escalation
-- [ ] 06-02: Define remediation priority order: group profile -> group section -> bootstrap -> shared rule -> global core
-- [ ] 06-03: Close the loop by promoting successful repairs into deterministic templates, rules, scripts, skills, and tests
+- [x] 06-01: Implement bounded subagent remediation attempts with cumulative failure logging and max-attempt escalation
+- [x] 06-02: Define remediation priority order: group profile -> group section -> bootstrap -> shared rule -> global core
+- [x] 06-03: Close the loop by promoting successful repairs into deterministic templates, rules, scripts, skills, and tests
 
 ### Phase 3: Fact Protection Publisher
 **Goal**: Ensure that only a guarded publisher can change active quote facts, and that failures never corrupt existing wall state.
@@ -171,7 +171,7 @@ Phases execute in strategic order: 1 → 2 → 2.1 → 5 → 6 → 3 → 4 → 7
 | 2. Validation Engine | 3/3 | Completed | 2026-04-14 |
 | 2.1. Real Exception Corpus & Candidate Coverage | 3/3 | Completed | 2026-04-14 |
 | 5. Exception Repair State Machine | 3/3 | Completed | 2026-04-14 |
-| 6. Constrained Auto-Remediation Loop | 3/3 | Verification blocked | - |
+| 6. Constrained Auto-Remediation Loop | 3/3 | Completed | 2026-04-14 |
 | 3. Fact Protection Publisher | 0/3 | Not started | - |
 | 4. Snapshot / Delta Semantics | 0/3 | Not started | - |
 | 7. Operator Verification Workbench | 0/3 | Not started | - |
