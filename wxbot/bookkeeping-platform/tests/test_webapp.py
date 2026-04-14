@@ -4212,10 +4212,46 @@ class WebRepairCaseTests(PostgresTestCase):
             chat_name="Repair Replay 群",
             group_num=5,
         )
+        self.app = create_app(self.db_dsn)
 
     def tearDown(self) -> None:
+        close_app = getattr(self.app, "close", None)
+        if callable(close_app):
+            close_app()
         self.db.close()
         super().tearDown()
+
+    def _request(
+        self,
+        method: str,
+        path: str,
+        payload: dict | None = None,
+        headers: dict[str, str] | None = None,
+        query_string: str | None = None,
+    ) -> tuple[int, dict]:
+        body = b""
+        if payload is not None:
+            body = json.dumps(payload).encode("utf-8")
+        environ = {}
+        setup_testing_defaults(environ)
+        environ["REQUEST_METHOD"] = method
+        environ["PATH_INFO"] = path
+        environ["QUERY_STRING"] = query_string or ""
+        environ["CONTENT_LENGTH"] = str(len(body))
+        environ["wsgi.input"] = io.BytesIO(body)
+        if body:
+            environ["CONTENT_TYPE"] = "application/json"
+        for key, value in (headers or {}).items():
+            environ[f"HTTP_{key.upper().replace('-', '_')}"] = value
+
+        response = {"status": 500, "body": b""}
+
+        def start_response(status: str, response_headers: list[tuple[str, str]]) -> None:
+            response["status"] = int(status.split(" ", 1)[0])
+
+        chunks = self.app(environ, start_response)
+        response["body"] = b"".join(chunks)
+        return response["status"], json.loads(response["body"].decode("utf-8"))
 
     def _count_rows(
         self,
@@ -4259,6 +4295,89 @@ class WebRepairCaseTests(PostgresTestCase):
             template_config=json.dumps(payload["template_config"], ensure_ascii=False),
         )
         return payload
+
+    def _create_repair_case_with_baseline(
+        self,
+        *,
+        exception_message_id: str,
+        raw_message: str = "[Apple]\nUS 100 95.5",
+        source_line: str = "US 100 95.5",
+    ) -> tuple[int, dict, dict]:
+        from bookkeeping_core.quote_validation import QuoteValidationRun
+        from bookkeeping_core.repair_cases import (
+            create_baseline_repair_attempt,
+            package_quote_repair_case,
+        )
+
+        self.db.upsert_quote_group_profile(
+            platform="wechat",
+            chat_id="g-web-repair",
+            chat_name="Repair Replay 群",
+            default_card_type="Apple",
+            default_country_or_currency="USD",
+            default_form_factor="physical",
+            default_multiplier="1x",
+            parser_template="repair-template-v1",
+            template_config=json.dumps(
+                {"version": "repair-template-v1", "sections": ["Apple"]},
+                ensure_ascii=False,
+            ),
+        )
+        origin_document_id = self.db.record_quote_candidate_bundle(
+            candidate=_make_repair_candidate(
+                message_id=exception_message_id,
+                raw_message=raw_message,
+                row_specs=[{"source_line": source_line, "price": 95.5}],
+                run_kind="runtime",
+                replay_of_quote_document_id=None,
+            )
+        )
+        self.db.record_quote_validation_run(
+            validation_run=QuoteValidationRun(
+                quote_document_id=origin_document_id,
+                validator_version="validator-v1",
+                run_kind="runtime",
+                message_decision="no_publish",
+                validation_status="completed",
+                summary={"message_reasons": [{"code": "strict_match_failed"}]},
+                row_results=[],
+            )
+        )
+        exception_id = self.db.record_quote_exception(
+            quote_document_id=origin_document_id,
+            platform="wechat",
+            source_group_key="wechat:g-web-repair",
+            chat_id="g-web-repair",
+            chat_name="Repair Replay 群",
+            source_name="报价员",
+            sender_id="seller-web-repair",
+            reason="strict_match_failed",
+            source_line=source_line,
+            raw_text=raw_message,
+            message_time="2026-04-14 21:00:00",
+            parser_template="repair-template-v1",
+            parser_version="candidate-v1",
+            confidence=0.12,
+        )
+        repair_case = package_quote_repair_case(db=self.db, exception_id=exception_id)
+        baseline_attempt = create_baseline_repair_attempt(
+            db=self.db,
+            repair_case_id=int(repair_case["id"]),
+            replay_result={
+                "replayed": True,
+                "reason": "",
+                "rows": 1,
+                "exceptions": 0,
+                "remaining_lines": [source_line],
+                "mutated_active_facts": False,
+                "message_decision": "no_publish",
+                "publishable_row_count": 0,
+                "held_row_count": 0,
+                "rejected_row_count": 1,
+                "comparison": {"classification": "same"},
+            },
+        )
+        return exception_id, repair_case, baseline_attempt
 
     def test_create_baseline_repair_attempt_uses_replay_helper_and_persists_comparison(
         self,
@@ -4493,6 +4612,217 @@ class WebRepairCaseTests(PostgresTestCase):
             (replay_document_id,),
         )
         self.assertEqual(quote_price_row_count, 0)
+
+    def test_quote_exceptions_endpoint_includes_compact_repair_summary(self) -> None:
+        from bookkeeping_core.repair_cases import (
+            REPAIR_CASE_STATE_READY_FOR_ATTEMPT,
+            advance_quote_repair_case_state,
+            record_quote_repair_attempt,
+        )
+
+        exception_id, repair_case, baseline_attempt = self._create_repair_case_with_baseline(
+            exception_message_id="repair-summary-origin"
+        )
+        advance_quote_repair_case_state(
+            db=self.db,
+            repair_case_id=int(repair_case["id"]),
+            next_state=REPAIR_CASE_STATE_READY_FOR_ATTEMPT,
+        )
+        record_quote_repair_attempt(
+            db=self.db,
+            repair_case_id=int(repair_case["id"]),
+            trigger="manual_retry",
+            replay_result={
+                "replayed": True,
+                "reason": "strict-match-still-failing",
+                "rows": 1,
+                "exceptions": 1,
+                "remaining_lines": ["US 100 95.5"],
+                "mutated_active_facts": False,
+                "message_decision": "no_publish",
+                "publishable_row_count": 0,
+                "held_row_count": 0,
+                "rejected_row_count": 1,
+                "comparison": {"classification": "same"},
+            },
+        )
+
+        status, payload = self._request(
+            "GET",
+            "/api/quotes/exceptions",
+            query_string="resolution_status=all",
+        )
+        self.assertEqual(status, 200)
+        row = next(item for item in payload["rows"] if int(item["id"]) == exception_id)
+        self.assertEqual(int(row["repair_case_id"]), int(repair_case["id"]))
+        self.assertEqual(row["repair_case"]["lifecycle_state"], "attempt_failed")
+        self.assertEqual(row["repair_case"]["attempt_count"], 1)
+        self.assertEqual(
+            int(row["repair_case"]["baseline_attempt_id"]),
+            int(baseline_attempt["id"]),
+        )
+        self.assertEqual(row["repair_case"]["last_attempt_outcome"], "completed")
+        self.assertEqual(row["repair_case"]["escalation_state"], "retryable")
+
+    def test_quote_exception_resolve_endpoint_syncs_repair_case_ignore_reopen_and_resolve(
+        self,
+    ) -> None:
+        exception_id, repair_case, _ = self._create_repair_case_with_baseline(
+            exception_message_id="repair-resolve-origin"
+        )
+
+        status, ignored = self._request(
+            "POST",
+            "/api/quotes/exceptions/resolve",
+            {"exception_id": exception_id, "resolution_status": "ignored"},
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(ignored["updated"], 1)
+        stored_case = self.db.get_quote_repair_case(repair_case_id=int(repair_case["id"]))
+        self.assertIsNotNone(stored_case)
+        assert stored_case is not None
+        self.assertEqual(str(stored_case["lifecycle_state"]), "closed_ignored")
+
+        status, reopened = self._request(
+            "POST",
+            "/api/quotes/exceptions/resolve",
+            {"exception_id": exception_id, "resolution_status": "open"},
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(reopened["updated"], 1)
+        stored_case = self.db.get_quote_repair_case(repair_case_id=int(repair_case["id"]))
+        self.assertIsNotNone(stored_case)
+        assert stored_case is not None
+        self.assertEqual(str(stored_case["lifecycle_state"]), "ready_for_attempt")
+
+        status, resolved = self._request(
+            "POST",
+            "/api/quotes/exceptions/resolve",
+            {"exception_id": exception_id, "resolution_status": "resolved"},
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(resolved["updated"], 1)
+        stored_case = self.db.get_quote_repair_case(repair_case_id=int(repair_case["id"]))
+        self.assertIsNotNone(stored_case)
+        assert stored_case is not None
+        self.assertEqual(str(stored_case["lifecycle_state"]), "closed_resolved")
+
+    def test_quote_exception_harvest_save_appends_repair_attempt_history(self) -> None:
+        old_password = os.environ.get("QUOTE_ADMIN_PASSWORD")
+        os.environ["QUOTE_ADMIN_PASSWORD"] = "repair-secret"
+        try:
+            exception_id, repair_case, _ = self._create_repair_case_with_baseline(
+                exception_message_id="repair-harvest-origin",
+                raw_message="[Apple]\nUS 100 95.5",
+                source_line="US 100 95.5",
+            )
+
+            with patch(
+                "bookkeeping_web.app._build_quote_harvest_preview_payload"
+            ) as preview_mock, patch(
+                "bookkeeping_web.app._replay_latest_quote_document_with_current_template"
+            ) as replay_mock:
+                preview_mock.return_value = {
+                    "can_save": True,
+                    "derived_section": {
+                        "label": "Apple",
+                        "defaults": {
+                            "card_type": "Apple",
+                            "country_or_currency": "USD",
+                            "form_factor": "physical",
+                        },
+                        "lines": [],
+                    },
+                    "preview_rows": [{"card_type": "Apple"}],
+                    "is_latest_for_group": True,
+                }
+                replay_mock.return_value = {
+                    "replayed": True,
+                    "reason": "strict-match-still-failing",
+                    "rows": 1,
+                    "exceptions": 1,
+                    "remaining_lines": ["US 100 95.5"],
+                    "mutated_active_facts": False,
+                    "message_decision": "no_publish",
+                    "publishable_row_count": 0,
+                    "held_row_count": 0,
+                    "rejected_row_count": 1,
+                    "comparison": {"classification": "same"},
+                }
+                status, saved = self._request(
+                    "POST",
+                    "/api/quotes/exceptions/harvest-save",
+                    {
+                        "exception_id": exception_id,
+                        "section_start_line": 0,
+                        "section_end_line": 1,
+                        "admin_password": "repair-secret",
+                    },
+                )
+
+            self.assertEqual(status, 200)
+            self.assertTrue(saved["saved"])
+            self.assertFalse(saved["resolved_fully"])
+            stored_case = self.db.get_quote_repair_case(repair_case_id=int(repair_case["id"]))
+            self.assertIsNotNone(stored_case)
+            assert stored_case is not None
+            self.assertEqual(str(stored_case["lifecycle_state"]), "attempt_failed")
+            summary = _json_field(stored_case["case_summary_json"])
+            self.assertEqual(summary["attempt_count"], 1)
+            self.assertEqual(summary["failure_log_json"][0]["failure_note"], "strict-match-still-failing")
+            self.assertEqual(summary["escalation_state"], "retryable")
+        finally:
+            if old_password is None:
+                os.environ.pop("QUOTE_ADMIN_PASSWORD", None)
+            else:
+                os.environ["QUOTE_ADMIN_PASSWORD"] = old_password
+
+    def test_quote_exception_result_save_closes_linked_repair_case(self) -> None:
+        old_password = os.environ.get("QUOTE_ADMIN_PASSWORD")
+        os.environ["QUOTE_ADMIN_PASSWORD"] = "repair-secret"
+        try:
+            exception_id, repair_case, _ = self._create_repair_case_with_baseline(
+                exception_message_id="repair-result-origin"
+            )
+
+            with patch(
+                "bookkeeping_web.app._build_quote_result_preview_payload"
+            ) as preview_mock:
+                preview_mock.return_value = {
+                    "can_save": True,
+                    "strict_replay_ok": True,
+                    "derived_sections": [{"label": "Apple"}],
+                    "preview_rows": [{"card_type": "Apple", "country_or_currency": "USD"}],
+                    "notes": [],
+                    "warnings": [],
+                    "skeleton_summaries": [],
+                    "result_template_text": "[Apple]\n100=95.5",
+                    "draft_structure": {"defaults": {}},
+                }
+                status, saved = self._request(
+                    "POST",
+                    "/api/quotes/exceptions/result-save",
+                    {
+                        "exception_id": exception_id,
+                        "result_template_text": "[Apple]\n100=95.5",
+                        "admin_password": "repair-secret",
+                    },
+                )
+
+            self.assertEqual(status, 200)
+            self.assertTrue(saved["saved"])
+            stored_case = self.db.get_quote_repair_case(repair_case_id=int(repair_case["id"]))
+            self.assertIsNotNone(stored_case)
+            assert stored_case is not None
+            self.assertEqual(str(stored_case["lifecycle_state"]), "closed_resolved")
+            summary = _json_field(stored_case["case_summary_json"])
+            self.assertEqual(summary["attempt_count"], 0)
+            self.assertTrue(str(summary["closed_at"] or "").startswith("2026-04-14 00:"))
+        finally:
+            if old_password is None:
+                os.environ.pop("QUOTE_ADMIN_PASSWORD", None)
+            else:
+                os.environ["QUOTE_ADMIN_PASSWORD"] = old_password
 
 
 if __name__ == "__main__":

@@ -28,6 +28,7 @@ _REPAIR_CASE_ALLOWED_TRANSITIONS = {
     REPAIR_CASE_STATE_PACKAGED: {
         REPAIR_CASE_STATE_BASELINE_READY,
         REPAIR_CASE_STATE_READY_FOR_ATTEMPT,
+        REPAIR_CASE_STATE_CLOSED_RESOLVED,
         REPAIR_CASE_STATE_CLOSED_IGNORED,
     },
     REPAIR_CASE_STATE_BASELINE_READY: {
@@ -57,8 +58,12 @@ _REPAIR_CASE_ALLOWED_TRANSITIONS = {
         REPAIR_CASE_STATE_CLOSED_RESOLVED,
         REPAIR_CASE_STATE_CLOSED_IGNORED,
     },
-    REPAIR_CASE_STATE_CLOSED_RESOLVED: set(),
-    REPAIR_CASE_STATE_CLOSED_IGNORED: set(),
+    REPAIR_CASE_STATE_CLOSED_RESOLVED: {
+        REPAIR_CASE_STATE_READY_FOR_ATTEMPT,
+    },
+    REPAIR_CASE_STATE_CLOSED_IGNORED: {
+        REPAIR_CASE_STATE_READY_FOR_ATTEMPT,
+    },
 }
 
 
@@ -280,8 +285,14 @@ def record_quote_repair_attempt(
         attempt_kind=REPAIR_ATTEMPT_KIND_REPAIR,
         attempt_number=next_attempt_number,
         trigger=str(trigger or "").strip() or "repair_attempt",
-        quote_document_id=_maybe_int(replay_result.get("quote_document_id")),
-        validation_run_id=_maybe_int(replay_result.get("validation_run_id")),
+        quote_document_id=_existing_quote_document_id(
+            db=db,
+            value=replay_result.get("quote_document_id"),
+        ),
+        validation_run_id=_existing_validation_run_id(
+            db=db,
+            value=replay_result.get("validation_run_id"),
+        ),
         replayed_from_quote_document_id=_maybe_int(
             repair_case.get("origin_quote_document_id")
         ),
@@ -334,6 +345,56 @@ def ensure_quote_repair_case(
     if existing is not None:
         return existing
     return package_quote_repair_case(db=db, exception_id=exception_id)
+
+
+def sync_quote_exception_repair_case(
+    *,
+    db,
+    exception_id: int,
+    resolution_status: str | None = None,
+    replay_result: dict[str, Any] | None = None,
+    trigger: str,
+) -> dict[str, Any]:
+    try:
+        repair_case = ensure_quote_repair_case(db=db, exception_id=exception_id)
+    except ValueError:
+        return {}
+    normalized_resolution_status = str(resolution_status or "").strip().lower()
+
+    if replay_result is not None and bool(replay_result.get("replayed")):
+        record_quote_repair_attempt(
+            db=db,
+            repair_case_id=int(repair_case["id"]),
+            trigger=trigger,
+            replay_result=replay_result,
+        )
+        repair_case = db.get_quote_repair_case(repair_case_id=int(repair_case["id"])) or repair_case
+
+    if normalized_resolution_status in {"ignored"}:
+        return advance_quote_repair_case_state(
+            db=db,
+            repair_case_id=int(repair_case["id"]),
+            next_state=REPAIR_CASE_STATE_CLOSED_IGNORED,
+        )
+    if normalized_resolution_status in {"resolved", "attached"}:
+        return advance_quote_repair_case_state(
+            db=db,
+            repair_case_id=int(repair_case["id"]),
+            next_state=REPAIR_CASE_STATE_CLOSED_RESOLVED,
+            current_failure_reason="",
+        )
+    if normalized_resolution_status in {"open", "annotate"} and not (
+        replay_result and bool(replay_result.get("replayed"))
+    ):
+        return advance_quote_repair_case_state(
+            db=db,
+            repair_case_id=int(repair_case["id"]),
+            next_state=REPAIR_CASE_STATE_READY_FOR_ATTEMPT,
+        )
+    return _refresh_quote_repair_case_rollup(
+        db=db,
+        repair_case_id=int(repair_case["id"]),
+    )
 
 
 def build_quote_repair_case_fingerprint(
@@ -684,6 +745,33 @@ def _decode_json_field(value: Any, *, fallback: Any) -> Any:
         return json.loads(value)
     except (TypeError, json.JSONDecodeError):
         return fallback
+
+
+def _existing_quote_document_id(*, db, value: Any) -> int | None:
+    quote_document_id = _maybe_int(value)
+    if quote_document_id is None:
+        return None
+    if db.get_quote_document(quote_document_id=quote_document_id) is None:
+        return None
+    return quote_document_id
+
+
+def _existing_validation_run_id(*, db, value: Any) -> int | None:
+    validation_run_id = _maybe_int(value)
+    if validation_run_id is None:
+        return None
+    row = db.conn.execute(
+        """
+        SELECT id
+        FROM quote_validation_runs
+        WHERE id = ?
+        LIMIT 1
+        """,
+        (validation_run_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    return int(row["id"])
 
 
 def _refresh_quote_repair_case_rollup(*, db, repair_case_id: int) -> dict[str, Any]:

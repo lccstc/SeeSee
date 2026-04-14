@@ -1392,7 +1392,7 @@ class RepairCaseTests(PostgresTestCase):
     def test_advance_quote_repair_case_state_rejects_illegal_transitions(self) -> None:
         from bookkeeping_core.repair_cases import (
             REPAIR_CASE_STATE_CLOSED_IGNORED,
-            REPAIR_CASE_STATE_READY_FOR_ATTEMPT,
+            REPAIR_CASE_STATE_PACKAGED,
             advance_quote_repair_case_state,
             package_quote_repair_case,
         )
@@ -1429,7 +1429,7 @@ class RepairCaseTests(PostgresTestCase):
                 advance_quote_repair_case_state(
                     db=db,
                     repair_case_id=int(repair_case["id"]),
-                    next_state=REPAIR_CASE_STATE_READY_FOR_ATTEMPT,
+                    next_state=REPAIR_CASE_STATE_PACKAGED,
                 )
         finally:
             db.close()

@@ -711,12 +711,25 @@ def _handle_quotes_exception_resolve(db: BookkeepingDB, start_response, environ)
                 resolution_status="open",
                 resolution_note=new_note,
             )
+            _sync_quote_exception_repair_case_state(
+                db,
+                exception_id=exception_id,
+                resolution_status="open",
+                trigger="exception_annotate",
+            )
             return _respond_json(start_response, 200, {"updated": updated, "new_pattern": pattern})
             
         if resolution_status == "attached":
             result = db.attach_quote_exception_to_restrictions(
                 exception_id=exception_id,
             )
+            if str(result.get("status") or "") == "attached":
+                _sync_quote_exception_repair_case_state(
+                    db,
+                    exception_id=exception_id,
+                    resolution_status="attached",
+                    trigger="exception_attach",
+                )
             return _respond_json(start_response, 200, result)
         if resolution_status not in {"ignored", "resolved", "attached", "annotate", "open"}:
             raise ValueError("resolution_status must be ignored, resolved, attached, annotate, or open")
@@ -736,6 +749,12 @@ def _handle_quotes_exception_resolve(db: BookkeepingDB, start_response, environ)
             exception_id=exception_id,
             resolution_status=resolution_status,
             resolution_note=resolution_note,
+        )
+        _sync_quote_exception_repair_case_state(
+            db,
+            exception_id=exception_id,
+            resolution_status=resolution_status,
+            trigger=f"exception_{resolution_status}",
         )
     except (KeyError, TypeError, ValueError) as exc:
         return _respond_json(start_response, 400, {"error": f"Bad payload: {exc}"})
@@ -1364,12 +1383,26 @@ def _handle_quotes_exception_harvest_save(db: BookkeepingDB, start_response, env
                 resolution_status="resolved",
                 resolution_note=resolution_note,
             )
+            _sync_quote_exception_repair_case_state(
+                db,
+                exception_id=exception_id,
+                resolution_status="resolved",
+                replay_result=replay_result,
+                trigger="harvest_save_replay",
+            )
         else:
             db.update_quote_exception(
                 exception_id=exception_id,
                 resolution_status="open",
                 resolution_note=resolution_note,
                 source_line="\n".join(remaining_lines),
+            )
+            _sync_quote_exception_repair_case_state(
+                db,
+                exception_id=exception_id,
+                resolution_status="open",
+                replay_result=replay_result if bool(replay_result.get("replayed")) else None,
+                trigger="harvest_save_replay",
             )
         return _respond_json(
             start_response,
@@ -1482,6 +1515,12 @@ def _handle_quotes_exception_result_save(db: BookkeepingDB, start_response, envi
             exception_id=exception_id,
             resolution_status="resolved",
             resolution_note=resolution_note,
+        )
+        _sync_quote_exception_repair_case_state(
+            db,
+            exception_id=exception_id,
+            resolution_status="resolved",
+            trigger="result_save",
         )
         return _respond_json(
             start_response,
@@ -2250,6 +2289,25 @@ def _normalize_quote_payload(payload) -> dict:
     if isinstance(payload, list):
         return {"rows": payload, "total": len(payload)}
     return {"rows": [], "total": 0}
+
+
+def _sync_quote_exception_repair_case_state(
+    db: BookkeepingDB,
+    *,
+    exception_id: int,
+    resolution_status: str | None = None,
+    replay_result: dict | None = None,
+    trigger: str,
+) -> None:
+    from bookkeeping_core.repair_cases import sync_quote_exception_repair_case
+
+    sync_quote_exception_repair_case(
+        db=db,
+        exception_id=exception_id,
+        resolution_status=resolution_status,
+        replay_result=replay_result,
+        trigger=trigger,
+    )
 
 
 def _handle_difference_trace(db: BookkeepingDB, start_response, environ):
