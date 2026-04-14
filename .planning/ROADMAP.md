@@ -17,7 +17,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 2.1: Real Exception Corpus & Candidate Coverage (INSERTED)** - Build the real-sample corpus and harden candidate generation against live exception shapes
 - [x] **Phase 5: Exception Repair State Machine** - Turn every failure into a durable repair case with replay baseline, attempt history, and escalation state
 - [x] **Phase 6: Constrained Auto-Remediation Loop** - Let subagents propose bounded repairs that must survive replay, validator, and regression gates before absorption
-- [ ] **Phase 3: Fact Protection Publisher** - Make one guarded publisher the only path that can mutate active quote facts
+- [x] **Phase 3: Fact Protection Publisher** - Make one guarded publisher the only path that can mutate active quote facts
 - [ ] **Phase 4: Snapshot / Delta Semantics** - Distinguish `full_snapshot` from `delta_update` and default safely
 - [ ] **Phase 7: Operator Verification Workbench** - Expose message-level candidate, rejection, and publish decision evidence for debugging
 - [ ] **Phase 8: Shadow Validation Gate** - Run the pipeline safely in validation mode without handing it default production authority
@@ -111,9 +111,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 03-01-PLAN.md — Centralize active-quote mutation behind one guarded publisher service
-- [ ] 03-02-PLAN.md — Add explicit no-op, transaction, and rollback protections for publish attempts
-- [ ] 03-03-PLAN.md — Remove or block web/script bypasses and add structural publisher-custody tests
+- [x] 03-01-PLAN.md — Centralize active-quote mutation behind one guarded publisher service
+- [x] 03-02-PLAN.md — Add explicit no-op, transaction, and rollback protections for publish attempts
+- [x] 03-03-PLAN.md — Remove or block web/script bypasses and add structural publisher-custody tests
 
 ### Phase 4: Snapshot / Delta Semantics
 **Goal**: Make `full_snapshot` and `delta_update` explicit message semantics with safe defaults and human confirmation in v1.
@@ -173,7 +173,7 @@ Phases execute in strategic order: 1 → 2 → 2.1 → 5 → 6 → 3 → 4 → 7
 | 2.1. Real Exception Corpus & Candidate Coverage | 3/3 | Completed | 2026-04-14 |
 | 5. Exception Repair State Machine | 3/3 | Completed | 2026-04-14 |
 | 6. Constrained Auto-Remediation Loop | 3/3 | Completed | 2026-04-14 |
-| 3. Fact Protection Publisher | 0/3 | Not started | - |
+| 3. Fact Protection Publisher | 3/3 | Completed | 2026-04-15 |
 | 4. Snapshot / Delta Semantics | 0/3 | Not started | - |
 | 7. Operator Verification & Failure Dictionary | 0/3 | Not started | - |
 | 8. Shadow Validation Gate | 0/3 | Not started | - |

@@ -12,6 +12,7 @@ from bookkeeping_core.quote_validation import (
     QuoteValidationRun,
     VALIDATOR_VERSION_V1,
     build_validation_reason,
+    validate_quote_candidate_document,
 )
 from tests.support.postgres_test_case import PostgresTestCase
 
@@ -118,6 +119,52 @@ def _make_validation_candidate(*, message_id: str) -> QuoteCandidateMessage:
 
 
 class PostgresBackendTests(PostgresTestCase):
+    def _record_validation_backed_publish_fixture(
+        self,
+        *,
+        db: BookkeepingDB,
+        message_id: str,
+        source_group_key: str = "wechat:publisher-room",
+        chat_id: str = "publisher-room",
+        chat_name: str = "Publisher Room",
+        raw_message: str = "US 100 96.0",
+        rows: list[QuoteCandidateRow] | None = None,
+    ) -> tuple[int, int]:
+        candidate = QuoteCandidateMessage(
+            platform="wechat",
+            source_group_key=source_group_key,
+            chat_id=chat_id,
+            chat_name=chat_name,
+            message_id=message_id,
+            source_name="Publisher Source",
+            sender_id="publisher-user",
+            sender_display="Publisher Source",
+            raw_message=raw_message,
+            message_time="2026-04-15 11:00:00",
+            parser_kind="group-parser",
+            parser_template="publisher-template",
+            parser_version="publisher-v1",
+            confidence=0.99,
+            parse_status="parsed",
+            message_fingerprint=f"publish-{message_id}",
+            snapshot_hypothesis="unresolved",
+            snapshot_hypothesis_reason="phase03-fixture",
+            rows=list(rows or []),
+        )
+        quote_document_id = db.record_quote_candidate_bundle(candidate=candidate)
+        validation_run = validate_quote_candidate_document(
+            quote_document_id=quote_document_id,
+            run_kind="runtime",
+            candidate_document=candidate,
+            candidate_rows=db.list_quote_candidate_rows(
+                quote_document_id=quote_document_id
+            ),
+        )
+        validation_run_id = db.record_quote_validation_run(
+            validation_run=validation_run
+        )
+        return quote_document_id, validation_run_id
+
     def test_seed_quote_demo_clear_is_disabled_to_avoid_raw_fact_deletes(self) -> None:
         from io import StringIO
         from contextlib import redirect_stdout
@@ -750,18 +797,32 @@ class PostgresBackendTests(PostgresTestCase):
             )
             db.conn.commit()
 
+            quote_document_id, validation_run_id = self._record_validation_backed_publish_fixture(
+                db=db,
+                message_id="msg-publisher-1",
+                rows=[
+                    QuoteCandidateRow(
+                        row_ordinal=1,
+                        source_line="US 100 96.0",
+                        source_line_index=0,
+                        line_confidence=0.99,
+                        normalized_sku_key="Apple|USD|100||physical",
+                        normalization_status="normalized",
+                        row_publishable=True,
+                        publishability_basis="validator_pending",
+                        restriction_parse_status="clear",
+                        card_type="Apple",
+                        country_or_currency="USD",
+                        amount_range="100",
+                        multiplier=None,
+                        form_factor="physical",
+                        price=96.0,
+                        quote_status="active",
+                        restriction_text="",
+                    )
+                ],
+            )
             publisher = QuoteFactPublisher(db)
-            publishable_row = {
-                "card_type": "Apple",
-                "country_or_currency": "USD",
-                "amount_range": "100",
-                "multiplier": None,
-                "form_factor": "physical",
-                "price": 96.0,
-                "quote_status": "active",
-                "restriction_text": "",
-                "source_line": "US 100 96.0",
-            }
 
             with patch.object(
                 db,
@@ -769,8 +830,8 @@ class PostgresBackendTests(PostgresTestCase):
                 side_effect=RuntimeError("forced publish failure"),
             ):
                 result = publisher.publish_quote_document(
-                    quote_document_id=303,
-                    validation_run_id=404,
+                    quote_document_id=quote_document_id,
+                    validation_run_id=validation_run_id,
                     source_group_key="wechat:publisher-room",
                     platform="wechat",
                     chat_id="publisher-room",
@@ -782,7 +843,6 @@ class PostgresBackendTests(PostgresTestCase):
                     message_time="2026-04-15 11:00:00",
                     parser_template="publisher-template",
                     parser_version="publisher-v1",
-                    publishable_rows=[publishable_row],
                     publish_mode="replace_group_active_rows",
                 )
 
@@ -841,6 +901,11 @@ class PostgresBackendTests(PostgresTestCase):
             )
             db.conn.commit()
 
+            quote_document_id, validation_run_id = self._record_validation_backed_publish_fixture(
+                db=db,
+                message_id="msg-noop-empty",
+                rows=[],
+            )
             publisher = QuoteFactPublisher(db)
             with patch.object(
                 db,
@@ -852,8 +917,8 @@ class PostgresBackendTests(PostgresTestCase):
                 wraps=db.upsert_quote_price_row_with_history,
             ) as upsert_mock:
                 result = publisher.publish_quote_document(
-                    quote_document_id=606,
-                    validation_run_id=707,
+                    quote_document_id=quote_document_id,
+                    validation_run_id=validation_run_id,
                     source_group_key="wechat:publisher-room",
                     platform="wechat",
                     chat_id="publisher-room",
@@ -865,7 +930,6 @@ class PostgresBackendTests(PostgresTestCase):
                     message_time="2026-04-15 11:00:00",
                     parser_template="publisher-template",
                     parser_version="publisher-v1",
-                    publishable_rows=[],
                     publish_mode="replace_group_active_rows",
                 )
 
@@ -926,6 +990,31 @@ class PostgresBackendTests(PostgresTestCase):
             )
             db.conn.commit()
 
+            quote_document_id, validation_run_id = self._record_validation_backed_publish_fixture(
+                db=db,
+                message_id="msg-noop-mode",
+                rows=[
+                    QuoteCandidateRow(
+                        row_ordinal=1,
+                        source_line="US 100 96.0",
+                        source_line_index=0,
+                        line_confidence=0.99,
+                        normalized_sku_key="Apple|USD|100||physical",
+                        normalization_status="normalized",
+                        row_publishable=True,
+                        publishability_basis="validator_pending",
+                        restriction_parse_status="clear",
+                        card_type="Apple",
+                        country_or_currency="USD",
+                        amount_range="100",
+                        multiplier=None,
+                        form_factor="physical",
+                        price=96.0,
+                        quote_status="active",
+                        restriction_text="",
+                    )
+                ],
+            )
             publisher = QuoteFactPublisher(db)
             with patch.object(
                 db,
@@ -937,8 +1026,8 @@ class PostgresBackendTests(PostgresTestCase):
                 wraps=db.upsert_quote_price_row_with_history,
             ) as upsert_mock:
                 result = publisher.publish_quote_document(
-                    quote_document_id=909,
-                    validation_run_id=1001,
+                    quote_document_id=quote_document_id,
+                    validation_run_id=validation_run_id,
                     source_group_key="wechat:publisher-room",
                     platform="wechat",
                     chat_id="publisher-room",
@@ -950,19 +1039,6 @@ class PostgresBackendTests(PostgresTestCase):
                     message_time="2026-04-15 11:00:00",
                     parser_template="publisher-template",
                     parser_version="publisher-v1",
-                    publishable_rows=[
-                        {
-                            "card_type": "Apple",
-                            "country_or_currency": "USD",
-                            "amount_range": "100",
-                            "multiplier": None,
-                            "form_factor": "physical",
-                            "price": 96.0,
-                            "quote_status": "active",
-                            "restriction_text": "",
-                            "source_line": "US 100 96.0",
-                        }
-                    ],
                     publish_mode="unresolved",
                 )
 
@@ -1049,6 +1125,51 @@ class PostgresBackendTests(PostgresTestCase):
             )
             db.conn.commit()
 
+            quote_document_id, validation_run_id = self._record_validation_backed_publish_fixture(
+                db=db,
+                message_id="msg-partial-failure",
+                raw_message="US 200 96.0\nJP 10 9.1",
+                rows=[
+                    QuoteCandidateRow(
+                        row_ordinal=1,
+                        source_line="US 200 96.0",
+                        source_line_index=0,
+                        line_confidence=0.99,
+                        normalized_sku_key="Apple|USD|200||physical",
+                        normalization_status="normalized",
+                        row_publishable=True,
+                        publishability_basis="validator_pending",
+                        restriction_parse_status="clear",
+                        card_type="Apple",
+                        country_or_currency="USD",
+                        amount_range="200",
+                        multiplier=None,
+                        form_factor="physical",
+                        price=96.0,
+                        quote_status="active",
+                        restriction_text="",
+                    ),
+                    QuoteCandidateRow(
+                        row_ordinal=2,
+                        source_line="JP 10 9.1",
+                        source_line_index=1,
+                        line_confidence=0.99,
+                        normalized_sku_key="Apple|JPY|10||physical",
+                        normalization_status="normalized",
+                        row_publishable=True,
+                        publishability_basis="validator_pending",
+                        restriction_parse_status="clear",
+                        card_type="Apple",
+                        country_or_currency="JPY",
+                        amount_range="10",
+                        multiplier=None,
+                        form_factor="physical",
+                        price=9.1,
+                        quote_status="active",
+                        restriction_text="",
+                    ),
+                ],
+            )
             publisher = QuoteFactPublisher(db)
             original_upsert = db.upsert_quote_price_row_with_history
             call_count = {"value": 0}
@@ -1065,8 +1186,8 @@ class PostgresBackendTests(PostgresTestCase):
                 side_effect=partial_failure_upsert,
             ):
                 result = publisher.publish_quote_document(
-                    quote_document_id=1202,
-                    validation_run_id=1303,
+                    quote_document_id=quote_document_id,
+                    validation_run_id=validation_run_id,
                     source_group_key="wechat:publisher-room",
                     platform="wechat",
                     chat_id="publisher-room",
@@ -1078,30 +1199,6 @@ class PostgresBackendTests(PostgresTestCase):
                     message_time="2026-04-15 11:00:00",
                     parser_template="publisher-template",
                     parser_version="publisher-v1",
-                    publishable_rows=[
-                        {
-                            "card_type": "Apple",
-                            "country_or_currency": "USD",
-                            "amount_range": "200",
-                            "multiplier": None,
-                            "form_factor": "physical",
-                            "price": 96.0,
-                            "quote_status": "active",
-                            "restriction_text": "",
-                            "source_line": "US 200 96.0",
-                        },
-                        {
-                            "card_type": "Apple",
-                            "country_or_currency": "JPY",
-                            "amount_range": "10",
-                            "multiplier": None,
-                            "form_factor": "physical",
-                            "price": 9.1,
-                            "quote_status": "active",
-                            "restriction_text": "",
-                            "source_line": "JP 10 9.1",
-                        },
-                    ],
                     publish_mode="replace_group_active_rows",
                 )
 

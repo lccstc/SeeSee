@@ -30,9 +30,9 @@
 
 ### Fact Protection
 
-- [ ] **FACT-01**: Failed parse, validation, or publish attempts leave prior active quote facts untouched
-- [ ] **FACT-02**: If a message produces no `publishable_rows`, the system performs no publish for that message
-- [ ] **FACT-03**: No route, script, page action, Agent, or SubAgent can bypass validator and publisher safeguards to mutate active quotes directly
+- [x] **FACT-01**: Failed parse, validation, or publish attempts leave prior active quote facts untouched
+- [x] **FACT-02**: If a message produces no `publishable_rows`, the system performs no publish for that message
+- [x] **FACT-03**: No route, script, page action, Agent, or SubAgent can bypass validator and publisher safeguards to mutate active quotes directly
 
 ### Snapshot Semantics
 
@@ -105,9 +105,9 @@
 | INDU-01 | Phase 6 | Pending |
 | INDU-02 | Phase 6 | Pending |
 | INDU-03 | Phase 7 | Pending |
-| FACT-01 | Phase 3 | Pending |
-| FACT-02 | Phase 3 | Pending |
-| FACT-03 | Phase 3 | Pending |
+| FACT-01 | Phase 3 | Complete |
+| FACT-02 | Phase 3 | Complete |
+| FACT-03 | Phase 3 | Complete |
 | SNAP-01 | Phase 4 | Pending |
 | SNAP-02 | Phase 4 | Pending |
 | SNAP-03 | Phase 4 | Pending |
@@ -122,4 +122,4 @@
 
 ---
 *Requirements defined: 2026-04-13*
-*Last updated: 2026-04-14 after Phase 02.1 follow-up decisions*
+*Last updated: 2026-04-15 after Phase 03 guarded publisher verification*

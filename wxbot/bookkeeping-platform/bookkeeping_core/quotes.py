@@ -1478,10 +1478,6 @@ class QuoteCaptureService:
             message_time=candidate.message_time,
             parser_template=candidate.parser_template,
             parser_version=candidate.parser_version,
-            publishable_rows=self.db.list_publishable_quote_candidate_rows(
-                quote_document_id=document_id,
-                validation_run_id=validation_run_id,
-            ),
             publish_mode=self.publisher.VALIDATION_ONLY_MODE,
         )
         return {

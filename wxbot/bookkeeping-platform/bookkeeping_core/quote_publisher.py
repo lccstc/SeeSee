@@ -105,9 +105,14 @@ class QuoteFactPublisher:
         message_time: str,
         parser_template: str,
         parser_version: str,
-        publishable_rows: list[dict[str, Any]],
         publish_mode: str,
     ) -> QuoteFactPublishResult:
+        publishable_rows = list(
+            self.db.list_publishable_quote_candidate_rows(
+                quote_document_id=quote_document_id,
+                validation_run_id=validation_run_id,
+            )
+        )
         attempted_row_count = len(publishable_rows)
         if publish_mode == self.VALIDATION_ONLY_MODE:
             return QuoteFactPublishResult.no_op(

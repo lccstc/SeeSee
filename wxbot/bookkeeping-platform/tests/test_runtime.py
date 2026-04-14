@@ -26,7 +26,13 @@ class QuoteFactCustodyArchitectureTests(unittest.TestCase):
         "deactivate_old_quotes_for_group",
         "upsert_quote_price_row_with_history",
     }
+    _MUTATING_SQL_MARKERS = (
+        "delete from quote_price_rows",
+        "insert into quote_price_rows",
+        "update quote_price_rows",
+    )
     _ALLOWLIST = {
+        Path("bookkeeping_core/database.py"),
         Path("bookkeeping_core/quote_publisher.py"),
         Path("tests/test_postgres_backend.py"),
         Path("tests/test_webapp.py"),
@@ -51,6 +57,17 @@ class QuoteFactCustodyArchitectureTests(unittest.TestCase):
                     helper_name = node.func.attr
                 if helper_name in self._FORBIDDEN_HELPERS:
                     violations.append(f"{rel_path}:{node.lineno}:{helper_name}")
+                if (
+                    helper_name in {"execute", "executemany"}
+                    and node.args
+                    and isinstance(node.args[0], ast.Constant)
+                    and isinstance(node.args[0].value, str)
+                ):
+                    sql = " ".join(str(node.args[0].value).lower().split())
+                    if any(marker in sql for marker in self._MUTATING_SQL_MARKERS):
+                        violations.append(
+                            f"{rel_path}:{node.lineno}:raw_sql_quote_price_rows"
+                        )
 
         self.assertEqual(
             violations,
@@ -1655,7 +1672,12 @@ class UnifiedRuntimeTests(PostgresTestCase):
                 source_group_key=str(kwargs["source_group_key"]),
                 publish_mode=str(kwargs["publish_mode"]),
                 reason="runtime_validation_only",
-                attempted_row_count=len(kwargs["publishable_rows"]),
+                attempted_row_count=len(
+                    self.db.list_publishable_quote_candidate_rows(
+                        quote_document_id=int(kwargs["quote_document_id"]),
+                        validation_run_id=int(kwargs["validation_run_id"]),
+                    )
+                ),
             ),
         ) as publish_mock:
             self.runtime.process_envelope(
@@ -1686,11 +1708,15 @@ class UnifiedRuntimeTests(PostgresTestCase):
         self.assertEqual(call_kwargs["publish_mode"], "validation_only")
         self.assertEqual(call_kwargs["quote_document_id"], int(document["id"]))
         self.assertEqual(call_kwargs["validation_run_id"], int(validation_run["id"]))
-        self.assertEqual(len(call_kwargs["publishable_rows"]), 1)
-        self.assertEqual(str(call_kwargs["publishable_rows"][0]["source_line"]), "US=5.10")
-        self.assertFalse(bool(call_kwargs["publishable_rows"][0]["row_publishable"]))
+        publishable_rows = self.db.list_publishable_quote_candidate_rows(
+            quote_document_id=int(document["id"]),
+            validation_run_id=int(validation_run["id"]),
+        )
+        self.assertEqual(len(publishable_rows), 1)
+        self.assertEqual(str(publishable_rows[0]["source_line"]), "US=5.10")
+        self.assertFalse(bool(publishable_rows[0]["row_publishable"]))
         self.assertEqual(
-            str(call_kwargs["publishable_rows"][0]["final_decision"]),
+            str(publishable_rows[0]["final_decision"]),
             "publishable",
         )
 
@@ -1798,6 +1824,12 @@ class UnifiedRuntimeTests(PostgresTestCase):
         self.assertEqual(result["publish_result"]["reason"], "runtime_validation_only")
         self.assertEqual(result["publish_result"]["attempted_row_count"], 1)
         self.assertEqual(result["publish_result"]["applied_row_count"], 0)
+
+        publishable_rows = self.db.list_publishable_quote_candidate_rows(
+            quote_document_id=int(result["document_id"]),
+            validation_run_id=int(result["validation_run_id"]),
+        )
+        self.assertEqual(len(publishable_rows), 1)
 
         quote_price_row_count = self._count_rows(
             "quote_price_rows",
