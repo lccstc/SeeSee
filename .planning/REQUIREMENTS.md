@@ -50,6 +50,7 @@
 
 - [ ] **INDU-01**: System drives repair cases through a constrained remediation workflow with bounded attempts, cumulative failure logs, and escalation after repeated failure
 - [ ] **INDU-02**: User can promote repeated exception patterns into deterministic fixes such as group profiles, sections, bootstrap configs, shared rules, scripts, skills, or unit tests, prioritizing group-level fixes before global parser changes
+- [ ] **INDU-03**: System converts repair-case failure history into a structured failure dictionary / repair lexicon so fresh agents can retrieve symptoms, root causes, preferred scopes, forbidden fixes, replay fixtures, and known-good repairs without relying on prior chat context
 
 ### Operator Verification
 
@@ -103,6 +104,7 @@
 | EXCP-03 | Phase 5 | Complete |
 | INDU-01 | Phase 6 | Pending |
 | INDU-02 | Phase 6 | Pending |
+| INDU-03 | Phase 7 | Pending |
 | FACT-01 | Phase 3 | Pending |
 | FACT-02 | Phase 3 | Pending |
 | FACT-03 | Phase 3 | Pending |
@@ -114,8 +116,8 @@
 | GOV-01 | Phase 8 | Pending |
 
 **Coverage:**
-- v1 requirements: 25 total
-- Mapped to phases: 25
+- v1 requirements: 26 total
+- Mapped to phases: 26
 - Unmapped: 0 ✓
 
 ---

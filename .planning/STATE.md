@@ -89,6 +89,7 @@ Recent decisions affecting current work:
 - [Phase 05]: Persisted before/after comparison data on attempt rows using candidate/validator metrics and classification rather than ephemeral handler output.
 - [Phase 05]: Stored attempt_count, failure_log_json, escalation_state, and closure metadata as recomputed rollups on quote_repair_cases.case_summary_json while keeping quote_repair_case_attempts append-only.
 - [Phase 05]: Synchronized brownfield resolve/save handlers to repair cases opportunistically and no-op when legacy exception rows cannot be packaged because they lack durable quote-document lineage.
+- [Phase 06 follow-up]: Repair-case logs are not enough on their own; production-mode agents will need a structured failure dictionary / repair lexicon so new agents can look up standard fixes without prior chat context.
 
 ### Roadmap Evolution
 
@@ -101,6 +102,7 @@ Recent decisions affecting current work:
 - Phase 06 planned: bounded retries, exact scope-order routing, safe write envelopes, and absorption gates were executed as designed
 - Phase 06 implemented: remediation attempt protocol, scope router, write-envelope guardrails, finalize gate, and proof-only repair wording are in repo
 - Phase 06 verified: PostgreSQL-backed reruns passed after a small repair-case rollup refresh fix, so the remediation workflow is now fully gated by replay/validator/regression checks
+- Phase 07 scope expanded: operator verification now also needs a searchable failure dictionary / repair lexicon so future agents do not depend on this long-session context
 
 ### Pending Todos
 

@@ -130,20 +130,21 @@ Plans:
 - [ ] 04-02: Wire classification into publisher inactivation rules
 - [ ] 04-03: Add v1 human confirmation flow for disputed snapshot classification
 
-### Phase 7: Operator Verification Workbench
-**Goal**: Give the operator a message-level debugging view into candidate rows, rejected rows, held rows, and final publish decisions.
+### Phase 7: Operator Verification & Failure Dictionary
+**Goal**: Give the operator a message-level debugging view into candidate rows, rejected rows, held rows, and final publish decisions, while turning repair-case history into a searchable failure dictionary for future agents.
 **Depends on**: Phase 6
-**Requirements**: [EVID-02, OPS-01]
+**Requirements**: [EVID-02, OPS-01, INDU-03]
 **Success Criteria** (what must be TRUE):
   1. For a single message, the operator can inspect candidate rows, rejected rows, held rows, and `publishable_rows`
   2. The operator can see why rows were published, rejected, or left untouched
   3. The workbench improves debugging accuracy without granting a bypass around validator or publisher safeguards
+  4. Repeated repair-case failures are indexed into a searchable failure dictionary that new agents can query before proposing fixes
 **Plans**: TBD
 
 Plans:
 - [ ] 07-01: Design message-level verification payloads and APIs
 - [ ] 07-02: Expose candidate / validator / publish decision evidence in the web workbench
-- [ ] 07-03: Add debugging affordances oriented around real exception handling
+- [ ] 07-03: Build the failure dictionary / repair lexicon from repair cases, replay fixtures, and known-good fixes
 
 ### Phase 8: Shadow Validation Gate
 **Goal**: Run the full pipeline in validation mode against real samples without handing it default authority over production publication.
@@ -174,5 +175,5 @@ Phases execute in strategic order: 1 → 2 → 2.1 → 5 → 6 → 3 → 4 → 7
 | 6. Constrained Auto-Remediation Loop | 3/3 | Completed | 2026-04-14 |
 | 3. Fact Protection Publisher | 0/3 | Not started | - |
 | 4. Snapshot / Delta Semantics | 0/3 | Not started | - |
-| 7. Operator Verification Workbench | 0/3 | Not started | - |
+| 7. Operator Verification & Failure Dictionary | 0/3 | Not started | - |
 | 8. Shadow Validation Gate | 0/3 | Not started | - |
