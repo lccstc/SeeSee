@@ -1382,6 +1382,37 @@ def _resolve_result_card_type(
     return normalized
 
 
+_INVALID_COUNTRY_DEFAULT_KEYWORDS = (
+    "卡图",
+    "卡密",
+    "白卡",
+    "横白",
+    "横卡",
+    "竖卡",
+    "快刷",
+    "快加",
+    "网单",
+)
+
+
+def _result_country_or_currency_default(value: str) -> str:
+    from .quotes import _infer_country_or_currency, normalize_quote_country_or_currency, normalize_quote_form_factor
+
+    text = normalize_quote_text(value)
+    if not text:
+        return ""
+    inferred = _infer_country_or_currency(text) or ""
+    if inferred:
+        return normalize_quote_country_or_currency(inferred)
+    lowered = text.lower()
+    if any(keyword in lowered for keyword in _INVALID_COUNTRY_DEFAULT_KEYWORDS):
+        return ""
+    normalized_form = normalize_quote_form_factor(text)
+    if normalized_form not in {"", "不限"} and normalized_form != text:
+        return ""
+    return ""
+
+
 def suggest_result_template_text(
     raw_text: str,
     *,
@@ -1392,6 +1423,7 @@ def suggest_result_template_text(
         _extract_price,
         _infer_card_type,
         _infer_country_or_currency,
+        _infer_form_factor,
         normalize_quote_card_type,
         normalize_quote_country_or_currency,
         normalize_quote_form_factor,
@@ -1415,15 +1447,20 @@ def suggest_result_template_text(
             any(marker in source_line for marker in ("【", "】", "[", "]", "价格表", "报价单", "="))
             or not looks_like_quote_line(source_line)
         ):
+            header_country = _result_country_or_currency_default(source_line)
+            next_defaults = dict(current_defaults)
+            if header_country:
+                next_defaults["country_or_currency"] = header_country
             next_card = {
                 "card_type": normalize_quote_card_type(inferred_card),
-                "defaults": dict(current_defaults),
+                "defaults": next_defaults,
                 "quotes": [],
             }
+            current_defaults = dict(next_defaults)
             cards.append(next_card)
             current_card = next_card
             continue
-        inferred_country = normalize_quote_country_or_currency(_infer_country_or_currency(source_line) or "")
+        inferred_country = _result_country_or_currency_default(source_line)
         if (
             inferred_country
             and not looks_like_quote_line(source_line)
@@ -1442,9 +1479,16 @@ def suggest_result_template_text(
             desired_country = normalize_quote_country_or_currency(
                 str(fields.get("currency") or fields.get("country") or "")
             )
-            desired_form_factor = normalize_quote_form_factor(
-                str(fields.get("form_factor") or current_defaults.get("form_factor") or "不限")
-            )
+            desired_country = _result_country_or_currency_default(desired_country)
+            explicit_form_factor = normalize_quote_form_factor(str(fields.get("form_factor") or "").strip())
+            inferred_form_factor = normalize_quote_form_factor(_infer_form_factor(source_line) or "")
+            desired_form_factor = explicit_form_factor
+            if not desired_form_factor or desired_form_factor == "不限":
+                desired_form_factor = inferred_form_factor
+            if not desired_form_factor or desired_form_factor == "不限":
+                desired_form_factor = normalize_quote_form_factor(
+                    str(current_defaults.get("form_factor") or "不限")
+                )
             amount_label = str(fields.get("amount") or "").strip()
             label = ""
             if amount_label:

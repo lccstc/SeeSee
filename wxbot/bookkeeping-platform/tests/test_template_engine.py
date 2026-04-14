@@ -1689,6 +1689,29 @@ class TestResultTemplateFlow(unittest.TestCase):
         self.assertIn("100/150=5.38", suggested)
         self.assertIn("形态=代码", suggested)
 
+    def test_suggest_result_template_text_avoids_polluting_country_defaults_with_form_factor_tokens(self):
+        from bookkeeping_core.template_engine import suggest_result_template_text
+
+        raw_text = (
+            "iTunes US 快刷\n"
+            "横白卡图：300/400/500=5.41（单张清晰）\n"
+            "横白卡图：100/150=5.38（单张清晰）\n"
+            "整卡卡密：100-500=5.2（50倍数）\n"
+        )
+
+        suggested = suggest_result_template_text(
+            raw_text,
+            chat_name="C-537-【tm】-itunes",
+            default_card_type="Apple",
+        )
+
+        self.assertIn("[Apple]", suggested)
+        self.assertIn("国家 / 币种=USD", suggested)
+        self.assertIn("形态=横白卡", suggested)
+        self.assertIn("形态=代码", suggested)
+        self.assertNotIn("国家 / 币种=横白卡图", suggested)
+        self.assertNotIn("国家 / 币种=整卡卡密", suggested)
+
     def test_derive_result_template_preview_supports_bracket_quote_cards(self):
         from bookkeeping_core.template_engine import derive_result_template_preview
 

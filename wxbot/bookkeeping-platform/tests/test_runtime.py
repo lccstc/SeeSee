@@ -1443,7 +1443,7 @@ class UnifiedRuntimeTests(PostgresTestCase):
         )
         self.assertIsNotNone(validation_run)
         assert validation_run is not None
-        self.assertEqual(str(validation_run["message_decision"]), "publishable_rows_available")
+        self.assertEqual(str(validation_run["message_decision"]), "mixed_outcome")
         self.assertEqual(int(validation_run["candidate_row_count"]), 3)
         self.assertEqual(int(validation_run["publishable_row_count"]), 1)
         self.assertEqual(int(validation_run["rejected_row_count"]), 1)
@@ -1477,6 +1477,36 @@ class UnifiedRuntimeTests(PostgresTestCase):
             ("msg-runtime-mixed-1",),
         )
         self.assertEqual(quote_price_row_count, 0)
+
+        exceptions = self.db.conn.execute(
+            """
+            SELECT *
+            FROM quote_parse_exceptions
+            WHERE quote_document_id = ?
+            ORDER BY id ASC
+            """,
+            (int(document["id"]),),
+        ).fetchall()
+        self.assertEqual(len(exceptions), 1)
+        self.assertEqual(str(exceptions[0]["reason"]), "validator_mixed_outcome")
+        self.assertIn("UK=6.20", str(exceptions[0]["source_line"]))
+        self.assertIn("Razer 100=7.10", str(exceptions[0]["source_line"]))
+
+        repair_case = self.db.conn.execute(
+            """
+            SELECT *
+            FROM quote_repair_cases
+            WHERE origin_exception_id = ?
+            LIMIT 1
+            """,
+            (int(exceptions[0]["id"]),),
+        ).fetchone()
+        self.assertIsNotNone(repair_case)
+        assert repair_case is not None
+        self.assertEqual(
+            int(repair_case["origin_validation_run_id"]),
+            int(validation_run["id"]),
+        )
 
     def test_runtime_quote_capture_records_missing_template_candidate_header(self) -> None:
         self.db.set_group(
@@ -2955,6 +2985,189 @@ class RuntimeRepairCaseTests(PostgresTestCase):
                 for item in list(summary.get("failure_log_json") or [])
             )
         )
+
+    def test_runtime_auto_remediation_promotes_multi_section_expansion_to_supermarket_mode(self) -> None:
+        self.db.set_group(
+            platform="wechat",
+            group_key="wechat:room-auto-remediate-supermarket",
+            chat_id="room-auto-remediate-supermarket",
+            chat_name="自动修补混合群",
+            group_num=5,
+        )
+        self.db.upsert_quote_group_profile(
+            platform="wechat",
+            chat_id="room-auto-remediate-supermarket",
+            chat_name="自动修补混合群",
+            default_card_type="Apple",
+            default_country_or_currency="USD",
+            default_form_factor="横白卡",
+            parser_template="group-parser",
+            template_config=json.dumps(
+                {
+                    "version": "group-parser-v1",
+                    "defaults": {},
+                    "sections": [
+                        {
+                            "id": "section-1",
+                            "enabled": True,
+                            "priority": 10,
+                            "label": "Apple",
+                            "defaults": {
+                                "card_type": "Apple",
+                                "country_or_currency": "USD",
+                                "form_factor": "横白卡",
+                            },
+                            "lines": [
+                                {
+                                    "kind": "quote",
+                                    "pattern": "{amount}={price}",
+                                    "outputs": {
+                                        "card_type": "Apple",
+                                        "country_or_currency": "USD",
+                                        "form_factor": "横白卡",
+                                        "amount_range": "100-150",
+                                    },
+                                }
+                            ],
+                        }
+                    ],
+                },
+                ensure_ascii=False,
+            ),
+        )
+
+        forced_preview = {
+            "can_save": True,
+            "strict_replay_ok": True,
+            "errors": [],
+            "strict_replay_errors": [],
+            "preview_rows": [
+                {
+                    "card_type": "Xbox",
+                    "country_or_currency": "USD",
+                    "amount": "10-250",
+                    "form_factor": "不限",
+                    "price": "5.06",
+                    "source_line": "US：10-250=5.06",
+                },
+                {
+                    "card_type": "Razer",
+                    "country_or_currency": "USD",
+                    "amount": "100",
+                    "form_factor": "不限",
+                    "price": "7.10",
+                    "source_line": "Razer 100=7.10",
+                },
+            ],
+            "derived_sections": [
+                {
+                    "label": "Xbox",
+                    "priority": 10,
+                    "defaults": {
+                        "card_type": "Xbox",
+                        "country_or_currency": "USD",
+                        "form_factor": "不限",
+                    },
+                    "lines": [
+                        {
+                            "kind": "quote",
+                            "pattern": "US：{amount}={price}",
+                            "outputs": {
+                                "card_type": "Xbox",
+                                "country_or_currency": "USD",
+                                "form_factor": "不限",
+                                "amount_range": "10-250",
+                            },
+                        }
+                    ],
+                },
+                {
+                    "label": "Razer",
+                    "priority": 20,
+                    "defaults": {
+                        "card_type": "Razer",
+                        "country_or_currency": "USD",
+                        "form_factor": "不限",
+                    },
+                    "lines": [
+                        {
+                            "kind": "quote",
+                            "pattern": "Razer {amount}={price}",
+                            "outputs": {
+                                "card_type": "Razer",
+                                "country_or_currency": "USD",
+                                "form_factor": "不限",
+                                "amount_range": "100",
+                            },
+                        }
+                    ],
+                },
+            ],
+            "draft_structure": {"defaults": {}},
+        }
+        forced_replay = {
+            "replayed": True,
+            "rows": 2,
+            "exceptions": 0,
+            "detected_exceptions": 0,
+            "quote_document_id": None,
+            "validation_run_id": None,
+            "remaining_lines": [],
+            "mutated_active_facts": False,
+            "message_decision": "publishable_rows_available",
+            "publishable_row_count": 2,
+            "held_row_count": 0,
+            "rejected_row_count": 0,
+            "comparison": {"classification": "better"},
+        }
+        with patch(
+            "bookkeeping_web.app._build_quote_result_preview_payload",
+            return_value=forced_preview,
+        ), patch(
+            "bookkeeping_web.app._replay_latest_quote_document_with_current_template",
+            return_value=forced_replay,
+        ):
+            self.runtime.process_envelope(
+                self._message(
+                    platform="wechat",
+                    message_id="msg-auto-remediate-supermarket-1",
+                    chat_id="room-auto-remediate-supermarket",
+                    chat_name="自动修补混合群",
+                    text="[Xbox]\nUS：10-250=5.06\n[Razer]\nRazer 100=7.10",
+                )
+            )
+
+        profile = self.db.get_quote_group_profile(
+            platform="wechat",
+            chat_id="room-auto-remediate-supermarket",
+        )
+        self.assertIsNotNone(profile)
+        assert profile is not None
+        self.assertEqual(str(profile["parser_template"]), "supermarket-card")
+        config = json.loads(str(profile["template_config"]))
+        self.assertEqual(str(config["version"]), "group-parser-v1")
+        self.assertEqual(len(list(config.get("sections") or [])), 3)
+
+        exception_row = self.db.conn.execute(
+            """
+            SELECT *
+            FROM quote_parse_exceptions
+            WHERE chat_id = ?
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            ("room-auto-remediate-supermarket",),
+        ).fetchone()
+        self.assertIsNotNone(exception_row)
+        assert exception_row is not None
+        self.assertEqual(str(exception_row["resolution_status"]), "resolved")
+
+        repair_case = self.db.get_quote_repair_case_by_origin_exception(
+            origin_exception_id=int(exception_row["id"])
+        )
+        self.assertIsNotNone(repair_case)
+        assert repair_case is not None
+        self.assertEqual(str(repair_case["lifecycle_state"]), "closed_resolved")
 
     def test_runtime_auto_remediation_retries_three_times_then_escalates(self) -> None:
         self.db.set_group(

@@ -713,9 +713,9 @@ def _count_quote_document_exceptions(*, db, quote_document_id: int | None) -> in
 
 def _message_decision_rank(value: str) -> int:
     normalized = str(value or "").strip().lower()
-    if normalized in {"publish", "publishable", "partial_publish"}:
+    if normalized in {"publish", "publishable", "partial_publish", "publishable_rows_available"}:
         return 3
-    if normalized in {"mixed", "held_only"}:
+    if normalized in {"mixed", "mixed_outcome", "held_only"}:
         return 2
     if normalized in {"no_publish"}:
         return 1

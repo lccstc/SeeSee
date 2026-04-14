@@ -244,6 +244,14 @@ def bootstrap_quote_repair_workflow(
         return db.get_quote_repair_case(repair_case_id=repair_case_id) or repair_case
     baseline_outcome = str(baseline_attempt.get("outcome_state") or "")
     baseline_failure_note = str(baseline_attempt.get("failure_note") or "")
+    exception_id = _maybe_int(repair_case.get("origin_exception_id"))
+    exc_row = (
+        db.get_quote_exception(exception_id=exception_id)
+        if exception_id is not None
+        else None
+    )
+    if str((exc_row or {}).get("reason") or "") == "validator_mixed_outcome":
+        return db.get_quote_repair_case(repair_case_id=repair_case_id) or repair_case
     if baseline_outcome != REPAIR_ATTEMPT_OUTCOME_COMPLETED:
         if not (
             str(scope_payload["scope"]) == REMEDIATION_SCOPE_BOOTSTRAP
@@ -840,17 +848,39 @@ def _auto_apply_group_bound_proposal(
             existing_section_count = len(list(existing_template.sections or []))
         except ValueError:
             existing_section_count = 0
-    use_supermarket_mode = str((existing_profile or {}).get("parser_template") or "").strip() == "supermarket-card"
+    derived_sections = list(preview.get("derived_sections") or [])
+    use_supermarket_mode = _should_use_supermarket_mode_for_auto_remediation(
+        existing_profile=existing_profile,
+        derived_sections=derived_sections,
+    )
     preview_rows = list(preview.get("preview_rows") or [])
     first_row = preview_rows[0] if preview_rows else {}
     draft_defaults = dict((preview.get("draft_structure") or {}).get("defaults") or {})
     try:
-        merged_config = _merge_group_parser_template_config(
-            existing_template_config,
-            derived_sections=list(preview.get("derived_sections") or []),
-            max_sections=None if use_supermarket_mode else GROUP_PARSER_MAX_SECTIONS,
-            allow_new_sections=existing_section_count == 0,
-        )
+        try:
+            merged_config = _merge_group_parser_template_config(
+                existing_template_config,
+                derived_sections=derived_sections,
+                max_sections=None if use_supermarket_mode else GROUP_PARSER_MAX_SECTIONS,
+                allow_new_sections=existing_section_count == 0 or use_supermarket_mode,
+            )
+        except ValueError as exc:
+            if (
+                not use_supermarket_mode
+                and str(exc) == "自动修补只允许更新现有群骨架，不允许新增骨架。"
+                and _should_promote_guarded_expansion_to_supermarket_mode(
+                    derived_sections=derived_sections
+                )
+            ):
+                use_supermarket_mode = True
+                merged_config = _merge_group_parser_template_config(
+                    existing_template_config,
+                    derived_sections=derived_sections,
+                    max_sections=None,
+                    allow_new_sections=True,
+                )
+            else:
+                raise
 
         db.upsert_quote_group_profile(
             platform=str(exc_row.get("platform") or ""),
@@ -913,7 +943,7 @@ def _auto_apply_group_bound_proposal(
         {
             "kind": f"{proposal_scope}_auto_profile_update",
             "parser_template": "supermarket-card" if use_supermarket_mode else "group-parser",
-            "derived_sections": len(list(preview.get("derived_sections") or [])),
+            "derived_sections": len(derived_sections),
             "result_template_text": suggested_result_template_text,
         }
     ]
@@ -935,7 +965,7 @@ def _auto_apply_group_bound_proposal(
             resolution_status="resolved",
             resolution_note=(
                 f"auto_remediated scope={proposal_scope} "
-                f"sections={len(list(preview.get('derived_sections') or []))} "
+                f"sections={len(derived_sections)} "
                 f"rows={len(preview_rows)} strict_replay=true"
             ),
         )
@@ -964,6 +994,26 @@ def _auto_apply_group_bound_proposal(
         ),
     )
     return finalized
+
+
+def _should_use_supermarket_mode_for_auto_remediation(
+    *,
+    existing_profile: dict[str, Any] | None,
+    derived_sections: list[dict[str, Any]],
+) -> bool:
+    parser_template = str((existing_profile or {}).get("parser_template") or "").strip()
+    if parser_template == "supermarket-card":
+        return True
+    return _should_promote_guarded_expansion_to_supermarket_mode(
+        derived_sections=derived_sections
+    )
+
+
+def _should_promote_guarded_expansion_to_supermarket_mode(
+    *,
+    derived_sections: list[dict[str, Any]],
+) -> bool:
+    return len(list(derived_sections or [])) > 1
 
 
 def _restore_quote_group_profile_state(

@@ -1177,7 +1177,7 @@ class QuoteCaptureService:
             ):
                 recorded_exceptions += 1
         if recorded_exceptions == 0:
-            validator_exception_id = self._record_validator_no_publish_repair_case(
+            validator_exception_id = self._record_validator_outcome_repair_case(
                 candidate=candidate,
                 document_id=document_id,
                 validation_run_id=validation_run_id,
@@ -1356,7 +1356,7 @@ class QuoteCaptureService:
                 pass
         return int(exception_id or 0)
 
-    def _record_validator_no_publish_repair_case(
+    def _record_validator_outcome_repair_case(
         self,
         *,
         candidate: QuoteCandidateMessage,
@@ -1373,8 +1373,14 @@ class QuoteCaptureService:
             return 0
         if int(validation_run["id"]) != int(validation_run_id):
             return 0
-        if str(validation_run["message_decision"] or "") != "no_publish":
+        message_decision = str(validation_run["message_decision"] or "")
+        if message_decision not in {"no_publish", "mixed_outcome"}:
             return 0
+        reason = (
+            "validator_mixed_outcome"
+            if message_decision == "mixed_outcome"
+            else "validator_no_publish"
+        )
         return self._record_exception_with_repair_case(
             quote_document_id=document_id,
             platform=envelope.platform,
@@ -1383,9 +1389,12 @@ class QuoteCaptureService:
             chat_name=envelope.chat_name,
             source_name=envelope.sender_name,
             sender_id=envelope.sender_id,
-            reason="validator_no_publish",
+            reason=reason,
             source_line=self._validator_failure_source_line(
                 candidate=candidate,
+                document_id=document_id,
+                validation_run_id=validation_run_id,
+                message_decision=message_decision,
                 raw_text=raw_text,
             ),
             raw_text=raw_text,
@@ -1395,12 +1404,38 @@ class QuoteCaptureService:
             confidence=float(candidate.confidence or 0.0),
         )
 
-    @staticmethod
     def _validator_failure_source_line(
+        self,
         *,
         candidate: QuoteCandidateMessage,
+        document_id: int,
+        validation_run_id: int,
+        message_decision: str,
         raw_text: str,
     ) -> str:
+        if str(message_decision or "") == "mixed_outcome":
+            candidate_rows = {
+                int(row["id"]): row
+                for row in self.db.list_quote_candidate_rows(
+                    quote_document_id=document_id
+                )
+            }
+            failing_lines: list[str] = []
+            for row in self.db.list_quote_validation_row_results(
+                validation_run_id=validation_run_id
+            ):
+                if str(row.get("final_decision") or "") == "publishable":
+                    continue
+                candidate_row = candidate_rows.get(int(row["quote_candidate_row_id"]))
+                if candidate_row is None:
+                    continue
+                source_line = str(candidate_row.get("source_line") or "").strip()
+                if source_line and source_line not in failing_lines:
+                    failing_lines.append(source_line)
+                if len(failing_lines) >= 3:
+                    break
+            if failing_lines:
+                return "\n".join(failing_lines)
         for row in candidate.rows:
             source_line = str(getattr(row, "source_line", "") or "").strip()
             if source_line:

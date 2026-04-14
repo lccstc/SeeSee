@@ -185,11 +185,15 @@ class QuoteValidationTests(unittest.TestCase):
             ],
         )
 
-        self.assertEqual(validation_run.message_decision, "publishable_rows_available")
+        self.assertEqual(validation_run.message_decision, "mixed_outcome")
         self.assertEqual(validation_run.candidate_row_count, 5)
         self.assertEqual(validation_run.publishable_row_count, 1)
         self.assertEqual(validation_run.rejected_row_count, 1)
         self.assertEqual(validation_run.held_row_count, 3)
+        self.assertEqual(
+            validation_run.summary["message_reasons"][0]["code"],
+            "validation_mixed_outcome",
+        )
 
         separated = separate_publishable_rows(validation_run.row_results)
         self.assertEqual(len(separated["publishable_rows"]), 1)

@@ -23,6 +23,7 @@ BUSINESS_AMBIGUOUS_RESTRICTION_HOLD = "business_ambiguous_restriction_hold"
 BUSINESS_DUPLICATE_SKU_IN_MESSAGE_HOLD = "business_duplicate_sku_in_message_hold"
 
 MESSAGE_NO_CANDIDATE_ROWS = "message_no_candidate_rows"
+VALIDATION_MIXED_OUTCOME = "validation_mixed_outcome"
 
 VALIDATOR_AUTO_PUBLISH_CONFIDENCE = 0.8
 _NON_AMBIGUOUS_RESTRICTION_PARSE_STATUSES = frozenset({"empty", "parsed", "clear"})
@@ -260,16 +261,31 @@ def validate_quote_candidate_document(
 
     separated_rows = separate_publishable_rows(row_results)
     publishable_rows = len(separated_rows["publishable_rows"])
-    message_decision = (
-        "publishable_rows_available" if publishable_rows > 0 else "no_publish"
-    )
+    rejected_rows = len(separated_rows["rejected_rows"])
+    held_rows = len(separated_rows["held_rows"])
+    message_decision = "no_publish"
+    if publishable_rows > 0 and (rejected_rows > 0 or held_rows > 0):
+        message_decision = "mixed_outcome"
+        message_reasons.append(
+            build_validation_reason(
+                VALIDATION_MIXED_OUTCOME,
+                detail="publishable rows exist but the same message still contains held/rejected rows",
+                context={
+                    "publishable_row_count": publishable_rows,
+                    "rejected_row_count": rejected_rows,
+                    "held_row_count": held_rows,
+                },
+            )
+        )
+    elif publishable_rows > 0:
+        message_decision = "publishable_rows_available"
 
     summary: dict[str, Any] = {
         "message_reasons": normalize_reason_payloads(message_reasons),
         "row_decision_counts": {
-            "publishable": len(separated_rows["publishable_rows"]),
-            "rejected": len(separated_rows["rejected_rows"]),
-            "held": len(separated_rows["held_rows"]),
+            "publishable": publishable_rows,
+            "rejected": rejected_rows,
+            "held": held_rows,
         },
         "row_rejection_code_counts": rejection_code_counts,
         "row_hold_code_counts": hold_code_counts,
@@ -298,8 +314,8 @@ def validate_quote_candidate_document(
         validation_status="completed",
         candidate_row_count=len(candidate_rows),
         publishable_row_count=publishable_rows,
-        rejected_row_count=len(separated_rows["rejected_rows"]),
-        held_row_count=len(separated_rows["held_rows"]),
+        rejected_row_count=rejected_rows,
+        held_row_count=held_rows,
         summary=summary,
         row_results=row_results,
     )
