@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: human_needed
-stopped_at: Phase 05 awaiting manual verification
-last_updated: "2026-04-14T07:05:00+07:00"
-last_activity: 2026-04-14 -- Phase 05 automated verification passed; manual UAT pending
+status: ready_to_execute
+stopped_at: Phase 06 ready to execute
+last_updated: "2026-04-14T07:38:00+07:00"
+last_activity: 2026-04-14 -- Phase 05 human verification passed; Phase 06 planning finalized after checker revisions
 progress:
   total_phases: 9
-  completed_phases: 4
-  total_plans: 12
+  completed_phases: 5
+  total_plans: 15
   completed_plans: 12
-  percent: 100
+  percent: 56
 ---
 
 # Project State
@@ -21,22 +21,22 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-13)
 
 **Core value:** 把供应商群原始消息转成“可追溯、可验证、不可误发布”的报价事实，宁可不上墙，也绝不把错价、错面额、错国家/币种上墙。
-**Current focus:** Phase 05 — exception-repair-state-machine
+**Current focus:** Phase 06 — constrained-auto-remediation-loop
 
 ## Current Position
 
-Phase: 05 (exception-repair-state-machine) — HUMAN VERIFICATION REQUIRED
-Plan: verification complete
-Status: Automated verification passed; waiting on two manual checks from 05-VERIFICATION.md
-Last activity: 2026-04-14 -- verifier confirmed 3/3 must-haves with no blocking code gaps
+Phase: 06 (constrained-auto-remediation-loop) — READY TO EXECUTE
+Plan: 06-01 / 06-02 / 06-03 planned
+Status: Checker blockers resolved; Phase 05 dependency closed by live manual verification
+Last activity: 2026-04-14 -- finalized bounded remediation planning and cleared Phase 05 human gate
 
-Progress: [██████████] 100% of currently planned work
+Progress: [██████░░░░] 56% of milestone phases completed
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 10
+- Total plans completed: 12
 - Average duration: -
 - Total execution time: 45 min
 
@@ -47,12 +47,13 @@ Progress: [██████████] 100% of currently planned work
 | 01 | 3 | - | - |
 | 02 | 3 | 45min | 15min |
 | 02.1 | 3 | - | - |
-| 05 | 0 | - | - |
+| 05 | 3 | 69min | 23min |
+| 06 | 0 | - | - |
 | 03 | 0 | - | - |
 
 **Recent Trend:**
 
-- Last 5 plans: 02.1 completed cleanly; Phase 05 planning passed checker after repair-state revisions
+- Last 5 plans: Phase 05 completed with live manual verification; Phase 06 planning passed after checker-driven remediation-order fixes
 - Trend: Stable
 
 | Phase 02-validation-engine P01 | 14min | 2 tasks | 4 files |
@@ -96,7 +97,8 @@ Recent decisions affecting current work:
 - Roadmap order changed: validate repair-state-machine and constrained remediation before guarded publisher / snapshot semantics
 - Phase 05-01 completed: additive repair-case packaging now exists for runtime parse failures and validator no-publish outcomes
 - Phase 05 implemented: repair cases, immutable baseline replay, append-only attempt history, and handler state sync are all in place
-- Phase 05 automated verification passed: only live package fidelity and wording UAT remain
+- Phase 05 completed: live repair-case packaging and proof-only wording were both validated on the dev server
+- Phase 06 planned: bounded retries, exact scope-order routing, safe write envelopes, and absorption gates are ready for execution
 
 ### Pending Todos
 
@@ -111,5 +113,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-04-14T00:15:51.169Z
-Stopped at: Phase 05 awaiting manual verification
+Stopped at: Phase 06 ready to execute
 Resume file: None

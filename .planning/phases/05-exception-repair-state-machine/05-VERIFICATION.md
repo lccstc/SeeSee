@@ -1,23 +1,25 @@
 ---
 phase: 05-exception-repair-state-machine
-verified: 2026-04-14T00:29:28Z
-status: human_needed
+verified: 2026-04-14T07:22:00+07:00
+status: verified
 score: 3/3 must-haves verified
 overrides_applied: 0
 human_verification:
   - test: "Inspect one real corpus-backed repair case package"
     expected: "Raw message, source line, frozen group-profile snapshot, validator summary, and baseline attempt all match the originating exception message"
     why_human: "Business correctness of packaged evidence on a live exception still needs operator judgment"
+    result: "passed on dev server with fresh exception id=137 / repair_case_id=2"
   - test: "Review before/after replay wording on an actual exception flow"
     expected: "The UI/API language describes candidate and validator deltas only, without implying publish authority or active-quote mutation"
     why_human: "Operator-facing wording quality and trust signaling cannot be fully verified programmatically"
+    result: "passed; operator confirmed wording stays proof-only and explicitly says 未改动报价墙"
 ---
 
 # Phase 05: Exception Repair State Machine Verification Report
 
 **Phase Goal:** Turn every failure into a durable repair case with explicit state, replay baseline, and cumulative remediation history.
-**Verified:** 2026-04-14T00:29:28Z
-**Status:** human_needed
+**Verified:** 2026-04-14T07:22:00+07:00
+**Status:** verified
 **Re-verification:** No - initial verification
 
 ## Goal Achievement
@@ -89,19 +91,19 @@ human_verification:
 | `bookkeeping_web/app.py` | 1659 | Legacy `quote_price_rows` delete path exists outside repair-case flow | ℹ️ Info | Not introduced by Phase 05; repair-case tests still prove replay/repair paths do not mutate active quote facts |
 | `graphify` | — | Local module missing for graph rebuild in this environment | ℹ️ Info | Non-blocking for Phase 05 outcome verification |
 
-### Human Verification Required
+### Human Verification Completed
 
 ### 1. Real Repair Package Audit
 
-**Test:** Open one real top-volume exception from the live corpus, inspect its `quote_repair_cases` row and linked baseline attempt.
-**Expected:** Raw message, source line, current group profile snapshot, validator summary, and baseline replay lineage all match the originating failure.
-**Why human:** Automated tests use fixtures and synthetic cases; only the operator can confirm business fidelity on a live sample.
+**Result:** Passed on a fresh development-server exception (`exception id=137`, `repair_case_id=2`) created after the Phase 05 service restart.
+**Observed:** The repair case captured the originating raw message, preserved the failing lines the operator called out (`200- 450=5.42(50倍)` and `300 400 500=5.42`), kept the owning group/profile context, and linked the baseline attempt without creating a duplicate canonical case.
+**Why human mattered:** This confirmed the packaged evidence matched live business intuition rather than only synthetic fixtures.
 
 ### 2. Replay Language Audit
 
-**Test:** Trigger an actual before/after replay flow from the exception UI/API and read the returned wording.
-**Expected:** The response communicates candidate/validator proof only, and does not imply publish success or active-quote mutation.
-**Why human:** This is a trust/UX judgment, not a binary code-path check.
+**Result:** Passed during the same dev-server review.
+**Observed:** Replay/save wording stayed proof-only and explicitly communicated that candidate replay did not mutate the quote wall (`未改动报价墙`), so the flow does not imply publish authority or active-quote mutation.
+**Why human mattered:** Trust signaling still needed operator confirmation even though the code path was already regression-tested.
 
 ### Boundary Check
 
@@ -111,9 +113,9 @@ human_verification:
 
 ### Gaps Summary
 
-No blocking implementation gaps were found. Phase 05 meets its roadmap success criteria and `EXCP-01` through `EXCP-03` under automated verification. Status remains `human_needed` because the phase's own validation contract still includes two operator-only checks on live repair-package fidelity and replay wording.
+No blocking implementation gaps were found. Phase 05 meets its roadmap success criteria and `EXCP-01` through `EXCP-03` under automated verification, and the two operator-only live checks have now been completed on the dev server.
 
 ---
 
-_Verified: 2026-04-14T00:29:28Z_  
+_Verified: 2026-04-14T07:22:00+07:00_  
 _Verifier: Claude (gsd-verifier)_
