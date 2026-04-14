@@ -36,9 +36,9 @@
 
 ### Snapshot Semantics
 
-- [ ] **SNAP-01**: System records each message as candidate `full_snapshot`, candidate `delta_update`, or unresolved classification
-- [ ] **SNAP-02**: Unresolved or unconfirmed classification defaults to `delta_update` behavior
-- [ ] **SNAP-03**: Only a confirmed `full_snapshot` may inactivate previously active SKUs that are absent from the current message
+- [x] **SNAP-01**: System records each message as candidate `full_snapshot`, candidate `delta_update`, or unresolved classification
+- [x] **SNAP-02**: Unresolved or unconfirmed classification defaults to `delta_update` behavior
+- [x] **SNAP-03**: Only a confirmed `full_snapshot` may inactivate previously active SKUs that are absent from the current message
 
 ### Exceptions & Replay
 
@@ -55,7 +55,7 @@
 ### Operator Verification
 
 - [ ] **OPS-01**: User can inspect candidate rows, rejected rows, held rows, and `publishable_rows` for an individual message
-- [ ] **OPS-02**: User can confirm `full_snapshot` versus `delta_update` during v1 debugging without granting automatic publish authority
+- [x] **OPS-02**: User can confirm `full_snapshot` versus `delta_update` during v1 debugging without granting automatic publish authority
 
 ### Governance
 
@@ -108,11 +108,11 @@
 | FACT-01 | Phase 3 | Complete |
 | FACT-02 | Phase 3 | Complete |
 | FACT-03 | Phase 3 | Complete |
-| SNAP-01 | Phase 4 | Pending |
-| SNAP-02 | Phase 4 | Pending |
-| SNAP-03 | Phase 4 | Pending |
+| SNAP-01 | Phase 4 | Complete |
+| SNAP-02 | Phase 4 | Complete |
+| SNAP-03 | Phase 4 | Complete |
 | OPS-01 | Phase 7 | Pending |
-| OPS-02 | Phase 4 | Pending |
+| OPS-02 | Phase 4 | Complete |
 | GOV-01 | Phase 8 | Pending |
 
 **Coverage:**
@@ -122,4 +122,4 @@
 
 ---
 *Requirements defined: 2026-04-13*
-*Last updated: 2026-04-15 after Phase 03 guarded publisher verification*
+*Last updated: 2026-04-15 after Phase 04 snapshot/delta semantics verification*

@@ -3,6 +3,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from .quote_snapshot import (
+    PUBLISH_MODE_CONFIRMED_FULL_SNAPSHOT,
+    PUBLISH_MODE_DELTA_SAFE_UPSERT_ONLY,
+    PUBLISH_MODE_VALIDATION_ONLY,
+    get_guarded_publish_mode,
+)
+
 
 @dataclass(frozen=True, slots=True)
 class QuoteFactPublishResult:
@@ -83,8 +90,9 @@ class QuoteFactPublishResult:
 
 
 class QuoteFactPublisher:
-    VALIDATION_ONLY_MODE = "validation_only"
-    REPLACE_GROUP_ACTIVE_ROWS_MODE = "replace_group_active_rows"
+    VALIDATION_ONLY_MODE = PUBLISH_MODE_VALIDATION_ONLY
+    DELTA_SAFE_UPSERT_ONLY_MODE = PUBLISH_MODE_DELTA_SAFE_UPSERT_ONLY
+    CONFIRMED_FULL_SNAPSHOT_MODE = PUBLISH_MODE_CONFIRMED_FULL_SNAPSHOT
 
     def __init__(self, db) -> None:
         self.db = db
@@ -107,6 +115,10 @@ class QuoteFactPublisher:
         parser_version: str,
         publish_mode: str,
     ) -> QuoteFactPublishResult:
+        snapshot_decision = self.db.get_quote_snapshot_decision(
+            quote_document_id=quote_document_id
+        )
+        effective_publish_mode = get_guarded_publish_mode(snapshot_decision)
         publishable_rows = list(
             self.db.list_publishable_quote_candidate_rows(
                 quote_document_id=quote_document_id,
@@ -132,7 +144,10 @@ class QuoteFactPublisher:
                 reason="no_publishable_rows",
                 attempted_row_count=0,
             )
-        if publish_mode != self.REPLACE_GROUP_ACTIVE_ROWS_MODE:
+        if publish_mode not in {
+            self.DELTA_SAFE_UPSERT_ONLY_MODE,
+            self.CONFIRMED_FULL_SNAPSHOT_MODE,
+        }:
             return QuoteFactPublishResult.no_op(
                 quote_document_id=quote_document_id,
                 validation_run_id=validation_run_id,
@@ -140,6 +155,15 @@ class QuoteFactPublisher:
                 publish_mode=publish_mode,
                 attempted_row_count=attempted_row_count,
                 reason=f"publish_mode_not_allowed:{publish_mode}",
+            )
+        if publish_mode != effective_publish_mode:
+            return QuoteFactPublishResult.no_op(
+                quote_document_id=quote_document_id,
+                validation_run_id=validation_run_id,
+                source_group_key=source_group_key,
+                publish_mode=publish_mode,
+                attempted_row_count=attempted_row_count,
+                reason=f"snapshot_publish_mode_mismatch:{publish_mode}:{effective_publish_mode}",
             )
 
         try:
@@ -150,10 +174,14 @@ class QuoteFactPublisher:
                 self.db.lock_active_quote_rows_for_group(
                     source_group_key=source_group_key,
                 )
-                self.db.deactivate_old_quotes_for_group(
-                    source_group_key=source_group_key,
-                    commit=False,
-                )
+                if publish_mode == self.CONFIRMED_FULL_SNAPSHOT_MODE:
+                    self.db.deactivate_quote_rows_absent_from_snapshot(
+                        source_group_key=source_group_key,
+                        platform=platform,
+                        keep_rows=publishable_rows,
+                        effective_at=message_time,
+                        commit=False,
+                    )
                 for row in publishable_rows:
                     self.db.upsert_quote_price_row_with_history(
                         quote_document_id=quote_document_id,

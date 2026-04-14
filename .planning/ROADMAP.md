@@ -18,7 +18,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 5: Exception Repair State Machine** - Turn every failure into a durable repair case with replay baseline, attempt history, and escalation state
 - [x] **Phase 6: Constrained Auto-Remediation Loop** - Let subagents propose bounded repairs that must survive replay, validator, and regression gates before absorption
 - [x] **Phase 3: Fact Protection Publisher** - Make one guarded publisher the only path that can mutate active quote facts
-- [ ] **Phase 4: Snapshot / Delta Semantics** - Distinguish `full_snapshot` from `delta_update` and default safely
+- [x] **Phase 4: Snapshot / Delta Semantics** - Distinguish `full_snapshot` from `delta_update` and default safely
 - [ ] **Phase 7: Operator Verification Workbench** - Expose message-level candidate, rejection, and publish decision evidence for debugging
 - [ ] **Phase 8: Shadow Validation Gate** - Run the pipeline safely in validation mode without handing it default production authority
 
@@ -126,9 +126,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 04-01-PLAN.md — Define a durable snapshot decision model and deterministic message-level hypothesis scaffolding
-- [ ] 04-02-PLAN.md — Wire delta-safe default behavior and confirmed-full inactivation into the guarded publisher
-- [ ] 04-03-PLAN.md — Add a narrow v1 human confirmation flow that records snapshot decisions without publishing
+- [x] 04-01-PLAN.md — Define a durable snapshot decision model and deterministic message-level hypothesis scaffolding
+- [x] 04-02-PLAN.md — Wire delta-safe default behavior and confirmed-full inactivation into the guarded publisher
+- [x] 04-03-PLAN.md — Add a narrow v1 human confirmation flow that records snapshot decisions without publishing
 
 ### Phase 7: Operator Verification & Failure Dictionary
 **Goal**: Give the operator a message-level debugging view into candidate rows, rejected rows, held rows, and final publish decisions, while turning repair-case history into a searchable failure dictionary for future agents.
@@ -174,6 +174,6 @@ Phases execute in strategic order: 1 → 2 → 2.1 → 5 → 6 → 3 → 4 → 7
 | 5. Exception Repair State Machine | 3/3 | Completed | 2026-04-14 |
 | 6. Constrained Auto-Remediation Loop | 3/3 | Completed | 2026-04-14 |
 | 3. Fact Protection Publisher | 3/3 | Completed | 2026-04-15 |
-| 4. Snapshot / Delta Semantics | 0/3 | Not started | - |
-| 7. Operator Verification & Failure Dictionary | 0/3 | Not started | - |
+| 4. Snapshot / Delta Semantics | 3/3 | Completed | 2026-04-15 |
+| 7. Operator Verification & Failure Dictionary | 0/3 | Ready for planning | - |
 | 8. Shadow Validation Gate | 0/3 | Not started | - |

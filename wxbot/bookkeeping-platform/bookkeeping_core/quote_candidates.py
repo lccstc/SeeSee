@@ -60,6 +60,7 @@ class QuoteCandidateMessage:
     message_fingerprint: str
     snapshot_hypothesis: str
     snapshot_hypothesis_reason: str
+    snapshot_hypothesis_evidence: dict[str, Any] = field(default_factory=dict)
     rejection_reasons: list[dict[str, Any]] = field(default_factory=list)
     run_kind: str = "runtime"
     replay_of_quote_document_id: int | None = None
@@ -88,6 +89,9 @@ class QuoteCandidateMessage:
             "message_fingerprint": self.message_fingerprint,
             "snapshot_hypothesis": self.snapshot_hypothesis,
             "snapshot_hypothesis_reason": self.snapshot_hypothesis_reason,
+            "snapshot_hypothesis_evidence": dict(
+                self.snapshot_hypothesis_evidence
+            ),
             "rejection_reasons": list(self.rejection_reasons),
             "run_kind": self.run_kind,
             "replay_of_quote_document_id": self.replay_of_quote_document_id,

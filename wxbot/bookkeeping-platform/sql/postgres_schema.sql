@@ -252,6 +252,22 @@ CREATE TABLE IF NOT EXISTS quote_documents (
   UNIQUE (platform, chat_id, message_id)
 );
 
+CREATE TABLE IF NOT EXISTS quote_snapshot_decisions (
+  id BIGSERIAL PRIMARY KEY,
+  quote_document_id BIGINT NOT NULL UNIQUE REFERENCES quote_documents(id) ON DELETE CASCADE,
+  system_hypothesis TEXT NOT NULL DEFAULT 'unresolved',
+  hypothesis_reason TEXT NOT NULL DEFAULT '',
+  hypothesis_evidence_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+  resolved_decision TEXT NOT NULL DEFAULT 'unresolved',
+  decision_source TEXT NOT NULL DEFAULT 'system',
+  confirmed_by TEXT NOT NULL DEFAULT '',
+  confirmed_at TIMESTAMP,
+  decision_note TEXT NOT NULL DEFAULT '',
+  decision_history_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS quote_candidate_rows (
   id BIGSERIAL PRIMARY KEY,
   quote_document_id BIGINT NOT NULL REFERENCES quote_documents(id) ON DELETE CASCADE,
@@ -358,6 +374,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS quote_price_rows_one_live_row
 
 CREATE INDEX IF NOT EXISTS idx_quote_validation_runs_document_created
   ON quote_validation_runs(quote_document_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_quote_snapshot_decisions_document
+  ON quote_snapshot_decisions(quote_document_id);
 
 CREATE INDEX IF NOT EXISTS idx_quote_validation_row_results_run_decision
   ON quote_validation_row_results(validation_run_id, final_decision, row_ordinal);

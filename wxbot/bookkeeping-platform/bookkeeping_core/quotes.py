@@ -9,6 +9,11 @@ from typing import Any
 
 from .contracts import NormalizedMessageEnvelope
 from .quote_candidates import QuoteCandidateMessage, QuoteCandidateRow
+from .quote_snapshot import (
+    get_effective_snapshot_decision,
+    get_guarded_publish_mode,
+    infer_snapshot_hypothesis,
+)
 from .repair_cases import package_quote_repair_case
 from .quote_validation import validate_quote_candidate_document
 
@@ -66,6 +71,22 @@ _INVALID_TEMPLATE_COUNTRY_TOKENS = (
     "快加",
     "网单",
 )
+
+
+def _build_snapshot_hypothesis(
+    *,
+    raw_message: str,
+    parser_template: str,
+) -> tuple[str, str, dict[str, Any]]:
+    hypothesis = infer_snapshot_hypothesis(
+        raw_message=raw_message,
+        parser_template=parser_template,
+    )
+    return (
+        hypothesis.hypothesis,
+        hypothesis.reason,
+        dict(hypothesis.evidence),
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -905,6 +926,14 @@ def _missing_template_candidate(
     parser_template = str(getattr(group_profile, "parser_template", "") or "group-parser")
     message_id = str(message_id_override or envelope.message_id)
     first_line = raw_text.splitlines()[0].strip() if raw_text.splitlines() else raw_text
+    (
+        snapshot_hypothesis,
+        snapshot_hypothesis_reason,
+        snapshot_hypothesis_evidence,
+    ) = _build_snapshot_hypothesis(
+        raw_message=raw_text,
+        parser_template=parser_template,
+    )
     return QuoteCandidateMessage(
         platform=envelope.platform,
         source_group_key=f"{envelope.platform}:{envelope.chat_id}",
@@ -928,8 +957,9 @@ def _missing_template_candidate(
             sender_id=envelope.sender_id,
             raw_text=raw_text,
         ),
-        snapshot_hypothesis="unresolved",
-        snapshot_hypothesis_reason="phase1-default",
+        snapshot_hypothesis=snapshot_hypothesis,
+        snapshot_hypothesis_reason=snapshot_hypothesis_reason,
+        snapshot_hypothesis_evidence=snapshot_hypothesis_evidence,
         rejection_reasons=[
             {
                 "reason": "missing_group_template",
@@ -952,6 +982,14 @@ def _parsed_quote_document_to_candidate(
     message_id_override: str | None,
 ) -> QuoteCandidateMessage:
     message_id = str(message_id_override or parsed.message_id)
+    (
+        snapshot_hypothesis,
+        snapshot_hypothesis_reason,
+        snapshot_hypothesis_evidence,
+    ) = _build_snapshot_hypothesis(
+        raw_message=parsed.raw_text,
+        parser_template=parsed.parser_template,
+    )
     return QuoteCandidateMessage(
         platform=parsed.platform,
         source_group_key=parsed.source_group_key,
@@ -975,8 +1013,9 @@ def _parsed_quote_document_to_candidate(
             sender_id=parsed.sender_id,
             raw_text=parsed.raw_text,
         ),
-        snapshot_hypothesis="unresolved",
-        snapshot_hypothesis_reason="phase1-default",
+        snapshot_hypothesis=snapshot_hypothesis,
+        snapshot_hypothesis_reason=snapshot_hypothesis_reason,
+        snapshot_hypothesis_evidence=snapshot_hypothesis_evidence,
         rejection_reasons=[
             _parsed_quote_exception_to_rejection_reason(item)
             for item in parsed.exceptions
@@ -1078,6 +1117,14 @@ def _build_inquiry_reply_candidate(
     price = _extract_standalone_reply_price(raw_text)
     if price is None:
         raise ValueError("inquiry reply candidate requires a parsable price")
+    (
+        snapshot_hypothesis,
+        snapshot_hypothesis_reason,
+        snapshot_hypothesis_evidence,
+    ) = _build_snapshot_hypothesis(
+        raw_message=raw_text,
+        parser_template="inquiry_context_reply",
+    )
     parsed_row = ParsedQuoteRow(
         source_group_key=str(context["source_group_key"]),
         platform=envelope.platform,
@@ -1126,8 +1173,9 @@ def _build_inquiry_reply_candidate(
             sender_id=envelope.sender_id,
             raw_text=raw_text,
         ),
-        snapshot_hypothesis="unresolved",
-        snapshot_hypothesis_reason="phase1-default",
+        snapshot_hypothesis=snapshot_hypothesis,
+        snapshot_hypothesis_reason=snapshot_hypothesis_reason,
+        snapshot_hypothesis_evidence=snapshot_hypothesis_evidence,
         rejection_reasons=[],
         run_kind="runtime",
         replay_of_quote_document_id=None,
@@ -1464,6 +1512,10 @@ class QuoteCaptureService:
         document_id: int,
         validation_run_id: int,
     ) -> dict[str, Any]:
+        snapshot_decision = self.db.get_quote_snapshot_decision(
+            quote_document_id=document_id
+        ) or {}
+        proposed_publish_mode = get_guarded_publish_mode(snapshot_decision)
         publish_result = self.publisher.publish_quote_document(
             quote_document_id=document_id,
             validation_run_id=validation_run_id,
@@ -1486,9 +1538,21 @@ class QuoteCaptureService:
             "validation_run_id": publish_result.validation_run_id,
             "source_group_key": publish_result.source_group_key,
             "publish_mode": publish_result.publish_mode,
+            "proposed_publish_mode": proposed_publish_mode,
             "attempted_row_count": publish_result.attempted_row_count,
             "applied_row_count": publish_result.applied_row_count,
             "reason": publish_result.reason,
+            "snapshot_hypothesis": str(
+                snapshot_decision.get("system_hypothesis")
+                or candidate.snapshot_hypothesis
+                or "unresolved"
+            ),
+            "resolved_snapshot_decision": get_effective_snapshot_decision(
+                snapshot_decision
+            ),
+            "snapshot_decision_source": str(
+                snapshot_decision.get("decision_source") or "system"
+            ),
         }
 
     def _record_exception_with_repair_case(

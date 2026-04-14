@@ -11,6 +11,7 @@ from bookkeeping_core.contracts import NormalizedMessageEnvelope
 from bookkeeping_core.database import BookkeepingDB
 from bookkeeping_core.models import IncomingMessage
 from bookkeeping_core.quote_publisher import QuoteFactPublishResult
+from bookkeeping_core.quote_snapshot import SNAPSHOT_FULL_SNAPSHOT
 from bookkeeping_core.runtime import UnifiedBookkeepingRuntime
 from tests.support.postgres_test_case import PostgresTestCase
 from wechat_adapter.config import CoreApiConfig, WeChatConfig
@@ -1303,7 +1304,7 @@ class UnifiedRuntimeTests(PostgresTestCase):
         self.assertTrue(str(document["message_fingerprint"]))
         self.assertGreater(float(document["confidence"]), 0.0)
         self.assertEqual(str(document["snapshot_hypothesis"]), "unresolved")
-        self.assertEqual(str(document["snapshot_hypothesis_reason"]), "phase1-default")
+        self.assertTrue(str(document["snapshot_hypothesis_reason"]))
         self.assertEqual(str(document["parser_kind"]), "group-parser")
         self.assertEqual(str(document["parser_template"]), "group-parser")
         self.assertEqual(str(document["parser_version"]), "group-parser-v1")
@@ -1821,6 +1822,14 @@ class UnifiedRuntimeTests(PostgresTestCase):
             result["publish_result"]["publish_mode"],
             "validation_only",
         )
+        self.assertEqual(
+            result["publish_result"]["proposed_publish_mode"],
+            "delta_safe_upsert_only",
+        )
+        self.assertEqual(
+            result["publish_result"]["resolved_snapshot_decision"],
+            "unresolved",
+        )
         self.assertEqual(result["publish_result"]["reason"], "runtime_validation_only")
         self.assertEqual(result["publish_result"]["attempted_row_count"], 1)
         self.assertEqual(result["publish_result"]["applied_row_count"], 0)
@@ -1835,6 +1844,118 @@ class UnifiedRuntimeTests(PostgresTestCase):
             "quote_price_rows",
             "WHERE message_id = ?",
             ("msg-runtime-noop-1",),
+        )
+        self.assertEqual(quote_price_row_count, 0)
+
+    def test_runtime_publish_result_exposes_confirmed_full_snapshot_without_auto_apply(
+        self,
+    ) -> None:
+        from bookkeeping_core.quote_candidates import QuoteCandidateMessage, QuoteCandidateRow
+
+        self.db.set_group(
+            platform="wechat",
+            group_key="wechat:room-runtime-snapshot",
+            chat_id="room-runtime-snapshot",
+            chat_name="报价群-snapshot",
+            group_num=5,
+        )
+        self.db.upsert_quote_group_profile(
+            platform="wechat",
+            chat_id="room-runtime-snapshot",
+            chat_name="报价群-snapshot",
+            default_card_type="Apple",
+            default_country_or_currency="USD",
+            default_form_factor="横白卡",
+            parser_template="group-parser",
+            template_config=json.dumps(
+                {"version": "group-parser-v1", "defaults": {}, "sections": []},
+                ensure_ascii=False,
+            ),
+        )
+
+        candidate = QuoteCandidateMessage(
+            platform="wechat",
+            source_group_key="wechat:room-runtime-snapshot",
+            chat_id="room-runtime-snapshot",
+            chat_name="报价群-snapshot",
+            message_id="msg-runtime-snapshot-1",
+            source_name="报价员",
+            sender_id="seller-runtime-snapshot",
+            sender_display="报价员",
+            raw_message="晚班更新\nUS=5.10",
+            message_time="2026-04-15 12:05:00",
+            parser_kind="group-parser",
+            parser_template="group-parser",
+            parser_version="group-parser-v1",
+            confidence=0.99,
+            parse_status="parsed",
+            message_fingerprint="runtime-snapshot-fingerprint",
+            snapshot_hypothesis=SNAPSHOT_FULL_SNAPSHOT,
+            snapshot_hypothesis_reason="晚班更新 marker",
+            rows=[
+                QuoteCandidateRow(
+                    row_ordinal=1,
+                    source_line="US=5.10",
+                    source_line_index=0,
+                    line_confidence=0.98,
+                    normalized_sku_key="Apple|USD|100|横白卡",
+                    normalization_status="normalized",
+                    row_publishable=False,
+                    publishability_basis="parser_prevalidation",
+                    restriction_parse_status="parsed",
+                    card_type="Apple",
+                    country_or_currency="USD",
+                    amount_range="100",
+                    multiplier=None,
+                    form_factor="横白卡",
+                    price=5.10,
+                    quote_status="active",
+                    restriction_text="",
+                )
+            ],
+        )
+
+        with patch(
+            "bookkeeping_core.quotes.should_attempt_template_quote_capture",
+            return_value=True,
+        ), patch(
+            "bookkeeping_core.quotes._parse_quote_message_to_candidate_details",
+            return_value=(candidate, [], []),
+        ):
+            result = self.runtime.quote_capture.capture_from_message(
+                self._message(
+                    platform="wechat",
+                    message_id="msg-runtime-snapshot-1",
+                    chat_id="room-runtime-snapshot",
+                    chat_name="报价群-snapshot",
+                    text="晚班更新\nUS=5.10",
+                )
+            )
+
+        self.db.confirm_quote_snapshot_decision(
+            quote_document_id=int(result["document_id"]),
+            resolved_decision=SNAPSHOT_FULL_SNAPSHOT,
+            confirmed_by="qa-operator",
+        )
+        publish_result = self.runtime.quote_capture._publish_validation_owned_rows(
+            candidate=candidate,
+            document_id=int(result["document_id"]),
+            validation_run_id=int(result["validation_run_id"]),
+        )
+        self.assertEqual(publish_result["publish_mode"], "validation_only")
+        self.assertEqual(
+            publish_result["proposed_publish_mode"],
+            "confirmed_full_snapshot_apply",
+        )
+        self.assertEqual(
+            publish_result["resolved_snapshot_decision"],
+            SNAPSHOT_FULL_SNAPSHOT,
+        )
+        self.assertEqual(publish_result["reason"], "runtime_validation_only")
+        quote_price_row_count = self._count_rows(
+            "quote_price_rows",
+            "WHERE message_id = ?",
+            ("msg-runtime-snapshot-1",),
         )
         self.assertEqual(quote_price_row_count, 0)
 
@@ -1870,7 +1991,7 @@ class UnifiedRuntimeTests(PostgresTestCase):
         self.assertTrue(str(document["message_fingerprint"]))
         self.assertEqual(float(document["confidence"]), 0.0)
         self.assertEqual(str(document["snapshot_hypothesis"]), "unresolved")
-        self.assertEqual(str(document["snapshot_hypothesis_reason"]), "phase1-default")
+        self.assertTrue(str(document["snapshot_hypothesis_reason"]))
         self.assertEqual(str(document["parser_kind"]), "group-parser")
         self.assertEqual(str(document["parse_status"]), "empty")
         rejection_reasons = self._decode_json(document["rejection_reasons_json"])

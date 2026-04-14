@@ -15,6 +15,11 @@ from bookkeeping_core.analytics import AnalyticsService
 from bookkeeping_core.contracts import core_action_to_dict
 from bookkeeping_core.database import BookkeepingDB, require_postgres_dsn
 from bookkeeping_core.periods import AccountingPeriodService
+from bookkeeping_core.quote_snapshot import (
+    SNAPSHOT_DELTA_UPDATE,
+    SNAPSHOT_FULL_SNAPSHOT,
+    snapshot_decision_label,
+)
 from bookkeeping_core.quotes import (
     list_builtin_quote_dictionary_aliases,
     normalize_quote_card_type,
@@ -145,6 +150,10 @@ def create_app(
         if path == "/api/quotes/exceptions" and method == "GET":
             return _with_db(
                 db_file, start_response, _handle_quotes_exceptions, environ
+            )
+        if path == "/api/quotes/snapshot-decision/confirm" and method == "POST":
+            return _with_db(
+                db_file, start_response, _handle_quotes_snapshot_decision_confirm, environ
             )
         if path == "/api/quotes/exceptions/resolve" and method == "POST":
             return _with_db(
@@ -695,6 +704,46 @@ def _annotate_quote_exception_repair_status_text(*, db: BookkeepingDB, rows: lis
             attempt_count=int(summary.get("attempt_count") or 0),
             escalation_state=str(summary.get("escalation_state") or "not_ready"),
         )
+
+
+def _handle_quotes_snapshot_decision_confirm(db: BookkeepingDB, start_response, environ):
+    try:
+        payload = _read_json_body(environ)
+        _require_quote_admin_password(payload)
+        quote_document_id = int(payload["quote_document_id"])
+        resolved_decision = str(payload.get("resolved_decision") or "").strip()
+        if resolved_decision not in {SNAPSHOT_FULL_SNAPSHOT, SNAPSHOT_DELTA_UPDATE}:
+            return _respond_json(
+                start_response,
+                400,
+                {"error": "resolved_decision must be full_snapshot or delta_update"},
+            )
+        confirmed_by = str(payload.get("confirmed_by") or "web-operator").strip()
+        decision_note = str(payload.get("decision_note") or "").strip()
+    except (KeyError, TypeError, ValueError) as exc:
+        return _respond_json(start_response, 400, {"error": str(exc)})
+
+    updated = db.confirm_quote_snapshot_decision(
+        quote_document_id=quote_document_id,
+        resolved_decision=resolved_decision,
+        confirmed_by=confirmed_by,
+        decision_note=decision_note,
+    )
+    snapshot_decision = db.get_quote_snapshot_decision(
+        quote_document_id=quote_document_id
+    )
+    return _respond_json(
+        start_response,
+        200,
+        {
+            "saved": bool(updated),
+            "quote_document_id": quote_document_id,
+            "snapshot_decision": snapshot_decision,
+            "status_text": (
+                f"已记录 {snapshot_decision_label(resolved_decision)} 判定，未改动报价墙。"
+            ),
+        },
+    )
 
 
 def _handle_quotes_exception_resolve(db: BookkeepingDB, start_response, environ):

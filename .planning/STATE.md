@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: ready
-stopped_at: Phase 04 ready to execute
-last_updated: "2026-04-15T03:40:00+07:00"
-last_activity: 2026-04-15 -- Phase 04 planning completed; snapshot/delta semantics are ready to execute
+stopped_at: Phase 07 ready for planning
+last_updated: "2026-04-15T04:15:00+07:00"
+last_activity: 2026-04-15 -- Phase 04 execution completed; snapshot/delta semantics are verified and the next gate is Phase 07 planning
 progress:
   total_phases: 9
-  completed_phases: 6
+  completed_phases: 7
   total_plans: 21
-  completed_plans: 18
-  percent: 67
+  completed_plans: 21
+  percent: 78
 ---
 
 # Project State
@@ -21,22 +21,22 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-13)
 
 **Core value:** 把供应商群原始消息转成“可追溯、可验证、不可误发布”的报价事实，宁可不上墙，也绝不把错价、错面额、错国家/币种上墙。
-**Current focus:** Phase 04 — snapshot-delta-semantics
+**Current focus:** Phase 07 — operator-verification-failure-dictionary
 
 ## Current Position
 
-Phase: 04 (snapshot-delta-semantics) — READY TO EXECUTE
-Plan: 04-01-PLAN.md
-Status: Phase 04 planning is complete; the next gate is executing snapshot/delta semantics on top of guarded publisher custody
-Last activity: 2026-04-15 -- Phase 04 context, research, validation, and 3 executable plans were added after Phase 03 closed
+Phase: 07 (operator-verification-failure-dictionary) — READY FOR PLANNING
+Plan: TBD
+Status: Phase 04 execution is complete; durable snapshot decisions, delta-safe defaults, confirmed-full semantics, and proof-only operator confirmation are all verified
+Last activity: 2026-04-15 -- Phase 04 closed after full PostgreSQL regression and `.planning` verification updates
 
-Progress: [███████░░░] 67% of milestone phases completed
+Progress: [████████░░] 78% of milestone phases completed
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 18
+- Total plans completed: 21
 - Average duration: -
 - Total execution time: 45 min
 
@@ -50,11 +50,11 @@ Progress: [███████░░░] 67% of milestone phases completed
 | 05 | 3 | 69min | 23min |
 | 06 | 3 | - | - |
 | 03 | 3 | - | - |
-| 04 | 0 | - | - |
+| 04 | 3 | - | - |
 
 **Recent Trend:**
 
-- Last 5 plans: Phase 04 planning completed; the next gate is executing snapshot/delta semantics
+- Last 5 plans: Phase 04 execution completed; the next gate is planning operator verification and the failure dictionary
 - Trend: Stable
 
 | Phase 02-validation-engine P01 | 14min | 2 tasks | 4 files |
@@ -69,6 +69,9 @@ Progress: [███████░░░] 67% of milestone phases completed
 | Phase 03 P01 | - | 2 tasks | guarded publisher core |
 | Phase 03 P02 | - | 2 tasks | no-op + atomicity |
 | Phase 03 P03 | - | 2 tasks | bypass removal + architecture tests |
+| Phase 04 P01 | - | 2 tasks | durable snapshot decisions + corpus classification |
+| Phase 04 P02 | - | 2 tasks | delta-safe publisher semantics + confirmed full gating |
+| Phase 04 P03 | - | 2 tasks | proof-only snapshot confirmation flow |
 
 ## Accumulated Context
 
@@ -109,6 +112,7 @@ Recent decisions affecting current work:
 - Phase 03 planned: guarded publisher work is now split into publisher custody, atomic no-op/rollback behavior, and bypass-removal waves
 - Phase 03 completed: active quote mutation now flows only through the guarded publisher, which reloads validator-owned rows internally and is structurally guarded against helper or raw-SQL bypasses
 - Phase 04 planned: snapshot semantics now have a durable decision surface, guarded delta/full publisher integration, and a narrow v1 human confirmation gate scoped into three waves
+- Phase 04 completed: snapshot decisions are durable, unresolved defaults are delta-safe, only confirmed full snapshots may inactivate unseen SKUs, and operator confirmation remains proof-only
 - Phase 07 scope expanded: operator verification now also needs a searchable failure dictionary / repair lexicon so future agents do not depend on this long-session context
 
 ### Pending Todos
@@ -123,6 +127,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-15T03:40:00+07:00
-Stopped at: Phase 04 ready to execute
+Last session: 2026-04-15T04:15:00+07:00
+Stopped at: Phase 07 ready for planning
 Resume file: None

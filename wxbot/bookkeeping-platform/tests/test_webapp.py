@@ -11,6 +11,7 @@ from wsgiref.util import setup_testing_defaults
 
 from bookkeeping_core.database import BookkeepingDB
 from bookkeeping_core.periods import AccountingPeriodService
+from bookkeeping_core.quote_snapshot import SNAPSHOT_FULL_SNAPSHOT
 from bookkeeping_web.app import create_app
 from tests.support.postgres_test_case import PostgresTestCase
 
@@ -378,6 +379,8 @@ class WebAppTests(PostgresTestCase):
         self.assertIn("quote-harvest-rows-scroll", body)
         self.assertIn("quote-modal-wide", body)
         self.assertIn("编辑模板", body)
+        self.assertIn("确认整版", body)
+        self.assertIn("确认局部", body)
         self.assertIn("短回复上下文", body)
         self.assertIn("异常区", body)
         self.assertIn("人工整理", body)
@@ -999,6 +1002,7 @@ class WebAppTests(PostgresTestCase):
     def test_ignored_quote_exception_suppresses_same_content_but_not_other_groups(self) -> None:
         from bookkeeping_core.contracts import NormalizedMessageEnvelope
         from bookkeeping_core.quotes import QuoteCaptureService
+        from tests.support.quote_exception_corpus import load_gold_fixture
 
         self.db.set_group(
             platform="whatsapp",
@@ -1015,6 +1019,7 @@ class WebAppTests(PostgresTestCase):
             group_num=5,
         )
         service = QuoteCaptureService(self.db)
+        fixture = load_gold_fixture("wannuo_xbox_shorthand_174")
         payload = {
             "platform": "whatsapp",
             "chat_name": "新改名客人群",
@@ -1022,7 +1027,7 @@ class WebAppTests(PostgresTestCase):
             "sender_id": "seller-1",
             "sender_name": "Seller",
             "content_type": "text",
-            "text": "【iTunes CAD】\n15-90=5.0\n100/150=5.42",
+            "text": str(fixture["raw_text"]),
             "received_at": "2026-04-11 07:10:00",
         }
 
@@ -1036,9 +1041,10 @@ class WebAppTests(PostgresTestCase):
             )
         )
         self.assertTrue(first["captured"])
-        open_payload = self.db.list_quote_exceptions(limit=10, offset=0, resolution_status="open")
-        self.assertEqual(open_payload["total"], 1)
-        exception_id = int(open_payload["rows"][0]["id"])
+        all_payload = self.db.list_quote_exceptions(limit=10, offset=0, resolution_status="all")
+        self.assertEqual(all_payload["total"], 1)
+        self.assertEqual(str(all_payload["rows"][0]["resolution_status"]), "open")
+        exception_id = int(all_payload["rows"][0]["id"])
 
         status, resolve_payload = self._request(
             "POST",
@@ -4961,6 +4967,96 @@ class WebRepairCaseTests(PostgresTestCase):
         )
         self.assertEqual(row["repair_case"]["last_attempt_outcome"], "completed")
         self.assertEqual(row["repair_case"]["escalation_state"], "retryable")
+
+    def test_quote_exceptions_endpoint_includes_snapshot_decision_summary(self) -> None:
+        origin_document_id = self.db.record_quote_candidate_bundle(
+            candidate=_make_repair_candidate(
+                message_id="snapshot-summary-origin",
+                raw_message="[Apple]\nUS 100 95.5",
+                row_specs=[{"source_line": "US 100 95.5", "price": 95.5}],
+                run_kind="runtime",
+                replay_of_quote_document_id=None,
+            )
+        )
+        self.db.confirm_quote_snapshot_decision(
+            quote_document_id=origin_document_id,
+            resolved_decision=SNAPSHOT_FULL_SNAPSHOT,
+            confirmed_by="qa-operator",
+        )
+        exception_id = self.db.record_quote_exception(
+            quote_document_id=origin_document_id,
+            platform="wechat",
+            source_group_key="wechat:g-web-repair",
+            chat_id="g-web-repair",
+            chat_name="Repair Replay 群",
+            source_name="报价员",
+            sender_id="seller-web-repair",
+            reason="strict_match_failed",
+            source_line="US 100 95.5",
+            raw_text="[Apple]\nUS 100 95.5",
+            message_time="2026-04-14 19:00:00",
+            parser_template="repair-template-v1",
+            parser_version="candidate-v1",
+            confidence=0.97,
+        )
+
+        status, payload = self._request(
+            "GET",
+            "/api/quotes/exceptions",
+            query_string="resolution_status=all",
+        )
+        self.assertEqual(status, 200)
+        row = next(item for item in payload["rows"] if int(item["id"]) == exception_id)
+        self.assertEqual(row["snapshot_decision"]["system_hypothesis"], "delta_update")
+        self.assertEqual(row["snapshot_decision"]["resolved_decision"], "full_snapshot")
+        self.assertEqual(row["snapshot_decision"]["decision_source"], "operator")
+
+    def test_snapshot_decision_confirm_endpoint_persists_without_mutating_quote_facts(
+        self,
+    ) -> None:
+        old_password = os.environ.get("QUOTE_ADMIN_PASSWORD")
+        os.environ["QUOTE_ADMIN_PASSWORD"] = "snapshot-secret"
+        try:
+            origin_document_id = self.db.record_quote_candidate_bundle(
+                candidate=_make_repair_candidate(
+                    message_id="snapshot-confirm-origin",
+                    raw_message="[Apple]\nUS 100 95.5",
+                    row_specs=[{"source_line": "US 100 95.5", "price": 95.5}],
+                    run_kind="runtime",
+                    replay_of_quote_document_id=None,
+                )
+            )
+            status, payload = self._request(
+                "POST",
+                "/api/quotes/snapshot-decision/confirm",
+                {
+                    "quote_document_id": origin_document_id,
+                    "resolved_decision": "full_snapshot",
+                    "admin_password": "snapshot-secret",
+                    "confirmed_by": "web-qa",
+                },
+            )
+            self.assertEqual(status, 200)
+            self.assertTrue(payload["saved"])
+            self.assertIn("未改动报价墙", payload["status_text"])
+            stored = self.db.get_quote_snapshot_decision(
+                quote_document_id=origin_document_id
+            )
+            self.assertIsNotNone(stored)
+            assert stored is not None
+            self.assertEqual(str(stored["resolved_decision"]), "full_snapshot")
+            self.assertEqual(str(stored["confirmed_by"]), "web-qa")
+            quote_price_row_count = self._count_rows(
+                "quote_price_rows",
+                "WHERE quote_document_id = ?",
+                (origin_document_id,),
+            )
+            self.assertEqual(quote_price_row_count, 0)
+        finally:
+            if old_password is None:
+                os.environ.pop("QUOTE_ADMIN_PASSWORD", None)
+            else:
+                os.environ["QUOTE_ADMIN_PASSWORD"] = old_password
 
     def test_quote_exception_resolve_endpoint_syncs_repair_case_ignore_reopen_and_resolve(
         self,

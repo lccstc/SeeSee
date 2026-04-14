@@ -3,6 +3,12 @@ from __future__ import annotations
 import unittest
 
 from bookkeeping_core.quote_candidates import QuoteCandidateMessage
+from bookkeeping_core.quote_snapshot import (
+    SNAPSHOT_DELTA_UPDATE,
+    SNAPSHOT_FULL_SNAPSHOT,
+    SNAPSHOT_UNRESOLVED,
+    infer_snapshot_hypothesis,
+)
 from bookkeeping_core.quote_validation import (
     BUSINESS_AMBIGUOUS_RESTRICTION_HOLD,
     BUSINESS_DUPLICATE_SKU_IN_MESSAGE_HOLD,
@@ -21,6 +27,37 @@ from bookkeeping_core.quote_validation import (
 
 
 class QuoteValidationTests(unittest.TestCase):
+    def test_infer_snapshot_hypothesis_respects_explicit_delta_markers(self) -> None:
+        hypothesis = infer_snapshot_hypothesis(
+            raw_message="胖达莱卡单独更新\n🔥Sephora 100-500=5.95\n🔥Macy 100-300=5.8",
+            parser_template="supermarket-card",
+        )
+        self.assertEqual(hypothesis.hypothesis, SNAPSHOT_DELTA_UPDATE)
+        self.assertIn("explicit_delta_marker", hypothesis.reason)
+
+    def test_infer_snapshot_hypothesis_marks_large_board_updates_as_full(self) -> None:
+        hypothesis = infer_snapshot_hypothesis(
+            raw_message=(
+                "#VIP广告更新\n"
+                "50=5.25\n"
+                "100/150=5.41\n"
+                "200-450=5.45（50倍数）\n"
+                "300/400/500=5.46\n"
+                "散卡25-95=5.1（5倍数）"
+            ),
+            parser_template="group-parser",
+        )
+        self.assertEqual(hypothesis.hypothesis, SNAPSHOT_FULL_SNAPSHOT)
+        self.assertIn("full_board_marker", hypothesis.reason)
+
+    def test_infer_snapshot_hypothesis_stays_unresolved_without_strong_evidence(self) -> None:
+        hypothesis = infer_snapshot_hypothesis(
+            raw_message="+100 xb 5.13",
+            parser_template="group-parser",
+        )
+        self.assertEqual(hypothesis.hypothesis, SNAPSHOT_UNRESOLVED)
+        self.assertEqual(hypothesis.reason, "insufficient_snapshot_evidence")
+
     def test_validate_quote_candidate_document_rejects_schema_failures(self) -> None:
         validation_run = validate_quote_candidate_document(
             quote_document_id=42,

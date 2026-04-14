@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+from datetime import datetime
 import hashlib
 import json
 import re
@@ -1417,6 +1418,13 @@ class _BookkeepingStoreBase:
                     row["parser_version"],
                 ),
             )
+        self.record_quote_snapshot_decision(
+            quote_document_id=quote_document_id,
+            system_hypothesis=str(document["snapshot_hypothesis"] or "unresolved"),
+            hypothesis_reason=str(document["snapshot_hypothesis_reason"] or ""),
+            hypothesis_evidence=document.get("snapshot_hypothesis_evidence") or {},
+            commit=False,
+        )
         self.conn.commit()
         return quote_document_id
 
@@ -1461,8 +1469,16 @@ class _BookkeepingStoreBase:
                 parse_status,
             ),
         )
+        quote_document_id = self._last_insert_id(cur)
+        self.record_quote_snapshot_decision(
+            quote_document_id=quote_document_id,
+            system_hypothesis="unresolved",
+            hypothesis_reason="record_quote_document_default",
+            hypothesis_evidence={"source": "record_quote_document"},
+            commit=False,
+        )
         self.conn.commit()
-        return self._last_insert_id(cur)
+        return quote_document_id
 
     def list_quote_candidate_rows(self, *, quote_document_id: int) -> list[DBRow]:
         return self.conn.execute(
@@ -1583,7 +1599,134 @@ class _BookkeepingStoreBase:
             """,
             (quote_document_id,),
         ).fetchone()
+        if not row:
+            return None
+        document = self._serialize_quote_db_row(row)
+        document["snapshot_decision"] = self.get_quote_snapshot_decision(
+            quote_document_id=quote_document_id
+        )
+        return document
+
+    def record_quote_snapshot_decision(
+        self,
+        *,
+        quote_document_id: int,
+        system_hypothesis: str,
+        hypothesis_reason: str,
+        hypothesis_evidence: dict[str, Any] | None = None,
+        commit: bool = True,
+    ) -> int:
+        recorded_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+        history = [
+            {
+                "event": "system_hypothesis_recorded",
+                "decision_source": "system",
+                "system_hypothesis": str(system_hypothesis or "unresolved"),
+                "hypothesis_reason": str(hypothesis_reason or ""),
+                "recorded_at": recorded_at,
+            }
+        ]
+        cur = self.conn.execute(
+            """
+            INSERT INTO quote_snapshot_decisions (
+              quote_document_id, system_hypothesis, hypothesis_reason,
+              hypothesis_evidence_json, resolved_decision, decision_source,
+              confirmed_by, confirmed_at, decision_note, decision_history_json
+            ) VALUES (?, ?, ?, ?::jsonb, 'unresolved', 'system', '', NULL, '', ?::jsonb)
+            ON CONFLICT (quote_document_id) DO UPDATE SET
+              system_hypothesis = EXCLUDED.system_hypothesis,
+              hypothesis_reason = EXCLUDED.hypothesis_reason,
+              hypothesis_evidence_json = EXCLUDED.hypothesis_evidence_json,
+              updated_at = CURRENT_TIMESTAMP
+            RETURNING id
+            """,
+            (
+                quote_document_id,
+                str(system_hypothesis or "unresolved"),
+                str(hypothesis_reason or ""),
+                self._serialize_candidate_json(hypothesis_evidence, fallback={}),
+                self._serialize_candidate_json(history, fallback=[]),
+            ),
+        )
+        decision_id = self._last_insert_id(cur)
+        if commit:
+            self.conn.commit()
+        return decision_id
+
+    def get_quote_snapshot_decision(
+        self, *, quote_document_id: int
+    ) -> DBRow | None:
+        row = self.conn.execute(
+            """
+            SELECT *
+            FROM quote_snapshot_decisions
+            WHERE quote_document_id = ?
+            LIMIT 1
+            """,
+            (quote_document_id,),
+        ).fetchone()
         return self._serialize_quote_db_row(row) if row else None
+
+    def confirm_quote_snapshot_decision(
+        self,
+        *,
+        quote_document_id: int,
+        resolved_decision: str,
+        confirmed_by: str,
+        decision_note: str = "",
+        decision_source: str = "operator",
+        commit: bool = True,
+    ) -> int:
+        existing = self.get_quote_snapshot_decision(quote_document_id=quote_document_id)
+        if existing is None:
+            document = self.get_quote_document(quote_document_id=quote_document_id)
+            system_hypothesis = "unresolved"
+            hypothesis_reason = "late_snapshot_decision_bootstrap"
+            if document:
+                system_hypothesis = str(document.get("snapshot_hypothesis") or "unresolved")
+                hypothesis_reason = str(document.get("snapshot_hypothesis_reason") or "")
+            self.record_quote_snapshot_decision(
+                quote_document_id=quote_document_id,
+                system_hypothesis=system_hypothesis,
+                hypothesis_reason=hypothesis_reason,
+                hypothesis_evidence={},
+                commit=False,
+            )
+        recorded_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+        event = [
+            {
+                "event": "snapshot_decision_confirmed",
+                "decision_source": str(decision_source or "operator"),
+                "resolved_decision": str(resolved_decision or "unresolved"),
+                "confirmed_by": str(confirmed_by or ""),
+                "decision_note": str(decision_note or ""),
+                "recorded_at": recorded_at,
+            }
+        ]
+        cur = self.conn.execute(
+            """
+            UPDATE quote_snapshot_decisions
+            SET resolved_decision = ?,
+                decision_source = ?,
+                confirmed_by = ?,
+                confirmed_at = CURRENT_TIMESTAMP,
+                decision_note = ?,
+                decision_history_json = decision_history_json || ?::jsonb,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE quote_document_id = ?
+            """,
+            (
+                str(resolved_decision or "unresolved"),
+                str(decision_source or "operator"),
+                str(confirmed_by or ""),
+                str(decision_note or ""),
+                self._serialize_candidate_json(event, fallback=[]),
+                quote_document_id,
+            ),
+        )
+        if commit:
+            self.conn.commit()
+        return int(cur.rowcount or 0)
 
     def list_quote_validation_row_results(
         self, *, validation_run_id: int
@@ -1684,6 +1827,61 @@ class _BookkeepingStoreBase:
         )
         if commit:
             self.conn.commit()
+
+    def deactivate_quote_rows_absent_from_snapshot(
+        self,
+        *,
+        source_group_key: str,
+        platform: str,
+        keep_rows: list[dict[str, Any]],
+        effective_at: str,
+        commit: bool = True,
+    ) -> int:
+        keep_keys = {
+            (
+                str(row.get("card_type") or ""),
+                str(row.get("country_or_currency") or ""),
+                str(row.get("amount_range") or ""),
+                str(row.get("form_factor") or ""),
+                str(row.get("multiplier") or ""),
+            )
+            for row in keep_rows
+        }
+        active_rows = self.conn.execute(
+            """
+            SELECT id, card_type, country_or_currency, amount_range, form_factor, multiplier
+            FROM quote_price_rows
+            WHERE platform = ?
+              AND source_group_key = ?
+              AND quote_status = 'active'
+              AND expires_at IS NULL
+            ORDER BY id ASC
+            """,
+            (platform, source_group_key),
+        ).fetchall()
+        deactivated = 0
+        for row in active_rows:
+            row_key = (
+                str(row["card_type"] or ""),
+                str(row["country_or_currency"] or ""),
+                str(row["amount_range"] or ""),
+                str(row["form_factor"] or ""),
+                str(row["multiplier"] or ""),
+            )
+            if row_key in keep_keys:
+                continue
+            self.conn.execute(
+                """
+                UPDATE quote_price_rows
+                SET expires_at = ?, quote_status = 'inactive'
+                WHERE id = ?
+                """,
+                (effective_at, row["id"]),
+            )
+            deactivated += 1
+        if commit:
+            self.conn.commit()
+        return deactivated
 
     def upsert_quote_price_row_with_history(
         self,
@@ -2117,7 +2315,15 @@ class _BookkeepingStoreBase:
             """,
             (exception_id,),
         ).fetchone()
-        return self._serialize_quote_db_row(row) if row else None
+        if not row:
+            return None
+        item = self._serialize_quote_db_row(row)
+        quote_document_id = item.get("quote_document_id")
+        if quote_document_id is not None:
+            item["snapshot_decision"] = self.get_quote_snapshot_decision(
+                quote_document_id=int(quote_document_id)
+            )
+        return item
 
     def get_quote_repair_case_by_origin_exception(
         self,
@@ -3438,6 +3644,11 @@ class _BookkeepingStoreBase:
         ).fetchall()
         serialized_rows = [self._serialize_quote_db_row(row) for row in rows]
         for item in serialized_rows:
+            quote_document_id = item.get("quote_document_id")
+            if quote_document_id is not None:
+                item["snapshot_decision"] = self.get_quote_snapshot_decision(
+                    quote_document_id=int(quote_document_id)
+                )
             repair_case = self.get_quote_repair_case_by_origin_exception(
                 origin_exception_id=int(item["id"])
             )
@@ -3496,6 +3707,7 @@ class _BookkeepingStoreBase:
             "message_time",
             "effective_at",
             "expires_at",
+            "confirmed_at",
             "message_time_snapshot",
             "resolved_at",
             "created_at",
@@ -3960,6 +4172,25 @@ class BookkeepingDB(_BookkeepingStoreBase):
         )
         self.conn.execute(
             """
+            CREATE TABLE IF NOT EXISTS quote_snapshot_decisions (
+              id BIGSERIAL PRIMARY KEY,
+              quote_document_id BIGINT NOT NULL UNIQUE REFERENCES quote_documents(id) ON DELETE CASCADE,
+              system_hypothesis TEXT NOT NULL DEFAULT 'unresolved',
+              hypothesis_reason TEXT NOT NULL DEFAULT '',
+              hypothesis_evidence_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+              resolved_decision TEXT NOT NULL DEFAULT 'unresolved',
+              decision_source TEXT NOT NULL DEFAULT 'system',
+              confirmed_by TEXT NOT NULL DEFAULT '',
+              confirmed_at TIMESTAMP,
+              decision_note TEXT NOT NULL DEFAULT '',
+              decision_history_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+              created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        self.conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS quote_candidate_rows (
               id BIGSERIAL PRIMARY KEY,
               quote_document_id BIGINT NOT NULL REFERENCES quote_documents(id) ON DELETE CASCADE,
@@ -4073,6 +4304,12 @@ class BookkeepingDB(_BookkeepingStoreBase):
             """
             CREATE INDEX IF NOT EXISTS idx_quote_validation_runs_document_created
             ON quote_validation_runs(quote_document_id, created_at DESC)
+            """
+        )
+        self.conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_quote_snapshot_decisions_document
+            ON quote_snapshot_decisions(quote_document_id)
             """
         )
         self.conn.execute(
@@ -4561,6 +4798,21 @@ class BookkeepingDB(_BookkeepingStoreBase):
                 "run_kind",
                 "replay_of_quote_document_id",
                 "created_at",
+            },
+            "quote_snapshot_decisions": {
+                "id",
+                "quote_document_id",
+                "system_hypothesis",
+                "hypothesis_reason",
+                "hypothesis_evidence_json",
+                "resolved_decision",
+                "decision_source",
+                "confirmed_by",
+                "confirmed_at",
+                "decision_note",
+                "decision_history_json",
+                "created_at",
+                "updated_at",
             },
             "quote_candidate_rows": {
                 "id",

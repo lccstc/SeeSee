@@ -6,6 +6,11 @@ from unittest.mock import patch
 
 from bookkeeping_core.database import BookkeepingDB
 from bookkeeping_core.quote_publisher import QuoteFactPublisher
+from bookkeeping_core.quote_snapshot import (
+    SNAPSHOT_DELTA_UPDATE,
+    SNAPSHOT_FULL_SNAPSHOT,
+    SNAPSHOT_UNRESOLVED,
+)
 from bookkeeping_core.quote_candidates import QuoteCandidateMessage, QuoteCandidateRow
 from bookkeeping_core.quote_validation import (
     QuoteValidationRowResult,
@@ -129,6 +134,9 @@ class PostgresBackendTests(PostgresTestCase):
         chat_name: str = "Publisher Room",
         raw_message: str = "US 100 96.0",
         rows: list[QuoteCandidateRow] | None = None,
+        snapshot_hypothesis: str = SNAPSHOT_UNRESOLVED,
+        resolved_snapshot_decision: str | None = None,
+        resolved_by: str = "qa-user",
     ) -> tuple[int, int]:
         candidate = QuoteCandidateMessage(
             platform="wechat",
@@ -147,8 +155,8 @@ class PostgresBackendTests(PostgresTestCase):
             confidence=0.99,
             parse_status="parsed",
             message_fingerprint=f"publish-{message_id}",
-            snapshot_hypothesis="unresolved",
-            snapshot_hypothesis_reason="phase03-fixture",
+            snapshot_hypothesis=snapshot_hypothesis,
+            snapshot_hypothesis_reason="phase04-fixture",
             rows=list(rows or []),
         )
         quote_document_id = db.record_quote_candidate_bundle(candidate=candidate)
@@ -163,6 +171,12 @@ class PostgresBackendTests(PostgresTestCase):
         validation_run_id = db.record_quote_validation_run(
             validation_run=validation_run
         )
+        if resolved_snapshot_decision is not None:
+            db.confirm_quote_snapshot_decision(
+                quote_document_id=quote_document_id,
+                resolved_decision=resolved_snapshot_decision,
+                confirmed_by=resolved_by,
+            )
         return quote_document_id, validation_run_id
 
     def test_seed_quote_demo_clear_is_disabled_to_avoid_raw_fact_deletes(self) -> None:
@@ -271,6 +285,26 @@ class PostgresBackendTests(PostgresTestCase):
                     DROP COLUMN validator_version,
                     DROP COLUMN message_decision,
                     DROP COLUMN summary_json
+                    """
+                )
+
+        with self.assertRaisesRegex(RuntimeError, "PostgreSQL schema mismatch"):
+            BookkeepingDB(broken_dsn)
+
+    def test_bookkeeping_db_fails_fast_when_snapshot_schema_is_missing(self) -> None:
+        import psycopg
+
+        schema_name = self._schema_name("snapshot-missing")
+        self._create_schema(schema_name)
+        self._apply_schema(schema_name)
+        broken_dsn = self._dsn_with_search_path(schema_name)
+
+        with psycopg.connect(broken_dsn, autocommit=True) as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    ALTER TABLE quote_snapshot_decisions
+                    DROP COLUMN decision_note
                     """
                 )
 
@@ -468,6 +502,23 @@ class PostgresBackendTests(PostgresTestCase):
                 _normalize_json_field(header["rejection_reasons_json"]),
                 candidate.rejection_reasons,
             )
+            snapshot_decision = db.get_quote_snapshot_decision(
+                quote_document_id=quote_document_id
+            )
+            self.assertIsNotNone(snapshot_decision)
+            assert snapshot_decision is not None
+            self.assertEqual(
+                str(snapshot_decision["system_hypothesis"]),
+                candidate.snapshot_hypothesis,
+            )
+            self.assertEqual(
+                str(snapshot_decision["resolved_decision"]),
+                SNAPSHOT_UNRESOLVED,
+            )
+            self.assertEqual(
+                str(snapshot_decision["decision_source"]),
+                "system",
+            )
 
             rows = db.list_quote_candidate_rows(quote_document_id=quote_document_id)
             self.assertEqual(len(rows), 1)
@@ -519,6 +570,42 @@ class PostgresBackendTests(PostgresTestCase):
                 "SELECT COUNT(*) AS cnt FROM quote_price_rows"
             ).fetchone()
             self.assertEqual(int(count_row["cnt"]), 0)
+        finally:
+            db.close()
+
+    def test_operator_snapshot_confirmation_is_durable_and_auditable(self) -> None:
+        db = self.make_db("backend-snapshot-confirmation")
+        try:
+            quote_document_id, _ = self._record_validation_backed_publish_fixture(
+                db=db,
+                message_id="msg-snapshot-confirm",
+                snapshot_hypothesis=SNAPSHOT_FULL_SNAPSHOT,
+            )
+            updated = db.confirm_quote_snapshot_decision(
+                quote_document_id=quote_document_id,
+                resolved_decision=SNAPSHOT_FULL_SNAPSHOT,
+                confirmed_by="qa-operator",
+                decision_note="handoff confirmed",
+            )
+            self.assertEqual(updated, 1)
+            snapshot_decision = db.get_quote_snapshot_decision(
+                quote_document_id=quote_document_id
+            )
+            self.assertIsNotNone(snapshot_decision)
+            assert snapshot_decision is not None
+            self.assertEqual(
+                str(snapshot_decision["resolved_decision"]),
+                SNAPSHOT_FULL_SNAPSHOT,
+            )
+            self.assertEqual(
+                str(snapshot_decision["decision_source"]),
+                "operator",
+            )
+            self.assertEqual(str(snapshot_decision["confirmed_by"]), "qa-operator")
+            self.assertIn("handoff confirmed", str(snapshot_decision["decision_note"]))
+            history = _normalize_json_field(snapshot_decision["decision_history_json"])
+            self.assertEqual(history[-1]["resolved_decision"], SNAPSHOT_FULL_SNAPSHOT)
+            self.assertEqual(history[-1]["confirmed_by"], "qa-operator")
         finally:
             db.close()
 
@@ -843,7 +930,7 @@ class PostgresBackendTests(PostgresTestCase):
                     message_time="2026-04-15 11:00:00",
                     parser_template="publisher-template",
                     parser_version="publisher-v1",
-                    publish_mode="replace_group_active_rows",
+                    publish_mode=publisher.DELTA_SAFE_UPSERT_ONLY_MODE,
                 )
 
             self.assertEqual(result.status, "failed")
@@ -909,8 +996,8 @@ class PostgresBackendTests(PostgresTestCase):
             publisher = QuoteFactPublisher(db)
             with patch.object(
                 db,
-                "deactivate_old_quotes_for_group",
-                wraps=db.deactivate_old_quotes_for_group,
+                "deactivate_quote_rows_absent_from_snapshot",
+                wraps=db.deactivate_quote_rows_absent_from_snapshot,
             ) as deactivate_mock, patch.object(
                 db,
                 "upsert_quote_price_row_with_history",
@@ -930,7 +1017,7 @@ class PostgresBackendTests(PostgresTestCase):
                     message_time="2026-04-15 11:00:00",
                     parser_template="publisher-template",
                     parser_version="publisher-v1",
-                    publish_mode="replace_group_active_rows",
+                    publish_mode=publisher.DELTA_SAFE_UPSERT_ONLY_MODE,
                 )
 
             self.assertEqual(result.status, "no_op")
@@ -1018,8 +1105,8 @@ class PostgresBackendTests(PostgresTestCase):
             publisher = QuoteFactPublisher(db)
             with patch.object(
                 db,
-                "deactivate_old_quotes_for_group",
-                wraps=db.deactivate_old_quotes_for_group,
+                "deactivate_quote_rows_absent_from_snapshot",
+                wraps=db.deactivate_quote_rows_absent_from_snapshot,
             ) as deactivate_mock, patch.object(
                 db,
                 "upsert_quote_price_row_with_history",
@@ -1039,11 +1126,14 @@ class PostgresBackendTests(PostgresTestCase):
                     message_time="2026-04-15 11:00:00",
                     parser_template="publisher-template",
                     parser_version="publisher-v1",
-                    publish_mode="unresolved",
+                    publish_mode=publisher.CONFIRMED_FULL_SNAPSHOT_MODE,
                 )
 
             self.assertEqual(result.status, "no_op")
-            self.assertEqual(result.reason, "publish_mode_not_allowed:unresolved")
+            self.assertEqual(
+                result.reason,
+                "snapshot_publish_mode_mismatch:confirmed_full_snapshot_apply:delta_safe_upsert_only",
+            )
             self.assertEqual(result.attempted_row_count, 1)
             self.assertEqual(result.applied_row_count, 0)
             deactivate_mock.assert_not_called()
@@ -1063,6 +1153,255 @@ class PostgresBackendTests(PostgresTestCase):
             self.assertEqual(str(rows[0]["quote_status"]), "active")
             self.assertIsNone(rows[0]["expires_at"])
             self.assertEqual(float(rows[0]["price"]), 95.5)
+        finally:
+            db.close()
+
+    def test_quote_fact_publisher_defaults_unresolved_snapshot_to_delta_safe_upsert(
+        self,
+    ) -> None:
+        db = self.make_db("backend-quote-publisher-delta-safe")
+        try:
+            db.upsert_quote_price_row_with_history(
+                quote_document_id=901,
+                message_id="seed-msg-delta-safe-usd",
+                platform="wechat",
+                source_group_key="wechat:publisher-room",
+                chat_id="publisher-room",
+                chat_name="Publisher Room",
+                source_name="Seed Source",
+                sender_id="seed-user",
+                card_type="Apple",
+                country_or_currency="USD",
+                amount_range="100",
+                multiplier=None,
+                form_factor="physical",
+                price=95.5,
+                quote_status="active",
+                restriction_text="",
+                source_line="US 100 95.5",
+                raw_text="US 100 95.5",
+                message_time="2026-04-15 10:00:00",
+                effective_at="2026-04-15 10:00:00",
+                expires_at=None,
+                parser_template="seed-template",
+                parser_version="seed-v1",
+                confidence=0.98,
+            )
+            db.upsert_quote_price_row_with_history(
+                quote_document_id=902,
+                message_id="seed-msg-delta-safe-gbp",
+                platform="wechat",
+                source_group_key="wechat:publisher-room",
+                chat_id="publisher-room",
+                chat_name="Publisher Room",
+                source_name="Seed Source",
+                sender_id="seed-user",
+                card_type="Apple",
+                country_or_currency="GBP",
+                amount_range="100",
+                multiplier=None,
+                form_factor="physical",
+                price=82.0,
+                quote_status="active",
+                restriction_text="",
+                source_line="UK 100 82.0",
+                raw_text="UK 100 82.0",
+                message_time="2026-04-15 10:05:00",
+                effective_at="2026-04-15 10:05:00",
+                expires_at=None,
+                parser_template="seed-template",
+                parser_version="seed-v1",
+                confidence=0.98,
+            )
+            db.conn.commit()
+
+            quote_document_id, validation_run_id = self._record_validation_backed_publish_fixture(
+                db=db,
+                message_id="msg-delta-safe",
+                snapshot_hypothesis=SNAPSHOT_FULL_SNAPSHOT,
+                rows=[
+                    QuoteCandidateRow(
+                        row_ordinal=1,
+                        source_line="US 100 96.0",
+                        source_line_index=0,
+                        line_confidence=0.99,
+                        normalized_sku_key="Apple|USD|100||physical",
+                        normalization_status="normalized",
+                        row_publishable=True,
+                        publishability_basis="validator_pending",
+                        restriction_parse_status="clear",
+                        card_type="Apple",
+                        country_or_currency="USD",
+                        amount_range="100",
+                        multiplier=None,
+                        form_factor="physical",
+                        price=96.0,
+                        quote_status="active",
+                        restriction_text="",
+                    )
+                ],
+            )
+            publisher = QuoteFactPublisher(db)
+            result = publisher.publish_quote_document(
+                quote_document_id=quote_document_id,
+                validation_run_id=validation_run_id,
+                source_group_key="wechat:publisher-room",
+                platform="wechat",
+                chat_id="publisher-room",
+                chat_name="Publisher Room",
+                message_id="msg-delta-safe",
+                source_name="Publisher Source",
+                sender_id="publisher-user",
+                raw_text="US 100 96.0",
+                message_time="2026-04-15 11:00:00",
+                parser_template="publisher-template",
+                parser_version="publisher-v1",
+                publish_mode=publisher.DELTA_SAFE_UPSERT_ONLY_MODE,
+            )
+
+            self.assertEqual(result.status, "applied")
+            rows = db.conn.execute(
+                """
+                SELECT message_id, country_or_currency, quote_status, expires_at, price
+                FROM quote_price_rows
+                WHERE source_group_key = ?
+                ORDER BY country_or_currency ASC, id ASC
+                """,
+                ("wechat:publisher-room",),
+            ).fetchall()
+            usd_rows = [row for row in rows if str(row["country_or_currency"]) == "USD"]
+            gbp_rows = [row for row in rows if str(row["country_or_currency"]) == "GBP"]
+            self.assertEqual(len(gbp_rows), 1)
+            self.assertEqual(str(gbp_rows[0]["quote_status"]), "active")
+            self.assertIsNone(gbp_rows[0]["expires_at"])
+            self.assertEqual(len(usd_rows), 2)
+            self.assertEqual(str(usd_rows[0]["quote_status"]), "superseded")
+            self.assertEqual(str(usd_rows[1]["quote_status"]), "active")
+        finally:
+            db.close()
+
+    def test_quote_fact_publisher_confirmed_full_snapshot_inactivates_unseen_rows(
+        self,
+    ) -> None:
+        db = self.make_db("backend-quote-publisher-confirmed-full")
+        try:
+            db.upsert_quote_price_row_with_history(
+                quote_document_id=1001,
+                message_id="seed-msg-full-usd",
+                platform="wechat",
+                source_group_key="wechat:publisher-room",
+                chat_id="publisher-room",
+                chat_name="Publisher Room",
+                source_name="Seed Source",
+                sender_id="seed-user",
+                card_type="Apple",
+                country_or_currency="USD",
+                amount_range="100",
+                multiplier=None,
+                form_factor="physical",
+                price=95.5,
+                quote_status="active",
+                restriction_text="",
+                source_line="US 100 95.5",
+                raw_text="US 100 95.5",
+                message_time="2026-04-15 10:00:00",
+                effective_at="2026-04-15 10:00:00",
+                expires_at=None,
+                parser_template="seed-template",
+                parser_version="seed-v1",
+                confidence=0.98,
+            )
+            db.upsert_quote_price_row_with_history(
+                quote_document_id=1002,
+                message_id="seed-msg-full-gbp",
+                platform="wechat",
+                source_group_key="wechat:publisher-room",
+                chat_id="publisher-room",
+                chat_name="Publisher Room",
+                source_name="Seed Source",
+                sender_id="seed-user",
+                card_type="Apple",
+                country_or_currency="GBP",
+                amount_range="100",
+                multiplier=None,
+                form_factor="physical",
+                price=82.0,
+                quote_status="active",
+                restriction_text="",
+                source_line="UK 100 82.0",
+                raw_text="UK 100 82.0",
+                message_time="2026-04-15 10:05:00",
+                effective_at="2026-04-15 10:05:00",
+                expires_at=None,
+                parser_template="seed-template",
+                parser_version="seed-v1",
+                confidence=0.98,
+            )
+            db.conn.commit()
+
+            quote_document_id, validation_run_id = self._record_validation_backed_publish_fixture(
+                db=db,
+                message_id="msg-confirmed-full",
+                snapshot_hypothesis=SNAPSHOT_FULL_SNAPSHOT,
+                resolved_snapshot_decision=SNAPSHOT_FULL_SNAPSHOT,
+                rows=[
+                    QuoteCandidateRow(
+                        row_ordinal=1,
+                        source_line="US 100 96.0",
+                        source_line_index=0,
+                        line_confidence=0.99,
+                        normalized_sku_key="Apple|USD|100||physical",
+                        normalization_status="normalized",
+                        row_publishable=True,
+                        publishability_basis="validator_pending",
+                        restriction_parse_status="clear",
+                        card_type="Apple",
+                        country_or_currency="USD",
+                        amount_range="100",
+                        multiplier=None,
+                        form_factor="physical",
+                        price=96.0,
+                        quote_status="active",
+                        restriction_text="",
+                    )
+                ],
+            )
+            publisher = QuoteFactPublisher(db)
+            result = publisher.publish_quote_document(
+                quote_document_id=quote_document_id,
+                validation_run_id=validation_run_id,
+                source_group_key="wechat:publisher-room",
+                platform="wechat",
+                chat_id="publisher-room",
+                chat_name="Publisher Room",
+                message_id="msg-confirmed-full",
+                source_name="Publisher Source",
+                sender_id="publisher-user",
+                raw_text="US 100 96.0",
+                message_time="2026-04-15 11:00:00",
+                parser_template="publisher-template",
+                parser_version="publisher-v1",
+                publish_mode=publisher.CONFIRMED_FULL_SNAPSHOT_MODE,
+            )
+
+            self.assertEqual(result.status, "applied")
+            rows = db.conn.execute(
+                """
+                SELECT message_id, country_or_currency, quote_status, expires_at, price
+                FROM quote_price_rows
+                WHERE source_group_key = ?
+                ORDER BY country_or_currency ASC, id ASC
+                """,
+                ("wechat:publisher-room",),
+            ).fetchall()
+            gbp_rows = [row for row in rows if str(row["country_or_currency"]) == "GBP"]
+            usd_rows = [row for row in rows if str(row["country_or_currency"]) == "USD"]
+            self.assertEqual(len(gbp_rows), 1)
+            self.assertEqual(str(gbp_rows[0]["quote_status"]), "inactive")
+            self.assertIsNotNone(gbp_rows[0]["expires_at"])
+            self.assertEqual(len(usd_rows), 2)
+            self.assertEqual(str(usd_rows[0]["quote_status"]), "superseded")
+            self.assertEqual(str(usd_rows[1]["quote_status"]), "active")
         finally:
             db.close()
 
@@ -1129,6 +1468,8 @@ class PostgresBackendTests(PostgresTestCase):
                 db=db,
                 message_id="msg-partial-failure",
                 raw_message="US 200 96.0\nJP 10 9.1",
+                snapshot_hypothesis=SNAPSHOT_FULL_SNAPSHOT,
+                resolved_snapshot_decision=SNAPSHOT_FULL_SNAPSHOT,
                 rows=[
                     QuoteCandidateRow(
                         row_ordinal=1,
@@ -1199,7 +1540,7 @@ class PostgresBackendTests(PostgresTestCase):
                     message_time="2026-04-15 11:00:00",
                     parser_template="publisher-template",
                     parser_version="publisher-v1",
-                    publish_mode="replace_group_active_rows",
+                    publish_mode=publisher.CONFIRMED_FULL_SNAPSHOT_MODE,
                 )
 
             self.assertEqual(result.status, "failed")

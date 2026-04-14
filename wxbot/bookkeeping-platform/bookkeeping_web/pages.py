@@ -2987,6 +2987,32 @@ function quoteExceptionHarvestStatus(row) {
   return quoteStatusText(status);
 }
 
+function quoteSnapshotDecisionLabel(decision) {
+  const normalized = String(decision || 'unresolved');
+  if (normalized === 'full_snapshot') return '整版快照';
+  if (normalized === 'delta_update') return '局部更新';
+  return '未决';
+}
+
+function quoteSnapshotSummary(row) {
+  const snapshot = row && row.snapshot_decision ? row.snapshot_decision : {};
+  const systemHypothesis = quoteSnapshotDecisionLabel(snapshot.system_hypothesis || 'unresolved');
+  const resolvedDecision = quoteSnapshotDecisionLabel(snapshot.resolved_decision || 'unresolved');
+  const confirmedBy = textValue(snapshot.confirmed_by || '');
+  const confirmedAt = textValue(snapshot.confirmed_at || '');
+  let summary = `系统候选：${systemHypothesis} ｜ 当前决策：${resolvedDecision}`;
+  if (snapshot.resolved_decision && snapshot.resolved_decision !== 'unresolved') {
+    summary += confirmedBy !== '—'
+      ? ` ｜ 确认人：${confirmedBy}`
+      : '';
+    summary += confirmedAt !== '—'
+      ? ` ｜ 确认时间：${confirmedAt}`
+      : '';
+  }
+  summary += ' ｜ 仅记录语义，未改动报价墙。';
+  return summary;
+}
+
 function displayQuoteResolutionNote(note) {
   const text = String(note || '');
   const lines = text.split('\\n');
@@ -3071,6 +3097,15 @@ function renderQuoteExceptions(payload) {
     }).join('');
     const note = displayQuoteResolutionNote(row.resolution_note);
     const noteHtml = note ? `<div class="muted" style="font-size:12px;margin-top:4px;white-space:pre-wrap;">${textValue(note)}</div>` : '';
+    const snapshotHtml = row.quote_document_id
+      ? `<div class="muted" style="font-size:12px;margin-top:6px;">${quoteSnapshotSummary(row)}</div>`
+      : '';
+    const snapshotActions = row.quote_document_id
+      ? `
+          <button type="button" class="action-ghost" data-quote-snapshot-confirm="${row.id}" data-quote-snapshot-decision="full_snapshot">确认整版</button>
+          <button type="button" class="action-ghost" data-quote-snapshot-confirm="${row.id}" data-quote-snapshot-decision="delta_update">确认局部</button>
+        `
+      : '';
     return `<div class="exc-card" data-exc-row-id="${row.id}">
       <div class="exc-card-header">
         <div>
@@ -3082,6 +3117,7 @@ function renderQuoteExceptions(payload) {
           </div>
         </div>
         <div class="exc-card-actions">
+          ${snapshotActions}
           <button type="button" class="action-ghost" data-quote-exception-harvest="${row.id}">人工整理</button>
           <button type="button" class="action-danger" data-quote-exception-ignore="${row.id}">忽略</button>
         </div>
@@ -3091,6 +3127,7 @@ function renderQuoteExceptions(payload) {
         <span>${textValue(row.suggested_action || '直接把右侧整理成最终正确结果；不确定的不要上墙。')}</span>
       </div>
       <div class="exc-lines">${linesHtml}</div>
+      ${snapshotHtml}
       ${noteHtml}
     </div>`;
   };
@@ -3135,6 +3172,30 @@ function bindQuoteExceptionButtons() {
     button.addEventListener('click', () => {
       const row = allQuoteExceptions.find((item) => String(item.id) === String(button.dataset.quoteExceptionHarvest));
       if (row) openQuoteHarvestModal(row);
+    });
+  });
+  document.querySelectorAll('[data-quote-snapshot-confirm]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const row = allQuoteExceptions.find((item) => String(item.id) === String(button.dataset.quoteSnapshotConfirm));
+      if (!row || !row.quote_document_id) return;
+      const adminPassword = window.prompt('输入报价管理员密码以记录快照判定');
+      if (!adminPassword) return;
+      const response = await fetch('/api/quotes/snapshot-decision/confirm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          quote_document_id: Number(row.quote_document_id),
+          resolved_decision: String(button.dataset.quoteSnapshotDecision || ''),
+          admin_password: adminPassword,
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        alert(payload.error || '快照判定记录失败');
+        return;
+      }
+      alert(payload.status_text || '快照判定已记录，未改动报价墙。');
+      await loadQuotesData();
     });
   });
 }

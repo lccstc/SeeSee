@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from bookkeeping_core.quote_snapshot import infer_snapshot_hypothesis
 from scripts.refresh_quote_exception_corpus import main as refresh_corpus_main
 from tests.support.quote_exception_corpus import (
     is_fixture_approved,
@@ -205,3 +206,27 @@ class TestQuoteExceptionGoldFixtures(unittest.TestCase):
         self.assertTrue(all(fixture["fixture_name"] in fixture_names for fixture in approved_fixtures))
         self.assertTrue(all(is_fixture_approved(fixture["fixture_name"]) for fixture in approved_fixtures))
         self.assertFalse(is_fixture_approved("nonexistent_fixture"))
+
+    def test_snapshot_hypothesis_regressions_stay_aligned_with_curated_gold_examples(self):
+        fixtures = {
+            fixture["fixture_name"]: fixture
+            for fixture in load_gold_samples()
+        }
+        expected = {
+            "panda_supermarket_delta_222": "delta_update",
+            "qh_delta_us_uk_239": "delta_update",
+            "sk_steam_simple_full_243": "full_snapshot",
+            "yangyang_supermarket_board_236": "full_snapshot",
+            "wannuo_xbox_shorthand_174": "unresolved",
+        }
+        for fixture_name, decision in expected.items():
+            fixture = fixtures[fixture_name]
+            hypothesis = infer_snapshot_hypothesis(
+                raw_message=fixture["raw_text"],
+                parser_template="group-parser",
+            )
+            self.assertEqual(
+                hypothesis.hypothesis,
+                decision,
+                msg=fixture_name,
+            )
