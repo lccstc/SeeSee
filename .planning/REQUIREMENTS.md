@@ -59,7 +59,7 @@
 
 ### Governance
 
-- [ ] **GOV-01**: User can run the pipeline in validation or shadow mode without letting it automatically replace the current production publish flow
+- [ ] **GOV-01**: User can run the pipeline as an operator-owned experimental active wall that updates the wall through system custody, while still preventing automatic downstream actions or default production takeover
 
 ## v2 Requirements
 

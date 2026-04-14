@@ -21,11 +21,11 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-13)
 
 **Core value:** 把供应商群原始消息转成“可追溯、可验证、不可误发布”的报价事实，宁可不上墙，也绝不把错价、错面额、错国家/币种上墙。
-**Current focus:** Phase 08 — shadow-validation-gate
+**Current focus:** Phase 08 — experimental-active-wall-gate
 
 ## Current Position
 
-Phase: 08 (shadow-validation-gate) — READY FOR PLANNING
+Phase: 08 (experimental-active-wall-gate) — READY FOR PLANNING
 Plan: 0 of 3
 Status: Phase 07 complete; Phase 08 ready for planning
 Last activity: 2026-04-15 -- Phase 07 completed and verified
@@ -54,7 +54,7 @@ Progress: [█████████░] 89% of milestone phases completed
 
 **Recent Trend:**
 
-- Last 5 plans: Phase 07 completed; the next gate is shadow validation planning
+- Last 5 plans: Phase 07 completed; the next gate is experimental active wall planning
 - Trend: Stable
 
 | Phase 02-validation-engine P01 | 14min | 2 tasks | 4 files |

@@ -2,7 +2,7 @@
 
 ## Overview
 
-This roadmap turns the current brownfield quote wall into a formal validation pipeline. The sequence is deliberate: first separate candidates from facts, then build validators, then prove the group-profile evolution loop against the real exception pool through a repair state machine and constrained remediation workflow, and only after that harden publish authority, snapshot semantics, operator verification, and shadow-mode gates. The governing idea is not to train a万能解析器, but to keep evolving each group's own profile as a finite, verifiable grammar.
+This roadmap turns the current brownfield quote wall into a formal validation pipeline. The sequence is deliberate: first separate candidates from facts, then build validators, then prove the group-profile evolution loop against the real exception pool through a repair state machine and constrained remediation workflow, and only after that harden publish authority, snapshot semantics, operator verification, and an operator-owned experimental active wall gate. The governing idea is not to train a万能解析器, but to keep evolving each group's own profile as a finite, verifiable grammar.
 
 ## Phases
 
@@ -20,7 +20,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 3: Fact Protection Publisher** - Make one guarded publisher the only path that can mutate active quote facts
 - [x] **Phase 4: Snapshot / Delta Semantics** - Distinguish `full_snapshot` from `delta_update` and default safely
 - [x] **Phase 7: Operator Verification Workbench** - Expose message-level candidate, rejection, and publish decision evidence for debugging
-- [ ] **Phase 8: Shadow Validation Gate** - Run the pipeline safely in validation mode without handing it default production authority
+- [ ] **Phase 8: Experimental Active Wall Gate** - Let the system update a single-operator experimental wall under full custody, without granting automatic downstream or default production authority
 
 ## Phase Details
 
@@ -146,20 +146,20 @@ Plans:
 - [x] 07-02: Expose candidate / validator / publish decision evidence in the web workbench
 - [x] 07-03: Build the failure dictionary / repair lexicon from repair cases, replay fixtures, and known-good fixes
 
-### Phase 8: Shadow Validation Gate
-**Goal**: Run the full pipeline in validation mode against real samples without handing it default authority over production publication.
+### Phase 8: Experimental Active Wall Gate
+**Goal**: Let the full pipeline update a single-operator experimental active wall under system custody, while keeping downstream automation and formal production authority switched off.
 **Depends on**: Phase 7
 **Requirements**: [GOV-01]
 **Success Criteria** (what must be TRUE):
-  1. The pipeline can run in shadow mode and produce proposed publish results without automatically taking over production
-  2. The operator can compare proposed results against current wall state and replay evidence
-  3. The project has a clear go/no-go boundary before any future production handoff
+  1. The pipeline can update the experimental wall only through the guarded publisher and still preserve all validator / snapshot / evidence lineage
+  2. The operator can see real wall mutations, untouched rows, exceptions, and repair evidence without granting any automatic downstream action
+  3. The project has a clear go / no-go boundary before any future promotion from experimental wall to formal production authority
 **Plans**: TBD
 
 Plans:
-- [ ] 08-01: Add validation-only execution mode and publish suppression
-- [ ] 08-02: Add comparison outputs between proposed publishes and current wall state
-- [ ] 08-03: Define acceptance gate for any future production adoption
+- [ ] 08-01: Add experimental-wall execution switches and keep all quote mutations inside guarded publisher custody
+- [ ] 08-02: Expose operator-facing evidence for real wall updates, untouched rows, and exception carryover during experimental running
+- [ ] 08-03: Define promotion criteria from experimental wall to formal production authority, including downstream actions that must remain off
 
 ## Progress
 
@@ -176,4 +176,4 @@ Phases execute in strategic order: 1 → 2 → 2.1 → 5 → 6 → 3 → 4 → 7
 | 3. Fact Protection Publisher | 3/3 | Completed | 2026-04-15 |
 | 4. Snapshot / Delta Semantics | 3/3 | Completed | 2026-04-15 |
 | 7. Operator Verification & Failure Dictionary | 3/3 | Completed | 2026-04-15 |
-| 8. Shadow Validation Gate | 0/3 | Not started | - |
+| 8. Experimental Active Wall Gate | 0/3 | Not started | - |
