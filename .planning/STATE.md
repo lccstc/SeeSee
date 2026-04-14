@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: verifying
-stopped_at: Completed 05-03-PLAN.md
-last_updated: "2026-04-14T00:15:58.856Z"
-last_activity: 2026-04-14
+status: human_needed
+stopped_at: Phase 05 awaiting manual verification
+last_updated: "2026-04-14T07:05:00+07:00"
+last_activity: 2026-04-14 -- Phase 05 automated verification passed; manual UAT pending
 progress:
   total_phases: 9
   completed_phases: 4
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-04-13)
 
 ## Current Position
 
-Phase: 05 (exception-repair-state-machine) — EXECUTING
-Plan: 3 of 3
-Status: Phase complete — ready for verification
-Last activity: 2026-04-14
+Phase: 05 (exception-repair-state-machine) — HUMAN VERIFICATION REQUIRED
+Plan: verification complete
+Status: Automated verification passed; waiting on two manual checks from 05-VERIFICATION.md
+Last activity: 2026-04-14 -- verifier confirmed 3/3 must-haves with no blocking code gaps
 
-Progress: [████████░░] 83% of currently planned work
+Progress: [██████████] 100% of currently planned work
 
 ## Performance Metrics
 
@@ -95,7 +95,8 @@ Recent decisions affecting current work:
 - Phase 02.1 completed: corpus, deterministic candidate hardening, and bootstrap coverage are now in repo and verified
 - Roadmap order changed: validate repair-state-machine and constrained remediation before guarded publisher / snapshot semantics
 - Phase 05-01 completed: additive repair-case packaging now exists for runtime parse failures and validator no-publish outcomes
-- Phase 05 next: immutable baseline replay, before/after attempt linkage, and append-only attempt history remain for 05-02 and 05-03
+- Phase 05 implemented: repair cases, immutable baseline replay, append-only attempt history, and handler state sync are all in place
+- Phase 05 automated verification passed: only live package fidelity and wording UAT remain
 
 ### Pending Todos
 
@@ -110,5 +111,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-04-14T00:15:51.169Z
-Stopped at: Completed 05-03-PLAN.md
+Stopped at: Phase 05 awaiting manual verification
 Resume file: None

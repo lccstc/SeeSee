@@ -170,7 +170,7 @@ Phases execute in strategic order: 1 → 2 → 2.1 → 5 → 6 → 3 → 4 → 7
 | 1. Candidate Contract Foundation | 3/3 | Completed | 2026-04-14 |
 | 2. Validation Engine | 3/3 | Completed | 2026-04-14 |
 | 2.1. Real Exception Corpus & Candidate Coverage | 3/3 | Completed | 2026-04-14 |
-| 5. Exception Repair State Machine | 0/3 | Not started | - |
+| 5. Exception Repair State Machine | 3/3 | Human verification needed | - |
 | 6. Constrained Auto-Remediation Loop | 0/3 | Not started | - |
 | 3. Fact Protection Publisher | 0/3 | Not started | - |
 | 4. Snapshot / Delta Semantics | 0/3 | Not started | - |
