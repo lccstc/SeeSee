@@ -655,6 +655,22 @@ _STYLE = """
   .quote-hero {
     padding: 26px;
   }
+  .quote-hero-bands {
+    display: grid;
+    gap: 18px;
+    margin-bottom: 18px;
+  }
+  .quote-hero-band {
+    display: grid;
+    gap: 18px;
+    align-items: start;
+  }
+  .quote-hero-band-status {
+    grid-template-columns: minmax(280px, 0.9fr) minmax(0, 1.1fr);
+  }
+  .quote-hero-band-watch {
+    grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr);
+  }
   .quote-hero-grid {
     display: grid;
     grid-template-columns: 1.3fr 0.95fr;
@@ -709,12 +725,10 @@ _STYLE = """
   }
   .quote-ops-metrics {
     grid-template-columns: repeat(6, minmax(0, 1fr));
-    margin-bottom: 18px;
   }
   .quote-watchlist {
     display: grid;
     gap: 12px;
-    margin-bottom: 18px;
   }
   .quote-watchlist-grid {
     display: grid;
@@ -750,7 +764,6 @@ _STYLE = """
     gap: 10px;
     padding: 16px 18px;
     border-radius: 22px;
-    margin-bottom: 18px;
     background: rgba(10, 15, 20, 0.92);
     border: 1px solid rgba(95, 135, 255, 0.14);
     box-shadow: var(--shadow-soft);
@@ -802,12 +815,28 @@ _STYLE = """
   }
   .quote-filter-grid {
     display: grid;
-    grid-template-columns: 1.6fr repeat(3, 1fr) 0.9fr 0.9fr auto auto;
+    grid-template-columns:
+      minmax(240px, 1.8fr)
+      repeat(2, minmax(140px, 1fr))
+      minmax(180px, 1fr)
+      minmax(130px, 0.85fr)
+      minmax(130px, 0.85fr)
+      repeat(2, minmax(112px, auto));
     gap: 10px;
     padding: 16px;
     border-radius: 22px;
     background: rgba(10, 15, 20, 0.88);
     border: 1px solid rgba(243, 165, 47, 0.08);
+  }
+  .quote-filter-band {
+    display: grid;
+    gap: 12px;
+  }
+  .quote-filter-band .muted {
+    line-height: 1.6;
+  }
+  .quote-primary-filter-band {
+    margin-bottom: 18px;
   }
   .quote-filter-grid input,
   .quote-filter-grid select,
@@ -1470,17 +1499,25 @@ _STYLE = """
       font-size: 38px;
     }
     .dashboard-summary-grid,
-    .quote-hero-grid {
+    .quote-hero-grid,
+    .quote-hero-band-status,
+    .quote-hero-band-watch {
       grid-template-columns: 1fr;
     }
     .cards {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
     .quote-metrics,
-    .quote-filter-grid,
     .recon-filter-form,
     .recon-adjust-form {
       grid-template-columns: 1fr;
+    }
+    .quote-filter-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .quote-filter-grid > :first-child,
+    .quote-filter-grid > :nth-child(4) {
+      grid-column: 1 / -1;
     }
     .entry-grid,
     .subgrid,
@@ -1530,6 +1567,15 @@ _STYLE = """
     }
   }
   @media (max-width: 1280px) {
+    .quote-hero-band-watch {
+      grid-template-columns: 1fr;
+    }
+    .quote-filter-grid {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+    .quote-filter-grid > :first-child {
+      grid-column: span 2;
+    }
     .quote-harvest-workflow {
       grid-template-columns: minmax(300px, 0.92fr) minmax(360px, 1.08fr);
       height: auto;
@@ -1575,6 +1621,13 @@ _STYLE = """
     .quote-desk-grid-3,
     .quote-desk-grid-4 {
       grid-template-columns: 1fr;
+    }
+    .quote-filter-grid {
+      grid-template-columns: 1fr;
+    }
+    .quote-filter-grid > :first-child,
+    .quote-filter-grid > :nth-child(4) {
+      grid-column: auto;
     }
   }
 </style>
@@ -1920,61 +1973,67 @@ def render_quotes_page() -> str:
       <a class="quote-link" href="#quote-exceptions">转到风险池</a>
     </div>
   </div>
-  <div class="quote-experimental-banner">
-    <div class="label">Experimental Active Wall</div>
-    <strong id="quote-experimental-summary">实验墙状态加载中...</strong>
-    <div class="muted" id="quote-experimental-boundary">当前墙的运行边界加载中...</div>
-  </div>
-  <div class="quote-metrics quote-ops-metrics">
-    <article class="quote-metric">
-      <div class="label">今日上墙消息</div>
-      <div class="value" id="quote-wall-update-count">0</div>
-    </article>
-    <article class="quote-metric">
-      <div class="label">今日异常</div>
-      <div class="value" id="quote-exception-today-count">0</div>
-    </article>
-    <article class="quote-metric">
-      <div class="label">今日 Mixed</div>
-      <div class="value" id="quote-mixed-outcome-count">0</div>
-    </article>
-    <article class="quote-metric">
-      <div class="label">修补成功</div>
-      <div class="value" id="quote-remediation-success-count">0</div>
-    </article>
-    <article class="quote-metric">
-      <div class="label">修补升级</div>
-      <div class="value" id="quote-remediation-escalation-count">0</div>
-    </article>
-    <article class="quote-metric">
-      <div class="label">整版风险</div>
-      <div class="value" id="quote-risky-snapshot-count">0</div>
-    </article>
-  </div>
-  <section class="quote-watchlist">
-    <div class="panel-heading" style="padding:0;">
-      <div>
-        <div class="section-kicker">Current Watchlist</div>
-        <h3 style="margin:0;">高风险群 / 今日盯盘</h3>
-        <div class="muted">先看哪几个群最吵、最危险、最值得优先修。</div>
+  <div class="quote-hero-bands">
+    <div class="quote-hero-band quote-hero-band-status">
+      <div class="quote-experimental-banner">
+        <div class="label">Experimental Active Wall</div>
+        <strong id="quote-experimental-summary">实验墙状态加载中...</strong>
+        <div class="muted" id="quote-experimental-boundary">当前墙的运行边界加载中...</div>
+      </div>
+      <div class="quote-metrics quote-ops-metrics">
+        <article class="quote-metric">
+          <div class="label">今日上墙消息</div>
+          <div class="value" id="quote-wall-update-count">0</div>
+        </article>
+        <article class="quote-metric">
+          <div class="label">今日异常</div>
+          <div class="value" id="quote-exception-today-count">0</div>
+        </article>
+        <article class="quote-metric">
+          <div class="label">今日 Mixed</div>
+          <div class="value" id="quote-mixed-outcome-count">0</div>
+        </article>
+        <article class="quote-metric">
+          <div class="label">修补成功</div>
+          <div class="value" id="quote-remediation-success-count">0</div>
+        </article>
+        <article class="quote-metric">
+          <div class="label">修补升级</div>
+          <div class="value" id="quote-remediation-escalation-count">0</div>
+        </article>
+        <article class="quote-metric">
+          <div class="label">整版风险</div>
+          <div class="value" id="quote-risky-snapshot-count">0</div>
+        </article>
       </div>
     </div>
-    <div id="quote-watchlist-grid" class="quote-watchlist-grid">
-      <div class="muted">观察台加载中...</div>
+    <div class="quote-hero-band quote-hero-band-watch">
+      <section class="quote-watchlist">
+        <div class="panel-heading" style="padding:0;">
+          <div>
+            <div class="section-kicker">Current Watchlist</div>
+            <h3 style="margin:0;">高风险群 / 今日盯盘</h3>
+            <div class="muted">先看哪几个群最吵、最危险、最值得优先修。</div>
+          </div>
+        </div>
+        <div id="quote-watchlist-grid" class="quote-watchlist-grid">
+          <div class="muted">观察台加载中...</div>
+        </div>
+      </section>
+      <section class="quote-promotion-panel" id="quote-promotion-gate">
+        <div class="panel-heading" style="padding:0;">
+          <div>
+            <div class="section-kicker">Promotion Boundary</div>
+            <h3 style="margin:0;">升格边界</h3>
+            <div class="muted" id="quote-promotion-summary">实验墙升格边界加载中...</div>
+          </div>
+        </div>
+        <div id="quote-promotion-criteria" class="quote-promotion-criteria">
+          <div class="muted">升格条件加载中...</div>
+        </div>
+      </section>
     </div>
-  </section>
-  <section class="quote-promotion-panel" id="quote-promotion-gate">
-    <div class="panel-heading" style="padding:0;">
-      <div>
-        <div class="section-kicker">Promotion Boundary</div>
-        <h3 style="margin:0;">升格边界</h3>
-        <div class="muted" id="quote-promotion-summary">实验墙升格边界加载中...</div>
-      </div>
-    </div>
-    <div id="quote-promotion-criteria" class="quote-promotion-criteria">
-      <div class="muted">升格条件加载中...</div>
-    </div>
-  </section>
+  </div>
   <div class="quote-hero-grid">
     <div class="quote-command">
       <p>主屏只做一件事：先看当前最高价，再判断是继续收、切换来源群，还是进入模板治理和异常处理。价格、变动、来源、时效必须一眼扫出来。</p>
@@ -1999,32 +2058,34 @@ def render_quotes_page() -> str:
       </article>
     </div>
   </div>
-  <form id="quote-filter-form" class="quote-filter-grid">
-    <input name="search" id="quote-search" type="search" placeholder="搜卡种 / 国家 / 面额 / 形态 / 限制" autocomplete="off" />
-    <input name="card_type" id="quote-card-type" placeholder="卡种，如 Steam" />
-    <input name="country_or_currency" id="quote-country" placeholder="国家 / 币种，如 USD" />
-    <input name="source_group_key" id="quote-source-group" placeholder="客人群 Key" />
-    <select name="quote_status" id="quote-status">
-      <option value="">全部状态</option>
-      <option value="live">可用</option>
-      <option value="stale">超时</option>
-      <option value="watch">观察</option>
-      <option value="blocked">不收</option>
-      <option value="pending">待处理</option>
-    </select>
-    <select name="form_factor" id="quote-form-factor">
-      <option value="">全部形态</option>
-      <option value="card">卡图</option>
-      <option value="code">代码</option>
-      <option value="paper">纸质</option>
-      <option value="electron">电子</option>
-      <option value="horizontal">横板</option>
-      <option value="vertical">竖卡</option>
-    </select>
-    <button type="submit">筛选</button>
-    <button type="button" id="quote-filter-clear">清空</button>
-  </form>
-  <div class="muted" id="quote-filter-status">主屏按精确 SKU 显示当前最高价；离散面额与区间分开，点“深度”看同 SKU 其余来源。</div>
+  <div class="quote-filter-band quote-primary-filter-band">
+    <form id="quote-filter-form" class="quote-filter-grid">
+      <input name="search" id="quote-search" type="search" placeholder="搜卡种 / 国家 / 面额 / 形态 / 限制" autocomplete="off" />
+      <input name="card_type" id="quote-card-type" placeholder="卡种，如 Steam" />
+      <input name="country_or_currency" id="quote-country" placeholder="国家 / 币种，如 USD" />
+      <input name="source_group_key" id="quote-source-group" placeholder="客人群 Key" />
+      <select name="quote_status" id="quote-status">
+        <option value="">全部状态</option>
+        <option value="live">可用</option>
+        <option value="stale">超时</option>
+        <option value="watch">观察</option>
+        <option value="blocked">不收</option>
+        <option value="pending">待处理</option>
+      </select>
+      <select name="form_factor" id="quote-form-factor">
+        <option value="">全部形态</option>
+        <option value="card">卡图</option>
+        <option value="code">代码</option>
+        <option value="paper">纸质</option>
+        <option value="electron">电子</option>
+        <option value="horizontal">横板</option>
+        <option value="vertical">竖卡</option>
+      </select>
+      <button type="submit">筛选</button>
+      <button type="button" id="quote-filter-clear">清空</button>
+    </form>
+    <div class="muted" id="quote-filter-status">主屏按精确 SKU 显示当前最高价；离散面额与区间分开，点“深度”看同 SKU 其余来源。</div>
+  </div>
   <div class="quote-board-shell">
     <div class="table-wrap">
     <table id="quote-board-table" class="quote-table">
@@ -2272,13 +2333,15 @@ def render_quotes_page() -> str:
       <div class="muted" id="quote-failure-dictionary-status">先查词条，再修 case；这里只给修补建议，不给发布权。</div>
     </div>
   </div>
-  <form id="quote-failure-dictionary-form" class="quote-filter-grid">
-    <input name="search" id="quote-failure-dictionary-search" type="search" placeholder="搜 failure code / symptom / root cause / group key" autocomplete="off" />
-    <button type="submit">搜索词条</button>
-    <button type="button" id="quote-failure-dictionary-clear">清空</button>
-  </form>
-  <div id="quote-failure-dictionary-list" class="stack">
-    <div class="muted">修复词典加载中...</div>
+  <div class="quote-filter-band quote-secondary-filter-band">
+    <form id="quote-failure-dictionary-form" class="quote-filter-grid">
+      <input name="search" id="quote-failure-dictionary-search" type="search" placeholder="搜 failure code / symptom / root cause / group key" autocomplete="off" />
+      <button type="submit">搜索词条</button>
+      <button type="button" id="quote-failure-dictionary-clear">清空</button>
+    </form>
+    <div id="quote-failure-dictionary-list" class="stack">
+      <div class="muted">修复词典加载中...</div>
+    </div>
   </div>
 </section>
 <div class="quote-modal-backdrop" id="quote-ranking-modal" aria-hidden="true">
