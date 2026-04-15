@@ -212,7 +212,7 @@ class WebAppTests(PostgresTestCase):
 
         response = {"status": 500, "body": b""}
 
-        def start_response(status: str, headers: list[tuple[str, str]]) -> None:
+        def start_response(status: str, headers: list[tuple[str, str]], exc_info=None) -> None:
             response["status"] = int(status.split(" ", 1)[0])
 
         chunks = self.app(environ, start_response)
@@ -245,7 +245,7 @@ class WebAppTests(PostgresTestCase):
         response = {"status": 500, "headers": {}, "body": b""}
 
         def start_response(
-            status: str, response_headers: list[tuple[str, str]]
+            status: str, response_headers: list[tuple[str, str]], exc_info=None
         ) -> None:
             response["status"] = int(status.split(" ", 1)[0])
             response["headers"] = {key: value for key, value in response_headers}
@@ -1045,6 +1045,44 @@ class WebAppTests(PostgresTestCase):
         self.assertEqual(payload["total"], 1)
         self.assertEqual(payload["rows"][0]["reason"], "missing_group_template")
         self.assertEqual(payload["rows"][0]["chat_name"], "新改名客人群")
+
+    def test_quote_like_message_from_supplier_group_does_not_enter_exception_queue(self) -> None:
+        from bookkeeping_core.contracts import NormalizedMessageEnvelope
+        from bookkeeping_core.quotes import QuoteCaptureService
+
+        self.db.set_group(
+            platform="whatsapp",
+            group_key="whatsapp:group-supplier@g.us",
+            chat_id="group-supplier@g.us",
+            chat_name="供应商群",
+            group_num=2,
+        )
+
+        service = QuoteCaptureService(self.db)
+        result = service.capture_from_message(
+            NormalizedMessageEnvelope.from_dict(
+                {
+                    "platform": "whatsapp",
+                    "message_id": "msg-supplier-1",
+                    "chat_id": "group-supplier@g.us",
+                    "chat_name": "供应商群",
+                    "is_group": True,
+                    "sender_id": "seller-2",
+                    "sender_name": "Supplier",
+                    "sender_kind": "user",
+                    "content_type": "text",
+                    "text": "【iTunes CAD】\n15-90=5.0\n100/150=5.42",
+                    "received_at": "2026-04-11 07:15:00",
+                }
+            )
+        )
+
+        self.assertFalse(result["captured"])
+        self.assertEqual(result["rows"], 0)
+        self.assertEqual(result["exceptions"], 0)
+
+        payload = self.db.list_quote_exceptions(limit=10, offset=0, resolution_status="all")
+        self.assertEqual(payload["total"], 0)
 
     def test_quote_exception_endpoint_defaults_to_open_page_with_stats(self) -> None:
         open_id = self.db.record_quote_exception(

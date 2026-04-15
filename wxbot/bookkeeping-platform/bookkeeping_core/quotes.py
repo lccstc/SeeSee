@@ -1247,10 +1247,10 @@ class QuoteCaptureService:
         text = str(raw_text if raw_text is not None else envelope.text or "").strip()
         if not text or not envelope.is_group or envelope.content_type != "text":
             return {"captured": False, "rows": 0, "exceptions": 0}
-        # 采集供应商组（2/3/4）和客人组（5/6/7/8）的报价
+        # 只采集客人组（5/6/7/8）的报价异常与候选
         group_key = f"{envelope.platform}:{envelope.chat_id}"
         group_num = self.db.get_group_num(group_key)
-        if group_num is None or group_num not in (2, 3, 4, 5, 6, 7, 8):
+        if group_num is None or group_num not in (5, 6, 7, 8):
             return {"captured": False, "rows": 0, "exceptions": 0}
         group_profile = self._group_profile_for_envelope(envelope, text)
         inquiry_reply = self._capture_inquiry_reply(envelope, text=text)

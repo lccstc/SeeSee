@@ -31,6 +31,7 @@ from bookkeeping_core.quotes import (
 from bookkeeping_core.reconciliation import ReconciliationService
 from bookkeeping_core.reporting import ReportingService
 from bookkeeping_core.runtime import UnifiedBookkeepingRuntime
+from bookkeeping_web.compression import gzip_middleware
 from bookkeeping_web.pages import (
     render_dashboard_page,
     render_history_page,
@@ -277,8 +278,9 @@ def create_app(
             return _with_db(db_file, start_response, _handle_difference_trace, environ)
         return _respond_json(start_response, 404, {"error": f"Unknown path: {path}"})
 
-    app.close = close_runtime  # type: ignore[attr-defined]
-    return app
+    wrapped_app = gzip_middleware(app)
+    wrapped_app.close = close_runtime  # type: ignore[attr-defined]
+    return wrapped_app
 
 
 def _with_db(db_target: str | Path, start_response, handler, environ=None, *args):
