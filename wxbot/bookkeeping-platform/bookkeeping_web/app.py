@@ -2795,7 +2795,7 @@ def _respond_json(
     payload: dict | list,
     extra_headers: list[tuple[str, str]] | None = None,
 ):
-    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    body = json.dumps(payload, ensure_ascii=False, default=_normalize_json_value).encode("utf-8")
     headers = [
         ("Content-Type", "application/json; charset=utf-8"),
         ("Content-Length", str(len(body))),

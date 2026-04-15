@@ -5,6 +5,7 @@ import io
 import json
 import os
 import unittest
+from datetime import datetime
 from unittest.mock import patch
 from urllib.parse import urlencode
 from wsgiref.util import setup_testing_defaults
@@ -39,6 +40,31 @@ class WebRepairStatusTextTests(unittest.TestCase):
         _annotate_quote_exception_repair_status_text(db=_FakeDB(), rows=rows)
         self.assertIn("未改动报价墙", rows[0]["repair_case"]["status_text"])
         self.assertIn("升级", rows[0]["repair_case"]["status_text"])
+
+
+class WebJsonResponseTests(unittest.TestCase):
+    def test_respond_json_serializes_nested_datetime_values(self) -> None:
+        from bookkeeping_web.app import _respond_json
+
+        captured = {}
+
+        def start_response(status, headers):
+            captured["status"] = status
+            captured["headers"] = headers
+
+        chunks = _respond_json(
+            start_response,
+            200,
+            {
+                "rows": [{"created_at": datetime(2026, 4, 15, 23, 58, 30)}],
+                "nested": {"confirmed_at": datetime(2026, 4, 15, 23, 59, 31)},
+            },
+        )
+        payload = json.loads(b"".join(chunks).decode("utf-8"))
+
+        self.assertEqual(captured["status"], "200 OK")
+        self.assertEqual(payload["rows"][0]["created_at"], "2026-04-15 23:58:30")
+        self.assertEqual(payload["nested"]["confirmed_at"], "2026-04-15 23:59:31")
 
 
 def _make_repair_candidate(
