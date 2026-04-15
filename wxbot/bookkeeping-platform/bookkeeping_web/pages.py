@@ -951,6 +951,28 @@ _STYLE = """
     display: block;
     margin-bottom: 6px;
   }
+  .quote-operator-grid {
+    gap: 24px;
+    grid-template-columns: minmax(0, 1.04fr) minmax(0, 0.96fr);
+    align-items: start;
+  }
+  .quote-desk-zone {
+    display: grid;
+    gap: 14px;
+    padding: 16px;
+    border-radius: 20px;
+    background: rgba(7, 11, 15, 0.58);
+    border: 1px solid rgba(243, 165, 47, 0.08);
+  }
+  .quote-desk-intro {
+    background: linear-gradient(180deg, rgba(12, 18, 24, 0.92), rgba(8, 12, 16, 0.88));
+  }
+  .quote-desk-current-state {
+    gap: 12px;
+  }
+  .quote-desk-intro .toolbar {
+    align-items: start;
+  }
   .quote-desk-layout {
     display: grid;
     gap: 14px;
@@ -963,6 +985,9 @@ _STYLE = """
   .quote-desk-flow {
     display: grid;
     gap: 12px;
+  }
+  .quote-desk-form {
+    gap: 16px;
   }
   .quote-desk-note {
     display: grid;
@@ -1009,8 +1034,8 @@ _STYLE = """
   }
   .quote-desk-block {
     display: grid;
-    gap: 12px;
-    padding: 14px;
+    gap: 14px;
+    padding: 16px 18px;
     border-radius: 18px;
     background: rgba(10, 15, 20, 0.88);
     border: 1px solid rgba(243, 165, 47, 0.08);
@@ -1027,14 +1052,14 @@ _STYLE = """
   }
   .quote-desk-grid {
     display: grid;
-    gap: 10px;
+    gap: 12px;
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .quote-desk-grid-3 {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(150px, 1fr));
   }
   .quote-desk-grid-4 {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(140px, 1fr));
   }
   .quote-desk-field {
     display: grid;
@@ -1055,6 +1080,7 @@ _STYLE = """
     display: flex;
     gap: 8px;
     flex-wrap: wrap;
+    padding-top: 4px;
   }
   .quote-desk-actions button {
     width: auto;
@@ -1575,6 +1601,13 @@ _STYLE = """
     }
     .quote-filter-grid > :first-child {
       grid-column: span 2;
+    }
+    .quote-operator-grid {
+      grid-template-columns: 1fr;
+    }
+    .quote-desk-grid-3,
+    .quote-desk-grid-4 {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
     }
     .quote-harvest-workflow {
       grid-template-columns: minmax(300px, 0.92fr) minmax(360px, 1.08fr);
@@ -2097,215 +2130,227 @@ def render_quotes_page() -> str:
     </div>
   </div>
 </section>
-<div class="ops-grid">
+<div class="ops-grid quote-operator-grid">
 <section class="panel stack panel-config" id="quote-profile-panel">
-  <div class="toolbar">
-    <div>
-      <div class="section-kicker">Parsing Desk</div>
-      <h2>群模板配置台</h2>
-      <div class="muted">这里不是“填配置”，而是给一个群定稳定口径。先认群，再定默认值，再选最接近的模板。</div>
+  <div class="quote-desk-zone quote-desk-intro">
+    <div class="toolbar">
+      <div>
+        <div class="section-kicker">Parsing Desk</div>
+        <h2>群模板配置台</h2>
+        <div class="muted">这里不是“填配置”，而是给一个群定稳定口径。先认群，再定默认值，再选最接近的模板。</div>
+      </div>
+    </div>
+    <div class="quote-desk-note">
+      <strong>最短路径</strong>
+      <ul>
+        <li>先填平台、群 ID、群名，锁定这个群是谁。</li>
+        <li>再填默认卡种、币种、形态、倍数和超时，补齐群里省略信息。</li>
+        <li>最后选最接近的模板，不够再补高级配置。</li>
+      </ul>
     </div>
   </div>
-  <div class="quote-desk-note">
-    <strong>最短路径</strong>
-    <ul>
-      <li>先填平台、群 ID、群名，锁定这个群是谁。</li>
-      <li>再填默认卡种、币种、形态、倍数和超时，补齐群里省略信息。</li>
-      <li>最后选最接近的模板，不够再补高级配置。</li>
-    </ul>
+  <div class="quote-desk-zone quote-desk-workflow">
+    <form id="quote-profile-form" class="quote-desk-form">
+      <section class="quote-desk-block">
+        <div class="quote-desk-block-head">
+          <h3>群信息</h3>
+          <div class="muted">先认这个群，后面异常才能一键回填到这里。</div>
+        </div>
+        <div class="quote-desk-grid quote-desk-grid-3">
+          <label class="quote-desk-field">
+            <span>平台</span>
+            <input name="platform" placeholder="如 whatsapp" />
+          </label>
+          <label class="quote-desk-field">
+            <span>群 ID / chat_id</span>
+            <input name="chat_id" placeholder="必填" required />
+          </label>
+          <label class="quote-desk-field">
+            <span>群名</span>
+            <input name="chat_name" placeholder="给运营看的名字" />
+          </label>
+        </div>
+      </section>
+      <section class="quote-desk-block">
+        <div class="quote-desk-block-head">
+          <h3>默认口径</h3>
+          <div class="muted">这些值会补齐群里省略写法，减少短句掉进异常池。</div>
+        </div>
+        <div class="quote-desk-grid quote-desk-grid-4">
+          <label class="quote-desk-field">
+            <span>默认卡种</span>
+            <input name="default_card_type" placeholder="如 Apple" />
+          </label>
+          <label class="quote-desk-field">
+            <span>默认国家 / 币种</span>
+            <input name="default_country_or_currency" placeholder="如 USD" />
+          </label>
+          <label class="quote-desk-field">
+            <span>默认形态</span>
+            <input name="default_form_factor" placeholder="如 横白 / 竖卡 / 代码" />
+          </label>
+          <label class="quote-desk-field">
+            <span>默认倍数</span>
+            <input name="default_multiplier" placeholder="可空，如 50X" />
+          </label>
+          <label class="quote-desk-field">
+            <span>超时分钟</span>
+            <input name="stale_after_minutes" placeholder="如 30" />
+          </label>
+        </div>
+      </section>
+      <section class="quote-desk-block">
+        <div class="quote-desk-block-head">
+          <h3>解析模板</h3>
+          <div class="muted">先选模板，再决定是否需要高级配置。</div>
+        </div>
+        <div class="quote-desk-grid">
+          <label class="quote-desk-field">
+            <span>模板名</span>
+            <input name="parser_template" placeholder="如 apple_modifier_sheet" list="quote-template-options" />
+          </label>
+          <label class="quote-desk-field full">
+            <span>高级模板配置</span>
+            <textarea name="template_config" placeholder="默认模板不够时再填，没把握先留空"></textarea>
+          </label>
+        </div>
+        <datalist id="quote-template-options">
+          <option value="sectioned_group_sheet"></option>
+          <option value="group_fixed_sheet"></option>
+          <option value="apple_modifier_sheet"></option>
+          <option value="section_sheet"></option>
+          <option value="simple_sheet"></option>
+          <option value="supermarket-card"></option>
+        </datalist>
+      </section>
+      <section class="quote-desk-block">
+        <div class="quote-desk-block-head">
+          <h3>常用模板参考</h3>
+          <div class="muted">只保留最常用三类，避免把这块做成说明文档。</div>
+        </div>
+        <div class="quote-desk-grid quote-desk-grid-3">
+          <div class="quote-desk-preset">
+            <strong>group_fixed_sheet</strong>
+            <div class="muted">固定群表，适合整齐报价和形态差价。</div>
+          </div>
+          <div class="quote-desk-preset">
+            <strong>apple_modifier_sheet</strong>
+            <div class="muted">Apple 群专用，先基准价，再按修饰词派生。</div>
+          </div>
+          <div class="quote-desk-preset">
+            <strong>supermarket-card</strong>
+            <div class="muted">超市卡混合群，多个品牌混在一条原文里时用。</div>
+          </div>
+        </div>
+      </section>
+      <div class="quote-desk-actions">
+        <button type="submit">保存模板</button>
+        <button type="button" id="quote-profile-clear">清空表单</button>
+      </div>
+    </form>
+    <div class="muted" id="quote-profile-prefill-status">可从风险池把当前异常一键带入配置台，补成稳定模板。</div>
   </div>
-  <form id="quote-profile-form" class="quote-desk-form">
-    <section class="quote-desk-block">
-      <div class="quote-desk-block-head">
-        <h3>群信息</h3>
-        <div class="muted">先认这个群，后面异常才能一键回填到这里。</div>
-      </div>
-      <div class="quote-desk-grid quote-desk-grid-3">
-        <label class="quote-desk-field">
-          <span>平台</span>
-          <input name="platform" placeholder="如 whatsapp" />
-        </label>
-        <label class="quote-desk-field">
-          <span>群 ID / chat_id</span>
-          <input name="chat_id" placeholder="必填" required />
-        </label>
-        <label class="quote-desk-field">
-          <span>群名</span>
-          <input name="chat_name" placeholder="给运营看的名字" />
-        </label>
-      </div>
-    </section>
-    <section class="quote-desk-block">
-      <div class="quote-desk-block-head">
-        <h3>默认口径</h3>
-        <div class="muted">这些值会补齐群里省略写法，减少短句掉进异常池。</div>
-      </div>
-      <div class="quote-desk-grid quote-desk-grid-4">
-        <label class="quote-desk-field">
-          <span>默认卡种</span>
-          <input name="default_card_type" placeholder="如 Apple" />
-        </label>
-        <label class="quote-desk-field">
-          <span>默认国家 / 币种</span>
-          <input name="default_country_or_currency" placeholder="如 USD" />
-        </label>
-        <label class="quote-desk-field">
-          <span>默认形态</span>
-          <input name="default_form_factor" placeholder="如 横白 / 竖卡 / 代码" />
-        </label>
-        <label class="quote-desk-field">
-          <span>默认倍数</span>
-          <input name="default_multiplier" placeholder="可空，如 50X" />
-        </label>
-        <label class="quote-desk-field">
-          <span>超时分钟</span>
-          <input name="stale_after_minutes" placeholder="如 30" />
-        </label>
-      </div>
-    </section>
-    <section class="quote-desk-block">
-      <div class="quote-desk-block-head">
-        <h3>解析模板</h3>
-        <div class="muted">先选模板，再决定是否需要高级配置。</div>
-      </div>
-      <div class="quote-desk-grid">
-        <label class="quote-desk-field">
-          <span>模板名</span>
-          <input name="parser_template" placeholder="如 apple_modifier_sheet" list="quote-template-options" />
-        </label>
-        <label class="quote-desk-field full">
-          <span>高级模板配置</span>
-          <textarea name="template_config" placeholder="默认模板不够时再填，没把握先留空"></textarea>
-        </label>
-      </div>
-      <datalist id="quote-template-options">
-        <option value="sectioned_group_sheet"></option>
-        <option value="group_fixed_sheet"></option>
-        <option value="apple_modifier_sheet"></option>
-        <option value="section_sheet"></option>
-        <option value="simple_sheet"></option>
-        <option value="supermarket-card"></option>
-      </datalist>
-    </section>
-    <section class="quote-desk-block">
-      <div class="quote-desk-block-head">
-        <h3>常用模板参考</h3>
-        <div class="muted">只保留最常用三类，避免把这块做成说明文档。</div>
-      </div>
-      <div class="quote-desk-grid quote-desk-grid-3">
-        <div class="quote-desk-preset">
-          <strong>group_fixed_sheet</strong>
-          <div class="muted">固定群表，适合整齐报价和形态差价。</div>
-        </div>
-        <div class="quote-desk-preset">
-          <strong>apple_modifier_sheet</strong>
-          <div class="muted">Apple 群专用，先基准价，再按修饰词派生。</div>
-        </div>
-        <div class="quote-desk-preset">
-          <strong>supermarket-card</strong>
-          <div class="muted">超市卡混合群，多个品牌混在一条原文里时用。</div>
-        </div>
-      </div>
-    </section>
-    <div class="quote-desk-actions">
-      <button type="submit">保存模板</button>
-      <button type="button" id="quote-profile-clear">清空表单</button>
+  <div class="quote-desk-zone quote-desk-current-state">
+    <div class="quote-desk-table-head">
+      <h3>当前已生效模板</h3>
+      <div class="muted">这里看已经进入主线解析的群口径，支持继续编辑或删除。</div>
     </div>
-  </form>
-  <div class="muted" id="quote-profile-prefill-status">可从风险池把当前异常一键带入配置台，补成稳定模板。</div>
-  <div class="quote-desk-table-head">
-    <h3>当前已生效模板</h3>
-    <div class="muted">这里看已经进入主线解析的群口径，支持继续编辑或删除。</div>
-  </div>
-  <div class="table-wrap">
-    <table id="quote-profile-table" class="quote-table">
-      <thead>
-        <tr><th>平台</th><th>群ID</th><th>群名</th><th>默认卡种</th><th>默认币种</th><th>默认形态</th><th>默认倍数</th><th>模板</th><th>超时</th><th>备注</th><th>操作</th></tr>
-      </thead>
-      <tbody><tr><td colspan="11" class="muted">暂无模板配置</td></tr></tbody>
-    </table>
+    <div class="table-wrap">
+      <table id="quote-profile-table" class="quote-table">
+        <thead>
+          <tr><th>平台</th><th>群ID</th><th>群名</th><th>默认卡种</th><th>默认币种</th><th>默认形态</th><th>默认倍数</th><th>模板</th><th>超时</th><th>备注</th><th>操作</th></tr>
+        </thead>
+        <tbody><tr><td colspan="11" class="muted">暂无模板配置</td></tr></tbody>
+      </table>
+    </div>
   </div>
 </section>
 <section class="panel stack panel-assist" id="quote-inquiry-panel">
-  <div class="toolbar">
-    <div>
-      <div class="section-kicker">Relay Desk</div>
-      <h2>短回复接力台</h2>
-      <div class="muted">这块只处理一种情况: 客人先问完整需求，群里下一条只回一个裸价。先把上下文挂住，再等短回复回主屏。</div>
+  <div class="quote-desk-zone quote-desk-intro">
+    <div class="toolbar">
+      <div>
+        <div class="section-kicker">Relay Desk</div>
+        <h2>短回复接力台</h2>
+        <div class="muted">这块只处理一种情况: 客人先问完整需求，群里下一条只回一个裸价。先把上下文挂住，再等短回复回主屏。</div>
+      </div>
+    </div>
+    <div class="quote-desk-note">
+      <strong>最短路径</strong>
+      <ul>
+        <li>只在“客人先问完整需求，群里下一条只回裸价”时使用。</li>
+        <li>先定客人群，再挂卡种、国家、面额、形态这几个上下文。</li>
+        <li>创建后，系统会在有效期内等下一条短回复来接力。</li>
+      </ul>
     </div>
   </div>
-  <div class="quote-desk-note">
-    <strong>最短路径</strong>
-    <ul>
-      <li>只在“客人先问完整需求，群里下一条只回裸价”时使用。</li>
-      <li>先定客人群，再挂卡种、国家、面额、形态这几个上下文。</li>
-      <li>创建后，系统会在有效期内等下一条短回复来接力。</li>
-    </ul>
+  <div class="quote-desk-zone quote-desk-workflow">
+    <form id="quote-inquiry-form" class="quote-desk-form">
+      <section class="quote-desk-block">
+        <div class="quote-desk-block-head">
+          <h3>客人群</h3>
+          <div class="muted">短回复最后会回到这个群。</div>
+        </div>
+        <div class="quote-desk-grid">
+          <label class="quote-desk-field">
+            <span>回复客人群 ID / chat_id</span>
+            <input name="chat_id" placeholder="必填" required />
+          </label>
+          <label class="quote-desk-field">
+            <span>回复客人群名</span>
+            <input name="chat_name" placeholder="方便识别，可空" />
+          </label>
+        </div>
+      </section>
+      <section class="quote-desk-block">
+        <div class="quote-desk-block-head">
+          <h3>询价上下文</h3>
+          <div class="muted">这些值就是下一条裸价要补回主屏的上下文。</div>
+        </div>
+        <div class="quote-desk-grid quote-desk-grid-4">
+          <label class="quote-desk-field">
+            <span>卡种</span>
+            <input name="card_type" placeholder="如 Apple" required />
+          </label>
+          <label class="quote-desk-field">
+            <span>国家 / 币种</span>
+            <input name="country_or_currency" placeholder="如 UK" required />
+          </label>
+          <label class="quote-desk-field">
+            <span>面额</span>
+            <input name="amount_range" placeholder="如 10" required />
+          </label>
+          <label class="quote-desk-field">
+            <span>形态</span>
+            <input name="form_factor" placeholder="如 不限 / 代码" />
+          </label>
+          <label class="quote-desk-field">
+            <span>倍数</span>
+            <input name="multiplier" placeholder="可空" />
+          </label>
+          <label class="quote-desk-field full">
+            <span>原始询价</span>
+            <input name="prompt_text" placeholder="如 Apple UK 10 现在什么价" />
+          </label>
+        </div>
+      </section>
+      <div class="quote-desk-actions">
+        <button type="submit">创建上下文</button>
+      </div>
+    </form>
   </div>
-  <form id="quote-inquiry-form" class="quote-desk-form">
-    <section class="quote-desk-block">
-      <div class="quote-desk-block-head">
-        <h3>客人群</h3>
-        <div class="muted">短回复最后会回到这个群。</div>
-      </div>
-      <div class="quote-desk-grid">
-        <label class="quote-desk-field">
-          <span>回复客人群 ID / chat_id</span>
-          <input name="chat_id" placeholder="必填" required />
-        </label>
-        <label class="quote-desk-field">
-          <span>回复客人群名</span>
-          <input name="chat_name" placeholder="方便识别，可空" />
-        </label>
-      </div>
-    </section>
-    <section class="quote-desk-block">
-      <div class="quote-desk-block-head">
-        <h3>询价上下文</h3>
-        <div class="muted">这些值就是下一条裸价要补回主屏的上下文。</div>
-      </div>
-      <div class="quote-desk-grid quote-desk-grid-4">
-        <label class="quote-desk-field">
-          <span>卡种</span>
-          <input name="card_type" placeholder="如 Apple" required />
-        </label>
-        <label class="quote-desk-field">
-          <span>国家 / 币种</span>
-          <input name="country_or_currency" placeholder="如 UK" required />
-        </label>
-        <label class="quote-desk-field">
-          <span>面额</span>
-          <input name="amount_range" placeholder="如 10" required />
-        </label>
-        <label class="quote-desk-field">
-          <span>形态</span>
-          <input name="form_factor" placeholder="如 不限 / 代码" />
-        </label>
-        <label class="quote-desk-field">
-          <span>倍数</span>
-          <input name="multiplier" placeholder="可空" />
-        </label>
-        <label class="quote-desk-field full">
-          <span>原始询价</span>
-          <input name="prompt_text" placeholder="如 Apple UK 10 现在什么价" />
-        </label>
-      </div>
-    </section>
-    <div class="quote-desk-actions">
-      <button type="submit">创建上下文</button>
+  <div class="quote-desk-zone quote-desk-current-state">
+    <div class="quote-desk-table-head">
+      <h3>当前有效上下文</h3>
+      <div class="muted">只有在有效期内的上下文才会接住下一条裸价。</div>
     </div>
-  </form>
-  <div class="quote-desk-table-head">
-    <h3>当前有效上下文</h3>
-    <div class="muted">只有在有效期内的上下文才会接住下一条裸价。</div>
-  </div>
-  <div class="table-wrap">
-    <table id="quote-inquiry-table" class="quote-table">
-      <thead>
-        <tr><th>状态</th><th>客人群</th><th>卡种</th><th>国家 / 币种</th><th>面额</th><th>形态</th><th>有效到</th><th>来源询价</th></tr>
-      </thead>
-      <tbody><tr><td colspan="8" class="muted">暂无短回复上下文</td></tr></tbody>
-    </table>
+    <div class="table-wrap">
+      <table id="quote-inquiry-table" class="quote-table">
+        <thead>
+          <tr><th>状态</th><th>客人群</th><th>卡种</th><th>国家 / 币种</th><th>面额</th><th>形态</th><th>有效到</th><th>来源询价</th></tr>
+        </thead>
+        <tbody><tr><td colspan="8" class="muted">暂无短回复上下文</td></tr></tbody>
+      </table>
+    </div>
   </div>
 </section>
 </div>
