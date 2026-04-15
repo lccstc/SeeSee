@@ -271,7 +271,9 @@ class WebAppTests(PostgresTestCase):
 
         response = {"status": 500, "body": b""}
 
-        def start_response(status: str, headers: list[tuple[str, str]]) -> None:
+        def start_response(
+            status: str, headers: list[tuple[str, str]], exc_info=None
+        ) -> None:
             response["status"] = int(status.split(" ", 1)[0])
 
         chunks = self.app(environ, start_response)
@@ -295,7 +297,9 @@ class WebAppTests(PostgresTestCase):
 
         response = {"status": 500, "headers": {}, "body": b""}
 
-        def start_response(status: str, headers: list[tuple[str, str]]) -> None:
+        def start_response(
+            status: str, headers: list[tuple[str, str]], exc_info=None
+        ) -> None:
             response["status"] = int(status.split(" ", 1)[0])
             response["headers"] = {key: value for key, value in headers}
 
@@ -386,6 +390,10 @@ class WebAppTests(PostgresTestCase):
         self.assertEqual(status, 200)
         self.assertIn("报价墙", body)
         self.assertIn("组实时", body)
+        self.assertIn('class="quote-hero-bands"', body)
+        self.assertIn('class="quote-hero-band quote-hero-band-status"', body)
+        self.assertIn('class="quote-hero-band quote-hero-band-watch"', body)
+        self.assertIn('class="quote-filter-band quote-primary-filter-band"', body)
         self.assertIn('id="quote-filter-form"', body)
         self.assertIn('id="quote-board-table"', body)
         self.assertIn('id="quote-experimental-summary"', body)
@@ -393,6 +401,7 @@ class WebAppTests(PostgresTestCase):
         self.assertIn('id="quote-watchlist-grid"', body)
         self.assertIn('id="quote-promotion-gate"', body)
         self.assertIn('id="quote-promotion-criteria"', body)
+        self.assertIn('class="quote-filter-band quote-secondary-filter-band"', body)
         self.assertIn('id="quote-profile-table"', body)
         self.assertIn('id="quote-inquiry-table"', body)
         self.assertIn('id="quote-ranking-table"', body)
@@ -423,6 +432,7 @@ class WebAppTests(PostgresTestCase):
         self.assertIn("人工整理", body)
         self.assertIn("生成预览", body)
         self.assertIn("默认只看待处理异常", body)
+        self.assertIn("风险池保持近手可达", body)
         self.assertIn("骨架 1 / N", body)
         self.assertIn("未改动报价墙", body)
         self.assertIn("继续补一段并生成候选重放", body)
