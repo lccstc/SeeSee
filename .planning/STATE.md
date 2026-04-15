@@ -4,8 +4,8 @@ milestone: v1.0
 milestone_name: milestone
 status: milestone_complete
 stopped_at: Phase 08 completed
-last_updated: "2026-04-15T06:23:23+07:00"
-last_activity: 2026-04-15 -- Phase 08 executed and verified
+last_updated: "2026-04-16T05:17:09+07:00"
+last_activity: 2026-04-15 - Completed quick task 260416-5ya: 修复http://100.66.25.75:8765/quotes 页面上的一些ui 排版bug
 progress:
   total_phases: 9
   completed_phases: 9
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-13)
 
 **Core value:** 把供应商群原始消息转成“可追溯、可验证、不可误发布”的报价事实，宁可不上墙，也绝不把错价、错面额、错国家/币种上墙。
-**Current focus:** Milestone complete — experimental active wall verified
+**Current focus:** Milestone complete — experimental active wall verified; quick UI cleanup delivered for `/quotes`
 
 ## Current Position
 
 Phase: 08 (experimental-active-wall-gate) — COMPLETED
 Plan: 3 of 3
 Status: Phase 08 executed and verified
-Last activity: 2026-04-15 -- Phase 08 executed and verified
+Last activity: 2026-04-15 - Completed quick task 260416-5ya: 修复http://100.66.25.75:8765/quotes 页面上的一些ui 排版bug
 
 Progress: [██████████] 100% of milestone phases completed
 
@@ -132,6 +132,12 @@ None yet.
 - Brownfield quote-wall logic already exists, so phase planning must verify where active quote facts are mutated today before changing behavior
 - Existing AGENTS.md contains project-specific operating rules and should not be blindly overwritten by generated workflow guidance
 - `graphify` rebuild is currently blocked by a missing local `graphify` module in the active Python environment
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260416-5ya | 修复http://100.66.25.75:8765/quotes 页面上的一些ui 排版bug | 2026-04-15 | 154af38 | [260416-5ya-http-100-66-25-75-8765-quotes-ui-bug](./quick/260416-5ya-http-100-66-25-75-8765-quotes-ui-bug/) |
 
 ## Session Continuity
 
